@@ -36,13 +36,18 @@ export class Fetcher {
     this.fetchImpl = fetchImpl;
   }
 
-  async fetchHtml(rawUrl) {
+  async fetchHtml(rawUrl, { signal } = {}) {
     let url = validateUrl(rawUrl);
     await resolveAndCheck(url);
     let hopCount = 0;
 
     for (;;) {
+      if (signal?.aborted) {
+        throw new FetchError('Request aborted before it started (scan budget expired)');
+      }
       const ctrl = new AbortController();
+      const onExternalAbort = () => ctrl.abort();
+      if (signal) signal.addEventListener('abort', onExternalAbort, { once: true });
       const timer = setTimeout(() => ctrl.abort(), this.timeoutMs);
 
       let response;
@@ -57,6 +62,10 @@ export class Fetcher {
         });
       } catch (err) {
         clearTimeout(timer);
+        signal?.removeEventListener('abort', onExternalAbort);
+        if (signal?.aborted) {
+          throw new FetchError('Request aborted (scan budget expired)');
+        }
         if (ctrl.signal.aborted || err?.name === 'AbortError') {
           throw new FetchError(`Request to ${url.hostname} timed out after ${this.timeoutMs}ms`);
         }
@@ -69,6 +78,7 @@ export class Fetcher {
       if (status >= 300 && status < 400) {
         await response.body?.cancel?.().catch(() => {});
         clearTimeout(timer);
+        signal?.removeEventListener('abort', onExternalAbort);
         const location = response.headers.get('location');
         if (!location) throw new FetchError(`Redirect response from ${url.href} had no Location header`);
         if (++hopCount > this.maxRedirects) {
@@ -85,6 +95,7 @@ export class Fetcher {
       if (declaredLength > this.maxBodyBytes) {
         await response.body?.cancel?.().catch(() => {});
         clearTimeout(timer);
+        signal?.removeEventListener('abort', onExternalAbort);
         throw new BodyTooLargeError(`Response from ${url.hostname} exceeds the ${this.maxBodyBytes}-byte cap`);
       }
 
@@ -96,6 +107,9 @@ export class Fetcher {
           for (;;) {
             const { done, value } = await reader.read();
             if (done) break;
+            if (signal?.aborted) {
+              throw new FetchError('Request aborted (scan budget expired)');
+            }
             if (ctrl.signal.aborted) {
               throw new FetchError(`Request to ${url.hostname} timed out after ${this.timeoutMs}ms`);
             }
@@ -112,6 +126,9 @@ export class Fetcher {
           }
         }
       } catch (err) {
+        if (signal?.aborted) {
+          throw new FetchError('Request aborted (scan budget expired)');
+        }
         if (ctrl.signal.aborted || err?.name === 'AbortError') {
           throw new FetchError(`Request to ${url.hostname} timed out after ${this.timeoutMs}ms`);
         }
@@ -119,6 +136,7 @@ export class Fetcher {
         throw new FetchError(`Network error reading response from ${url.hostname}: ${err.message}`);
       } finally {
         clearTimeout(timer);
+        signal?.removeEventListener('abort', onExternalAbort);
       }
 
       return { status, url: url.href, body };

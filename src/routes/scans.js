@@ -3,7 +3,7 @@ import { Router } from 'express';
 /**
  * GET /api/v1/scans/:id — fetch a stored scan.
  * Returns JSON by default; renders a simple HTML report when the client
- * prefers text/html (the MVP report view).
+ * prefers text/html (the report view).
  */
 export function scansRouter({ db }) {
   const r = Router();
@@ -20,13 +20,23 @@ export function scansRouter({ db }) {
     if (wantsHtml) {
       return res.type('html').send(renderHtmlReport(scan));
     }
-    res.json({
+    const json = {
       id: scan.id,
       url: scan.url,
       slopScore: scan.score,
       breakdown: scan.breakdown,
       createdAt: scan.created_at,
-    });
+    };
+    if (Array.isArray(scan.breakdown?.crossPage?.pages) && scan.breakdown.crossPage.pages.length >= 2) {
+      json.pages = scan.breakdown.crossPage.pages;
+    }
+    if (scan.breakdown?.crossPage?.pairs?.length) {
+      json.pairs = scan.breakdown.crossPage.pairs;
+    }
+    if (typeof scan.partial === 'boolean') json.partial = scan.partial;
+    if (typeof scan.note === 'string') json.note = scan.note;
+    if (scan.worstPage) json.worstPage = scan.worstPage;
+    res.json(json);
   });
 
   return r;
@@ -40,15 +50,70 @@ function esc(v) {
     .replaceAll('"', '&quot;');
 }
 
+/**
+ * Render the HTML report.
+ *
+ * Sections (added in phase 2):
+ *   - Worst Page: the fetched page with the highest combined score
+ *     (0.7 × per-page v1 score + 0.3 × its duplication score; deterministic
+ *     tie-break = lowest URL lexicographic).
+ *   - Templated Content: the flagged cross-page duplication pairs
+ *     (similarity >= 0.80) with both URLs and the similarity percentage.
+ *
+ * A module whose score is null (e.g. crossPage with fewer than 2 pages) is
+ * rendered as its note instead of a numeric row.
+ */
 function renderHtmlReport(scan) {
   const rows = Object.entries(scan.breakdown)
-    .map(([key, rule]) => `
+    .map(([key, rule]) => {
+      if (Number.isFinite(Number(rule?.score))) {
+        return `
       <tr>
         <td>${esc(key)}</td>
         <td>${Number(rule.score)}</td>
-        <td><ul>${rule.findings.map((f) => `<li>${esc(f)}</li>`).join('')}</ul></td>
-      </tr>`)
+        <td><ul>${(rule.findings ?? []).map((f) => `<li>${esc(f)}</li>`).join('')}</ul></td>
+      </tr>`;
+      }
+      // Skipped module (score null): show its note instead of a score.
+      const note = rule?.note ? esc(rule.note) : 'skipped';
+      return `
+      <tr>
+        <td>${esc(key)}</td>
+        <td>—</td>
+        <td><em>${note}</em></td>
+      </tr>`;
+    })
     .join('');
+
+  // --- Worst Page section ----------------------------------------------------
+  const cross = scan.breakdown?.crossPage ?? {};
+  const worst = scan.worstPage || null;
+  let worstSection = '';
+  if (worst && Array.isArray(cross.pages) && cross.pages.length >= 2) {
+    worstSection = `
+  <h2>Worst Page</h2>
+  <p><a href="${esc(worst.url)}">${esc(worst.url)}</a> — combined score ${Number(worst.score)} / 100</p>
+  <ul>${(worst.findings ?? []).map((f) => `<li>${esc(f)}</li>`).join('')}</ul>`;
+  } else if (worst) {
+    worstSection = `
+  <h2>Worst Page</h2>
+  <p><a href="${esc(worst.url)}">${esc(worst.url)}</a> — combined score ${Number(worst.score)} / 100</p>`;
+  }
+
+  // --- Templated Content section (flagged duplication pairs) -----------------
+  const pairs = Array.isArray(cross.pairs) ? cross.pairs.filter((p) => p.similarity >= 0.8) : [];
+  let templatedSection = '';
+  if (pairs.length > 0) {
+    templatedSection = `
+  <h2>Templated Content</h2>
+  <ul>${pairs.map((p) => `
+    <li><a href="${esc(p.pageA)}">${esc(p.pageA)}</a> ~ <a href="${esc(p.pageB)}">${esc(p.pageB)}</a> — ${(p.similarity * 100).toFixed(1)}% similar</li>`).join('')}
+  </ul>`;
+  }
+
+  const pagesLine = Array.isArray(cross.pages) && cross.pages.length >= 2
+    ? `<p>Pages scanned: ${cross.pages.map((u) => `<a href="${esc(u)}">${esc(u)}</a>`).join(', ')}${scan.partial && scan.note ? ` · ${esc(scan.note)}` : ''}</p>`
+    : '';
 
   return `<!doctype html>
 <html lang="en">
@@ -57,7 +122,8 @@ function renderHtmlReport(scan) {
   <title>AISlopScanner report</title>
   <style>
     body { font-family: system-ui, sans-serif; max-width: 760px; margin: 2rem auto; padding: 0 1rem; color: #1a202c; }
-    h1 { font-size: 1.4rem; } .score { font-size: 2.6rem; font-weight: 700; }
+    h1 { font-size: 1.4rem; } h2 { font-size: 1.1rem; margin-top: 1.8rem; }
+    .score { font-size: 2.6rem; font-weight: 700; }
     table { border-collapse: collapse; width: 100%; margin-top: 1rem; }
     th, td { border: 1px solid #cbd5e1; padding: .5rem .75rem; text-align: left; vertical-align: top; font-size: .9rem; }
     th { background: #f1f5f9; } ul { margin: 0; padding-left: 1.1rem; }
@@ -67,10 +133,13 @@ function renderHtmlReport(scan) {
   <h1>AISlopScanner report</h1>
   <p><a href="${esc(scan.url)}">${esc(scan.url)}</a> · scanned ${esc(scan.created_at)}</p>
   <p class="score">Slop Score: ${Number(scan.score)} / 100</p>
+  ${pagesLine}
   <table>
     <thead><tr><th>Rule</th><th>Score</th><th>Findings</th></tr></thead>
     <tbody>${rows}</tbody>
   </table>
+  ${worstSection}
+  ${templatedSection}
   <p>Score id: <code>${esc(scan.id)}</code> · deterministic rule-based analysis, no AI models.</p>
 </body>
 </html>`;

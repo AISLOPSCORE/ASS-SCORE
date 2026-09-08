@@ -1,0 +1,106 @@
+[
+  {
+    "id": "v0.dev",
+    "label": "v0.dev builder assets",
+    "confidence": "high",
+    "scope": "html",
+    "patterns": [
+      "https?:\\/\\/(?:[a-z0-9-]+\\.)*v0\\.dev"
+    ]
+  },
+  {
+    "id": "lovable",
+    "label": "Lovable builder assets",
+    "confidence": "high",
+    "scope": "html",
+    "patterns": [
+      "https?:\\/\\/(?:cdn\\.)?lovable\\.dev"
+    ]
+  },
+  {
+    "id": "framer",
+    "label": "Framer builder assets",
+    "confidence": "high",
+    "scope": "html",
+    "patterns": [
+      "https?:\\/\\/(?:www\\.)?framer\\.com",
+      "framerusercontent\\.com"
+    ]
+  },
+  {
+    "id": "durable",
+    "label": "Durable builder assets",
+    "confidence": "high",
+    "scope": "html",
+    "patterns": [
+      "https?:\\/\\/(?:www\\.)?durable\\.co"
+    ]
+  },
+  {
+    "id": "replit-badge",
+    "label": "Replit 'made on Replit' badge",
+    "confidence": "low",
+    "scope": "html",
+    "patterns": [
+      "replit\\.com\\/badge"
+    ]
+  },
+  {
+    "id": "named-builder-generator",
+    "label": "meta generator tag declaring a website builder",
+    "confidence": "medium",
+    "scope": "head",
+    "patterns": [
+      "name=[\"'][^\"']*generator[\"'][^>]*content=[\"'][^\"']*(framer|lovable|v0|durable|replit)[^\"']*[\"']",
+      "content=[\"'][^\"']*(framer|lovable|v0|durable|replit)[^\"']*[\"'][^>]*name=[\"'][^\"']*generator[\"']"
+    ]
+  },
+  {
+    "id": "generic-generator",
+    "label": "meta generator tag present",
+    "confidence": "low",
+    "scope": "head",
+    "patterns": [
+      "name=[\"'][^\"']*generator[\"'][^>]*content=[\"'][^\"']{1,120}[\"']",
+      "content=[\"'][^\"']{1,120}[\"'][^>]*name=[\"'][^\"']*generator[\"']"
+    ]
+  },
+  {
+    "id": "made-with-footer",
+    "label": "'Made with <builder>' boilerplate footer",
+    "confidence": "low",
+    "scope": "text",
+    "patterns": [
+      "made with\\s+(framer|lovable|v0|durable|replit|bubble|wix|webflow|squarespace|wordpress|godaddy)"
+    ]
+  },
+  {
+    "id": "unsplash-stock",
+    "label": "Unsplash stock imagery",
+    "confidence": "medium",
+    "scope": "html",
+    "patterns": [
+      "images\\.unsplash\\.com\\/photo-"
+    ]
+  },
+  {
+    "id": "placeholder-images",
+    "label": "placeholder image service assets",
+    "confidence": "medium",
+    "scope": "html",
+    "patterns": [
+      "via\\.placeholder\\.com",
+      "picsum\\.photos",
+      "dummyimage\\.com"
+    ]
+  },
+  {
+    "id": "fontawesome-icons",
+    "label": "Font Awesome default icon set",
+    "confidence": "low",
+    "scope": "html",
+    "patterns": [
+      "(?:use\\.)?fontawesome\\.com"
+    ]
+  }
+]

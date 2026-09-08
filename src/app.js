@@ -10,8 +10,10 @@ import { scansRouter } from './routes/scans.js';
  *   fetcher         — object with fetchHtml(rawUrl) (default: SSRF-protected Fetcher)
  *   webhookDeliverer — async (scan, webhookUrl) => result (default: best-effort
  *                     POST with retries; tests inject a stub)
+ *   scanBudgetMs    — per-scan time budget covering target fetch + discovery
+ *                     + additional fetches (default SCAN_BUDGET_MS; tests lower it)
  */
-export function createApp({ dbPath = './data/aislopscanner.db', fetcher, webhookDeliverer } = {}) {
+export function createApp({ dbPath = './data/aislopscanner.db', fetcher, webhookDeliverer, scanBudgetMs } = {}) {
   const db = openDb(dbPath);
   const fetcherImpl = fetcher ?? new Fetcher();
 
@@ -20,7 +22,7 @@ export function createApp({ dbPath = './data/aislopscanner.db', fetcher, webhook
   app.use(express.json({ limit: '64kb' }));
 
   app.get('/health', (_req, res) => res.json({ ok: true, service: 'aislopscanner' }));
-  app.use(scanRouter({ db, fetcher: fetcherImpl, webhookDeliverer }));
+  app.use(scanRouter({ db, fetcher: fetcherImpl, webhookDeliverer, scanBudgetMs }));
   app.use(scansRouter({ db }));
 
   app.use((_req, res) => {

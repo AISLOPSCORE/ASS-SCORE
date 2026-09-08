@@ -66,4 +66,62 @@ export function extractText(html) {
   };
 }
 
+/**
+ * Extract the raw inner HTML of <head> (deterministic string). Used by the
+ * fingerprints rule for head-scoped patterns (e.g. meta generator tags).
+ */
+export function extractHead(html) {
+  const $ = cheerio.load(String(html));
+  const head = $('head');
+  return head.length > 0 ? (head.html() || '') : '';
+}
+
+/**
+ * Main-content extraction for cross-page similarity. Similarity must compare
+ * MAIN CONTENT only so a shared nav/header/footer never inflates it.
+ *
+ * Strategy (deterministic, documented):
+ *   1. Prefer <main>, then <article> — content scoped strictly to that subtree.
+ *   2. Fallback: <body> minus <nav>, <header>, <footer>, <aside>, <form>.
+ *   3. Last resort: whole <html>.
+ *
+ * @returns {{ text: string, words: string[], paragraphs: string[], sentences: string[], stopwords: Set<string> }}
+ */
+export function extractMainText(html) {
+  const $ = cheerio.load(String(html), { decodeEntities: true });
+  $(NON_TEXT_TAGS).remove();
+
+  let sel = $('main').first();
+  if (sel.length === 0) sel = $('article').first();
+  if (sel.length === 0) {
+    // Fallback: body minus chrome elements.
+    $('nav, header, footer, aside, form').remove();
+    sel = $('body');
+    if (sel.length === 0) sel = $('html');
+  }
+
+  const raw = sel.text();
+  const text = raw.replace(/\s+/g, ' ').trim();
+
+  const paragraphs = [];
+  const paraSel = sel.find(PARA_TAGS);
+  if (paraSel.length > 0) {
+    paraSel.each((_, el) => {
+      const t = $(el).text().replace(/\s+/g, ' ').trim();
+      if (t.length > 0) paragraphs.push(t);
+    });
+  } else if (sel.is(PARA_TAGS)) {
+    const t = $(sel).text().replace(/\s+/g, ' ').trim();
+    if (t.length > 0) paragraphs.push(t);
+  }
+
+  return {
+    text,
+    paragraphs,
+    sentences: splitSentences(text),
+    words: tokenize(text),
+    stopwords: STOPWORDS,
+  };
+}
+
 export { STOPWORDS };
