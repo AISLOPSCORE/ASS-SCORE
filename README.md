@@ -144,6 +144,65 @@ The report renders the per-rule table (a module with
 - **Templated Content** — the flagged duplication pairs (both URLs + similarity
   percentage) from `crossPage.pairs`.
 
+### `GET /api/v1/scans/:id/card`
+
+The **shareable result card** — the viral distribution feature. Returns a
+**1200×630 PNG** (the Open Graph / social-preview standard) showing, on a clean
+dark-brand gradient:
+
+- the **A.S.S. Score** big and color-coded by verdict band (e.g. `73 / 100`),
+- the scanned URL (host + path, entity-escaped, truncated to fit),
+- a **one-line verdict by score band** (see below),
+- the footer `ass-score.com · A.S.S. Score (AI Slop Score)` and the mandated
+  disclaimer in tiny print.
+
+```bash
+curl -s http://localhost:4000/api/v1/scans/<id>/card -o card.png
+```
+
+- `Content-Type: image/png`, `Cache-Control: public, max-age=60`.
+- **Deterministic**: the same scan id always returns byte-identical PNG
+  (`buildCardSvg` has no timestamps/randomness; verified by test — two renders
+  sha256-equal).
+- **SSRF/XML-safe**: every user-derived string (URL, verdict) is entity-escaped;
+  a hostile URL cannot inject SVG markup (tested).
+- Invalid/missing id → `404` with the same JSON error shape as
+  `GET /api/v1/scans/:id`.
+
+**Verdict bands** (pure function `verdictFor(score)` in `src/card.js`; the
+product's one-line verdicts):
+
+| Score | Verdict | Accent |
+| --- | --- | --- |
+| 0–19 | Clean as a whistle. Impressive. | green |
+| 20–39 | Congrats — less A.S.S. than most. | lime |
+| 40–59 | A moderate amount of A.S.S. detected. | yellow |
+| 60–79 | Oh no. That's a lot of A.S.S. | orange |
+| 80–100 | Your website has a serious slop problem. | red |
+
+### `GET /api/v1/scans/:id/share`
+
+Pre-filled social share text + public result URL, for copy-to-clipboard:
+
+```bash
+curl -s http://localhost:4000/api/v1/scans/<id>/share
+# {"url":"https://ass-score.com/scan/<id>",
+#  "text":"My website scored 73/100 on the A.S.S. Score (AI Slop Score). Check yours: https://ass-score.com/scan/<id>"}
+```
+
+The share URL points at the (future) public result page `/scan/<id>`. Its base
+is configurable via the `publicBaseUrl` app option (default
+`PUBLIC_BASE_URL` env, falling back to `https://ass-score.com`) — so a
+deployment behind another origin can emit correct share links without a code
+change.
+
+**How the card is rendered.** No headless browser, no screenshots. The card is
+composed as a deterministic SVG string and rasterized to PNG with
+**sharp** (libvips' built-in SVG loader) — cheap (~100 ms), dependency-light,
+byte-deterministic, and it runs fine on Railway/Alpine with sharp's prebuilt
+binaries. The Dockerfile installs `font-dejavu` because Alpine ships no fonts
+by default and SVG text needs one.
+
 ## How the A.S.S. Score works
 
 Six deterministic rules run over the extracted page text (and, for crossPage,
@@ -266,7 +325,9 @@ src/
     scan.js          POST /api/v1/scan (pipeline: target -> discovery -> additional
                      fetches -> rules -> score; webhook; partial/pages/worstPage)
     scans.js         GET /api/v1/scans/:id (+ HTML report: Worst Page,
-                     Templated Content sections)
+                     Templated Content sections) + /card + /share
+  card.js            shareable result card: verdictFor() bands, SVG template,
+                     sharp PNG rasterizer (deterministic, no headless browser)
   webhook.js         webhookUrl validation + async best-effort deliverer (retries)
   rules/
     index.js         runRules() aggregator (the four v1 rules)
@@ -279,7 +340,9 @@ src/
     fingerprints.json  extensible pattern list (no code changes to add entries)
 test/                node:test suites (ssrf, rules/scorer, API pipeline, webhook,
                      phase2: similarity/discovery/fingerprints/scorer + integration
-                     against local fixture sites incl. budget-expiry)
+                     against local fixture sites incl. budget-expiry, and card:
+                     verdict bands, SVG escaping, PNG determinism + /card & /share
+                     integration)
 ```
 
 ## Docker (production: Node 20 on Alpine)
@@ -291,3 +354,7 @@ docker run --rm -p 4000:4000 -v "$(pwd)/data:/app/data" ass-score
 
 > Note: `better-sqlite3` is a native module; the Alpine image installs
 > `python3 make g++` as build dependencies (no musl prebuilds are published).
+> `sharp` needs no extra build step — it ships prebuilt libvips binaries for
+> linux-x64-musl on Node 20 (`@img/sharp-linuxmusl-x64`). The image also
+> installs `font-dejavu`: a RUNTIME dependency, because the share card
+> rasterizes SVG text server-side and Alpine has no fonts by default.

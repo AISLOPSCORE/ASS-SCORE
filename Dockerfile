@@ -2,7 +2,13 @@
 FROM node:20-alpine
 
 # better-sqlite3 has no musl prebuilds, so we need a C toolchain to compile it.
-RUN apk add --no-cache python3 make g++
+# font-dejavu is a RUNTIME dependency: the shareable result card rasterizes SVG
+# text with sharp, and Alpine ships no fonts by default. sharp itself needs no
+# extra libs here — it ships prebuilt libvips binaries for linux-x64-musl on
+# Node 20 (@img/sharp-linuxmusl-x64). If an unsupported platform ever forces a
+# source build, sharp would need additional build deps; the supported
+# linux-x64-musl target uses the prebuilt binary.
+RUN apk add --no-cache python3 make g++ font-dejavu
 
 WORKDIR /app
 

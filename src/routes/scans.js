@@ -1,12 +1,22 @@
 import { Router } from 'express';
+import { buildCardSvg, renderCardPng } from '../card.js';
 
 /**
  * GET /api/v1/scans/:id — fetch a stored scan.
  * Returns JSON by default; renders a simple HTML report when the client
  * prefers text/html (the report view).
+ *
+ * GET /api/v1/scans/:id/card — the shareable result card: a deterministic
+ * 1200x630 PNG (A.S.S. Score + scanned URL + one-line verdict + branding +
+ * disclaimer), composed as SVG and rasterized with sharp (no headless
+ * browser). Same scan id -> byte-identical PNG, always.
+ *
+ * GET /api/v1/scans/:id/share — pre-filled social share text + public result
+ * URL (publicBaseUrl, default env PUBLIC_BASE_URL || https://ass-score.com).
  */
-export function scansRouter({ db }) {
+export function scansRouter({ db, publicBaseUrl }) {
   const r = Router();
+  const shareBase = publicBaseUrl || process.env.PUBLIC_BASE_URL || 'https://ass-score.com';
 
   r.get('/api/v1/scans/:id', (req, res) => {
     const scan = db.getScan(req.params.id);
@@ -37,6 +47,34 @@ export function scansRouter({ db }) {
     if (typeof scan.note === 'string') json.note = scan.note;
     if (scan.worstPage) json.worstPage = scan.worstPage;
     res.json(json);
+  });
+
+  const missing = (res, id) =>
+    res.status(404).json({ error: { code: 'not_found', message: `No scan found with id "${id}"` } });
+
+  // --- Shareable result card (deterministic PNG, sharp-rasterized SVG) -------
+  r.get('/api/v1/scans/:id/card', async (req, res, next) => {
+    const scan = db.getScan(req.params.id);
+    if (!scan) return missing(res, req.params.id);
+    try {
+      const png = await renderCardPng(buildCardSvg({ score: scan.score, url: scan.url }));
+      res.set('Content-Type', 'image/png');
+      res.set('Cache-Control', 'public, max-age=60');
+      res.send(png);
+    } catch (err) {
+      next(err); // centralized error handler; PNG render errors never leak internals
+    }
+  });
+
+  // --- Pre-filled share text (copy-to-clipboard + social post) ---------------
+  r.get('/api/v1/scans/:id/share', (req, res) => {
+    const scan = db.getScan(req.params.id);
+    if (!scan) return missing(res, req.params.id);
+    const shareUrl = `${shareBase.replace(/\/+$/, '')}/scan/${scan.id}`;
+    res.json({
+      url: shareUrl,
+      text: `My website scored ${scan.score}/100 on the A.S.S. Score (AI Slop Score). Check yours: ${shareUrl}`,
+    });
   });
 
   return r;

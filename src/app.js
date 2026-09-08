@@ -12,8 +12,10 @@ import { scansRouter } from './routes/scans.js';
  *                     POST with retries; tests inject a stub)
  *   scanBudgetMs    — per-scan time budget covering target fetch + discovery
  *                     + additional fetches (default SCAN_BUDGET_MS; tests lower it)
+ *   publicBaseUrl   — public origin used for share links and result pages
+ *                     (default env PUBLIC_BASE_URL or https://ass-score.com)
  */
-export function createApp({ dbPath = './data/ass-score.db', fetcher, webhookDeliverer, scanBudgetMs } = {}) {
+export function createApp({ dbPath = './data/ass-score.db', fetcher, webhookDeliverer, scanBudgetMs, publicBaseUrl = process.env.PUBLIC_BASE_URL || 'https://ass-score.com' } = {}) {
   const db = openDb(dbPath);
   const fetcherImpl = fetcher ?? new Fetcher();
 
@@ -23,7 +25,7 @@ export function createApp({ dbPath = './data/ass-score.db', fetcher, webhookDeli
 
   app.get('/health', (_req, res) => res.json({ ok: true, service: 'ass-score' }));
   app.use(scanRouter({ db, fetcher: fetcherImpl, webhookDeliverer, scanBudgetMs }));
-  app.use(scansRouter({ db }));
+  app.use(scansRouter({ db, publicBaseUrl }));
 
   app.use((_req, res) => {
     res.status(404).json({ error: { code: 'not_found', message: 'Route not found' } });
