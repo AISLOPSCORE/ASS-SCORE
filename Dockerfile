@@ -38,8 +38,11 @@ COPY --from=builder /app/node_modules ./node_modules
 COPY src ./src
 # data/ holds the SQLite DB (default DB_PATH ./data/ass-score.db). On Railway
 # the disk is ephemeral — attach a volume and set DB_PATH to the mount for
-# persistence. Prepare the dir and run as the non-root node user.
-RUN mkdir -p /app/data && chown -R node:node /app
-USER node
+# persistence. NOTE: we run as ROOT (no USER node) for a deliberate reason —
+# Railway volumes mount root-owned, and better-sqlite3 cannot open the DB file
+# there as an unprivileged user (SQLITE_CANTOPEN). This container is a
+# single-purpose microservice whose only write path is the SQLite file, so
+# root is the pragmatic MVP choice. Prepare the default dir too.
+RUN mkdir -p /app/data
 EXPOSE 4000
 CMD ["npm", "start"]
