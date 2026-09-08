@@ -1,0 +1,19 @@
+{
+  "name": "aislopscanner",
+  "version": "0.1.0",
+  "description": "Deterministic rule-based Slop Score scanner for public websites. No AI models.",
+  "type": "module",
+  "main": "src/server.js",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.11.1",
+    "cheerio": "^1.2.0",
+    "express": "^4.22.2"
+  }
+}
