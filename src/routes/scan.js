@@ -5,17 +5,26 @@ import { runRules } from '../rules/index.js';
 import { computeSlopScore } from '../scorer.js';
 import { SsrfError, InvalidUrlError } from '../fetch/ssrf.js';
 import { FetchError } from '../fetch/client.js';
+import { validateWebhookUrl, createWebhookDeliverer } from '../webhook.js';
 
 /**
  * POST /api/v1/scan
- * Body: { "url": "https://example.com" }
- * Flow: validate URL (SSRF) -> fetch with re-checked redirects -> extract text
- *       -> run 4 deterministic rules -> weighted Slop Score -> persist in SQLite -> JSON.
+ * Body: { "url": "https://example.com", "webhookUrl"?: "https://hooks.example.com/x" }
+ * Flow: validate url (SSRF) -> validate optional webhookUrl (fail fast, BEFORE any
+ *       network I/O) -> fetch with re-checked redirects -> extract text
+ *       -> run 4 deterministic rules -> weighted Slop Score -> persist in SQLite
+ *       -> fire async best-effort webhook delivery -> JSON.
  *
- * Errors: 400 SSRF-blocked / invalid URL, 502 fetch failure, 422 HTML parse failure.
+ * The webhook URL is a callback URL, not a scan target: it is validated for
+ * scheme + host presence only (no SSRF range checks). Delivery never blocks or
+ * fails the response.
+ *
+ * Errors: 400 SSRF-blocked / invalid url / invalid webhookUrl, 502 fetch failure,
+ *         422 HTML parse failure.
  */
-export function scanRouter({ db, fetcher, now = () => new Date().toISOString() }) {
+export function scanRouter({ db, fetcher, now = () => new Date().toISOString(), webhookDeliverer }) {
   const r = Router();
+  const deliver = webhookDeliverer ?? createWebhookDeliverer();
 
   r.post('/api/v1/scan', async (req, res, next) => {
     try {
@@ -24,6 +33,13 @@ export function scanRouter({ db, fetcher, now = () => new Date().toISOString() }
         return res.status(400).json({
           error: { code: 'invalid_request', message: 'Request body must be JSON of the form { "url": "https://example.com" }' },
         });
+      }
+
+      // Optional callback URL. Invalid values are a 400 BEFORE scanning (fail fast).
+      // Missing / empty is allowed and means "no webhook delivery".
+      const webhook = validateWebhookUrl(req.body?.webhookUrl);
+      if (!webhook.ok) {
+        return res.status(400).json({ error: { code: 'invalid_webhook_url', message: webhook.message } });
       }
 
       let page;
@@ -54,9 +70,24 @@ export function scanRouter({ db, fetcher, now = () => new Date().toISOString() }
 
       const id = randomUUID();
       const createdAt = now();
+      // Response object AND webhook payload — delivered bytes-exact as returned.
+      const payload = { id, url: page.url, slopScore, breakdown, createdAt };
       db.insertScan({ id, url: page.url, score: slopScore, breakdown, createdAt });
 
-      res.status(200).json({ id, url: page.url, slopScore, breakdown, createdAt });
+      if (webhook.url) {
+        // Best-effort, non-blocking: defer delivery out of the request path.
+        // Any delivery failure is logged by the deliverer (and caught below for
+        // exotic injectable deliverers) and NEVER affects this response.
+        setImmediate(async () => {
+          try {
+            await deliver(payload, webhook.url);
+          } catch (err) {
+            console.error(`[webhook] delivery to ${webhook.url} for scan ${id} crashed:`, err?.message ?? err);
+          }
+        });
+      }
+
+      res.status(200).json(payload);
     } catch (err) {
       next(err); // centralized error handler; never leaks stack traces
     }

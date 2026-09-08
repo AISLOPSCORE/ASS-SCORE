@@ -17,13 +17,24 @@ npm test           # node:test unit + API tests (no network required)
 
 ### `POST /api/v1/scan`
 
-Request:
+Request (optionally with a callback `webhookUrl`):
 
 ```bash
 curl -s -X POST http://localhost:4000/api/v1/scan \
   -H 'content-type: application/json' \
-  -d '{"url": "https://example.com"}'
+  -d '{
+    "url": "https://example.com",
+    "webhookUrl": "https://hooks.example.com/scan-complete"
+  }'
 ```
+
+`webhookUrl` is optional. Missing or empty means no webhook delivery. It must be
+an `http://` or `https://` URL with a host — anything else (wrong scheme, no
+host, non-string) is a `400 invalid_webhook_url` that fails fast BEFORE the
+target is scanned. It is a callback URL, not a scan target, so the SSRF range
+checks are deliberately **not** applied to it; only scheme + host presence are
+validated (via `new URL`). Actual DNS/connectivity problems surface at delivery
+time and are logged, never propagated to the caller.
 
 Response `200`:
 
@@ -45,9 +56,41 @@ Response `200`:
 | Error | HTTP | When |
 | --- | --- | --- |
 | SSRF-blocked / invalid URL | `400` | private/loopback/link-local/reserved target, banned hostname, malformed URL |
+| Invalid webhook URL | `400` | `webhookUrl` present but not `http(s)://host...` (checked before scanning) |
 | Fetch failure | `502` | timeout (>10s), network error, body > 2 MB, too many redirects (>3) |
 | Parse failure | `422` | HTML could not be parsed or contained no extractable text |
 | Bad JSON | `400` | malformed request body |
+
+### Webhook delivery
+
+When `webhookUrl` is supplied, an asynchronous, **best-effort** delivery of the
+exact scan JSON is fired after the scan is persisted — it never blocks and never
+fails the `POST /api/v1/scan` response. The delivered payload is byte-for-byte
+the response body returned to the caller:
+
+```json
+{ "id": "…", "url": "https://example.com/", "slopScore": 6, "breakdown": {…}, "createdAt": "…" }
+```
+
+Request the webhook endpoint receives:
+
+```
+POST <webhookUrl>
+Content-Type: application/json
+X-AISlopScanner-Scan-Id: <scan id>
+```
+
+Delivery semantics:
+
+- **Timeout**: each attempt has a 5 s timeout.
+- **Retries**: up to 3 attempts with backoff (1 s, 3 s, 9 s between attempts) for
+  network errors (timeout, DNS, connection refused) and non-2xx responses.
+- **No retry on 4xx**: a 4xx means the customer's endpoint rejected the payload;
+  it is logged and delivery is abandoned immediately.
+- **Best-effort**: any failure is logged with the scan id + webhook URL via
+  `console.error` and is never surfaced in the scan response. The deliverer is
+  injectable (`webhookDeliverer` option on the app/router factory) so tests can
+  stub it.
 
 ### `GET /api/v1/scans/:id`
 
@@ -98,15 +141,16 @@ src/
     ssrf.js          URL validation + blocked-range checks + DNS resolution
     client.js        fetch with re-validated redirects, timeout, 2 MB cap
   routes/
-    scan.js          POST /api/v1/scan
+    scan.js          POST /api/v1/scan (validates webhookUrl, fires async delivery)
     scans.js         GET /api/v1/scans/:id (+ HTML report)
+  webhook.js         webhookUrl validation + async best-effort deliverer (retries)
   rules/
     index.js         runRules() aggregator
     filler.js        Rule A
     boilerplate.js   Rule B
     infoDensity.js   Rule C
     repetitive.js    Rule D
-test/                node:test suites (ssrf, rules/scorer, API pipeline)
+test/                node:test suites (ssrf, rules/scorer, API pipeline, webhook)
 ```
 
 ## Docker (production: Node 20 on Alpine)
