@@ -474,3 +474,40 @@ docker run --rm -p 4000:4000 -v "$(pwd)/data:/app/data" \
 > installs `font-dejavu`: a RUNTIME dependency, because the share card
 > rasterizes SVG text server-side and Alpine has no fonts by default.
 > `nodemailer` is pure JS — no build step, no extra Alpine packages.
+## Deploy to Railway
+The repo ships a multi-stage `Dockerfile` (Node 20 on Alpine) and a
+`railway.json` that tells Railway to build it and start with `npm start`
+(which runs `node src/server.js`). The server binds `process.env.PORT`
+(Railway injects PORT automatically) with a 4000 fallback. There is no GitHub
+remote — Railway builds from the uploaded directory.
+
+Prerequisites: a Railway account and the Railway CLI
+(`npm i -g @railway/cli`), authenticated via `railway login` (or a
+`RAILWAY_TOKEN` env var).
+
+Steps — run from this directory:
+```bash
+railway init          # create/link a project; make it a web service
+railway up            # uploads this exact directory and builds it
+```
+Railway runs the Dockerfile build, then starts the container with `npm start`.
+The `healthcheckPath: /health` in `railway.json` lets Railway mark the service
+healthy once the app responds (it returns `{"ok":true,"service":"ass-score"}`).
+
+Env vars to set on the service (see `.env.example`):
+- `PUBLIC_BASE_URL` — set to the public origin (`https://ass-score.com` once
+  the custom domain is wired; use the Railway `*.up.railway.app` domain until
+  then). Drives share links, result cards and report emails.
+- `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`,
+  `SMTP_FROM` — only if email delivery should be enabled; without `SMTP_HOST`
+  email is a no-op and scans still succeed. `EMAIL_SUBJECT` optionally
+  overrides the report subject.
+- `PORT` / `HOST` / `DB_PATH` / `NODE_ENV` — optional; the image defaults
+  (4000 / 0.0.0.0 / `./data/ass-score.db` / production) are fine, and Railway
+  overrides PORT itself.
+
+Ephemeral disk: Railway's default disk is ephemeral — the SQLite DB lives in
+`/app/data` and is **lost on every redeploy**. That is acceptable for now
+(scans are re-runnable, and the A.S.S. Score is deterministic — same input,
+same score). To persist scans across deploys, attach a Railway volume (e.g.
+mounted at `/data`) and set `DB_PATH=/data/ass-score.db`.
