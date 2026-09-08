@@ -10,6 +10,8 @@ import { createBudget } from '../budget.js';
 import { SsrfError, InvalidUrlError } from '../fetch/ssrf.js';
 import { FetchError } from '../fetch/client.js';
 import { validateWebhookUrl, createWebhookDeliverer } from '../webhook.js';
+import { validateBranding } from '../branding.js';
+import { validateEmail } from '../email.js';
 
 /** Per-scan time budget (ms): target fetch + discovery + additional fetches +
  *  similarity. When it elapses, in-flight work is aborted and whatever
@@ -24,23 +26,30 @@ const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
 /**
  * POST /api/v1/scan
- * Body: { "url": "https://example.com", "webhookUrl"?: "https://hooks.example.com/x" }
+ * Body: { "url": "https://example.com", "webhookUrl"?: "https://hooks.example.com/x",
+ *         "branding"?: { agencyName?, logoUrl?, accentColor?, footerText? },
+ *         "email"?: "owner@example.com" }
  *
  * Flow (phase 2):
  *   validate url (SSRF) -> validate optional webhookUrl (fail fast, BEFORE any
+ *   network I/O) -> validate optional branding + email (fail fast, BEFORE any
  *   network I/O) -> budget starts -> fetch target with re-checked redirects
  *   -> extract text -> discover up to 4 additional same-origin pages
  *   (sitemap first, link fallback; EVERY fetch through the same SSRF-safe
  *   Fetcher) -> fetch additional pages concurrently (budget abort) -> extract
  *   main content per page -> run 4 v1 rules on the target + per page (Worst
  *   Page) -> crossPage + fingerprints rules -> weighted score (renormalizes
- *   when crossPage is skipped) -> persist in SQLite -> async webhook -> JSON.
+ *   when crossPage is skipped) -> persist in SQLite (branding stored) ->
+ *   async webhook -> async best-effort email -> JSON.
  *
  * Response shape is unchanged from v1 (id, url, slopScore, breakdown,
- * createdAt) plus `pages`, `partial`, `note`, `worstPage` when multi-page.
- * The webhook payload is the exact response object.
+ * createdAt) plus `pages`, `partial`, `note`, `worstPage` when multi-page,
+ * plus `branding` when white-label branding was supplied.
+ * The webhook payload is the exact response object. The email (if requested)
+ * is delivered async + best-effort exactly like webhooks: failures are logged,
+ * never propagated to the caller.
  */
-export function scanRouter({ db, fetcher, now = () => new Date().toISOString(), webhookDeliverer, scanBudgetMs = SCAN_BUDGET_MS }) {
+export function scanRouter({ db, fetcher, now = () => new Date().toISOString(), webhookDeliverer, emailSender, scanBudgetMs = SCAN_BUDGET_MS }) {
   const r = Router();
   const deliver = webhookDeliverer ?? createWebhookDeliverer();
 
@@ -58,6 +67,18 @@ export function scanRouter({ db, fetcher, now = () => new Date().toISOString(), 
       const webhook = validateWebhookUrl(req.body?.webhookUrl);
       if (!webhook.ok) {
         return res.status(400).json({ error: { code: 'invalid_webhook_url', message: webhook.message } });
+      }
+
+      // Optional white-label branding. Invalid values are a 400 BEFORE scanning.
+      const branding = validateBranding(req.body?.branding);
+      if (!branding.ok) {
+        return res.status(400).json({ error: { code: 'invalid_branding', message: branding.message } });
+      }
+
+      // Optional delivery email. Invalid values are a 400 BEFORE scanning.
+      const mail = validateEmail(req.body?.email);
+      if (!mail.ok) {
+        return res.status(400).json({ error: { code: 'invalid_email', message: mail.message } });
       }
 
       // --- time budget (covers target fetch + discovery + additional fetches) --
@@ -192,6 +213,7 @@ export function scanRouter({ db, fetcher, now = () => new Date().toISOString(), 
       const createdAt = now();
       // Response object AND webhook payload — delivered bytes-exact as returned.
       const payload = { id, url: page.url, slopScore, breakdown, createdAt };
+      if (branding.branding) payload.branding = branding.branding;
       if (pages.length >= 2) {
         payload.pages = pages.map((p) => p.url);
         payload.worstPage = worstPage;
@@ -209,6 +231,7 @@ export function scanRouter({ db, fetcher, now = () => new Date().toISOString(), 
         partial: payload.partial,
         note: payload.note,
         worstPage: payload.worstPage,
+        branding: payload.branding,
       });
 
       if (webhook.url) {
@@ -218,6 +241,19 @@ export function scanRouter({ db, fetcher, now = () => new Date().toISOString(), 
             await deliver(payload, webhook.url);
           } catch (err) {
             console.error(`[webhook] delivery to ${webhook.url} for scan ${id} crashed:`, err?.message ?? err);
+          }
+        });
+      }
+
+      if (mail.email && emailSender) {
+        // Best-effort, non-blocking: same semantics as webhooks. The sender
+        // never rejects (missing SMTP config logs a no-op), so the response
+        // below is never affected.
+        setImmediate(async () => {
+          try {
+            await emailSender(payload, mail.email);
+          } catch (err) {
+            console.error(`[email] delivery to ${mail.email} for scan ${id} crashed:`, err?.message ?? err);
           }
         });
       }

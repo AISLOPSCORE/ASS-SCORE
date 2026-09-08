@@ -23,14 +23,22 @@ npm test           # node:test unit + API tests (no network required)
 
 ### `POST /api/v1/scan`
 
-Request (optionally with a callback `webhookUrl`):
+Request (optionally with a callback `webhookUrl`, white-label `branding`, and a
+delivery `email`):
 
 ```bash
 curl -s -X POST http://localhost:4000/api/v1/scan \
   -H 'content-type: application/json' \
   -d '{
     "url": "https://example.com",
-    "webhookUrl": "https://hooks.example.com/scan-complete"
+    "webhookUrl": "https://hooks.example.com/scan-complete",
+    "branding": {
+      "agencyName": "Acme Agency",
+      "logoUrl": "https://acme.example/logo.png",
+      "accentColor": "#336699",
+      "footerText": "Audit prepared by Acme Agency"
+    },
+    "email": "owner@example.com"
   }'
 ```
 
@@ -41,6 +49,13 @@ target is scanned. It is a callback URL, not a scan target, so the SSRF range
 checks are deliberately **not** applied to it; only scheme + host presence are
 validated (via `new URL`). Actual DNS/connectivity problems surface at delivery
 time and are logged, never propagated to the caller.
+
+`branding` is optional white-label report branding (see
+[White-label report branding](#white-label-report-branding)). `email` is an
+optional report-delivery address (see
+[Email delivery](#email-delivery)). Both are validated BEFORE any scanning;
+invalid values are `400 invalid_branding` / `400 invalid_email` with the scan
+never started.
 
 Response `200` (single-page site — the v1 shape, unchanged for single-page scans):
 
@@ -85,6 +100,8 @@ Multi-page scans add four top-level fields (all webhook-delivered too):
 | --- | --- | --- |
 | SSRF-blocked / invalid URL | `400` | private/loopback/link-local/reserved target, banned hostname, malformed URL |
 | Invalid webhook URL | `400` | `webhookUrl` present but not `http(s)://host...` (checked before scanning) |
+| Invalid branding | `400` | `branding` present but malformed (checked before scanning) |
+| Invalid email | `400` | `email` present but not an address (checked before scanning) |
 | Fetch failure | `502` | timeout (>10s), network error, body > 2 MB, too many redirects (>3) |
 | Parse failure | `422` | HTML could not be parsed or contained no extractable text |
 | Bad JSON | `400` | malformed request body |
@@ -120,6 +137,83 @@ Delivery semantics:
   `console.error` and is never surfaced in the scan response. The deliverer is
   injectable (`webhookDeliverer` option on the app/router factory) so tests can
   stub it.
+
+### White-label report branding
+
+Agencies can inject their own branding into a scan request; the metric stays
+the **A.S.S. Score** and the mandated disclaimer is never removed or obscured —
+white-label changes the chrome, not the score name or the disclaimer. `branding`
+is an optional object on `POST /api/v1/scan`:
+
+| Field | Type | Rules |
+| --- | --- | --- |
+| `agencyName` | string | 1–120 chars after trim; rendered as the report header (the "A.S.S. Score report" title + "powered by A.S.S. Score" line stay visible) |
+| `logoUrl` | string | must be an `http(s)` URL with a host; rendered as an `<img>` at the top of the HTML report (attrs escaped, scheme re-checked at render) |
+| `accentColor` | string | hex color `#rgb`, `#rrggbb` or `#rrggbbaa`; applied via inline style to the agency header and the score number |
+| `footerText` | string | 1–200 chars after trim; rendered as an extra footer line (the disclaimer + score id are always rendered too) |
+
+Unknown keys are ignored; empty-after-trim fields are dropped. Anything
+malformed (wrong types, non-http(s) logo, non-hex accent, over-long values)
+is `400 invalid_branding` **before** the scan starts. Missing `branding` =
+default A.S.S. Score branding.
+
+The normalized `branding` is persisted with the scan (SQLite `branding`
+TEXT/JSON column, added by an idempotent ALTER migration — old rows/`NULL`
+render the default report) and is included in:
+- the `POST /api/v1/scan` response (`branding` key, only when supplied),
+- the webhook payload (bytes-exact same object),
+- `GET /api/v1/scans/:id` JSON (`branding` key, when stored).
+
+The HTML report renders it (agency header, logo, accent color, footer); the
+share card renders only the `agencyName` as a small line under the product
+brand row — everything else on the card is unchanged. All branding values are
+HTML/XML-escaped (hostile values render as inert text; the report still shows
+the A.S.S. Score, the emoji category labels, and the disclaimer).
+
+### Email delivery
+
+If `POST /api/v1/scan` includes `email`, an email report is sent to that
+address **asynchronously after the 200 response**, with the same best-effort
+semantics as webhooks: it never blocks or fails the scan, failures are retried
+(up to 3 attempts, backoff 1 s / 3 s / 9 s) and logged, and delivery never
+rejects. `email` must look like an address — anything else is
+`400 invalid_email` before the scan. Missing/empty means no delivery.
+
+The email body is built by `src/email.js`: an "A.S.S. Score" brand header, the
+score, the scanned URL, the one-line verdict, a link to the public report
+(`{PUBLIC_BASE_URL}/scan/{id}`), and the mandated disclaimer, in plain text +
+a simple HTML body. Sender name is **A.S.S. Score**
+(`A.S.S. Score <no-reply@ass-score.com>`, overridable via `SMTP_FROM`).
+
+**Subject decision.** The owner spec asks to spam-test subject lines and keep a
+fallback ready. Real spam-testing needs a live SMTP provider, so the shipped
+default is the CONSERVATIVE primary `"Your website audit is ready"`
+(deliverability-safe: no emoji, no brand token, unlikely to trip filters). The
+branded variant `"Your A.S.S. Score is ready 🔴"` exists and is selectable via
+`EMAIL_SUBJECT` (or the `emailSubject` app option) — swap it in once the team
+inbox can A/B test against real delivery.
+
+**Required env vars at deploy (to turn email ON):**
+
+| Env | Meaning | Default |
+| --- | --- | --- |
+| `SMTP_HOST` | SMTP server (e.g. `smtp.postmarkapp.com`) | **unset → email is a no-op** |
+| `SMTP_PORT` | SMTP port | `587` (or `465` when `SMTP_SECURE=true`) |
+| `SMTP_SECURE` | `"true"` for implicit TLS on 465 | `false` |
+| `SMTP_USER` | auth username | — |
+| `SMTP_PASS` | auth password | — |
+| `SMTP_FROM` | sender address | `A.S.S. Score <no-reply@ass-score.com>` |
+| `EMAIL_SUBJECT` | subject line variant | `Your website audit is ready` |
+| `PUBLIC_BASE_URL` | report-link base | `https://ass-score.com` |
+
+**No credentials → nothing breaks.** When `SMTP_HOST` is missing or empty, the
+default sender is a no-op that logs `[email] email not configured (set
+SMTP_HOST/...)` and returns `{ ok: false, configured: false }` — the scan still
+succeeds with `200`. The transport (Nodemailer over SMTP, no TLS up until
+credentials exist) is injectable: the `emailSender` app option is an
+`async (scan, to) => result` function, so tests (and future swaps to other
+providers) stub or script the transport. No real email is ever sent unless
+`SMTP_*` credentials are present in the environment.
 
 ### `GET /api/v1/scans/:id`
 
@@ -166,6 +260,9 @@ curl -s http://localhost:4000/api/v1/scans/<id>/card -o card.png
   sha256-equal).
 - **SSRF/XML-safe**: every user-derived string (URL, verdict) is entity-escaped;
   a hostile URL cannot inject SVG markup (tested).
+- **White-label**: when the scan carried `branding.agencyName`, the card adds a
+  small agency line under the product brand row (escaped, elided to fit);
+  every other pixel is identical to the default card.
 - Invalid/missing id → `404` with the same JSON error shape as
   `GET /api/v1/scans/:id`.
 
@@ -309,10 +406,12 @@ Connect/read timeout 10 s; response body capped at 2 MB. See
 ```
 src/
   server.js          entry point (PORT, default 4000)
-  app.js             Express app factory (injectable db path + fetcher for tests)
+  app.js             Express app factory (injectable db path + fetcher +
+                     webhookDeliverer + emailSender for tests)
   budget.js          per-scan time budget (SCAN_BUDGET_MS, injectable)
   db.js              SQLite persistence (data/ass-score.db, gitignored; ALTER
-                     migration adds partial/note/worst_page for phase 2)
+                     migration adds partial/note/worst_page for phase 2 and
+                     branding for white-label reports)
   text.js            deterministic HTML -> text/sentences/words extraction +
                      extractMainText (main content only) + extractHead
   scorer.js          weighted 0–100 combination (+ renormalization when a module
@@ -323,12 +422,19 @@ src/
                      optional external AbortSignal for budget aborts
   routes/
     scan.js          POST /api/v1/scan (pipeline: target -> discovery -> additional
-                     fetches -> rules -> score; webhook; partial/pages/worstPage)
-    scans.js         GET /api/v1/scans/:id (+ HTML report: Worst Page,
-                     Templated Content sections) + /card + /share
+                     fetches -> rules -> score; branding/email validation;
+                     webhook + best-effort email; partial/pages/worstPage)
+    scans.js         GET /api/v1/scans/:id (+ HTML report: white-label branding,
+                     Worst Page, Templated Content sections) + /card + /share
   card.js            shareable result card: verdictFor() bands, SVG template,
-                     sharp PNG rasterizer (deterministic, no headless browser)
+                     sharp PNG rasterizer (deterministic, no headless browser;
+                     optional small agency-name line under the brand row)
   webhook.js         webhookUrl validation + async best-effort deliverer (retries)
+  branding.js        white-label branding validation/normalization (strict types,
+                     http(s) logo, hex accent; fail-fast 400 invalid_branding)
+  email.js           email validation + report content (plain+HTML) + async
+                     best-effort Nodemailer sender (SMTP_* env; no-op when
+                     SMTP_HOST is unset; subject config with conservative default)
   rules/
     index.js         runRules() aggregator (the four v1 rules)
     filler.js        Rule A   boilerplate.js   Rule B
@@ -340,9 +446,11 @@ src/
     fingerprints.json  extensible pattern list (no code changes to add entries)
 test/                node:test suites (ssrf, rules/scorer, API pipeline, webhook,
                      phase2: similarity/discovery/fingerprints/scorer + integration
-                     against local fixture sites incl. budget-expiry, and card:
+                     against local fixture sites incl. budget-expiry, card:
                      verdict bands, SVG escaping, PNG determinism + /card & /share
-                     integration)
+                     integration, branding: validation + report/card rendering +
+                     injection safety, email: validation + content + best-effort
+                     sender semantics)
 ```
 
 ## Docker (production: Node 20 on Alpine)
@@ -350,6 +458,13 @@ test/                node:test suites (ssrf, rules/scorer, API pipeline, webhook
 ```bash
 docker build -t ass-score .
 docker run --rm -p 4000:4000 -v "$(pwd)/data:/app/data" ass-score
+# Email delivery is OFF by default; pass SMTP_* env vars to enable it:
+docker run --rm -p 4000:4000 -v "$(pwd)/data:/app/data" \
+  -e SMTP_HOST=smtp.example.com -e SMTP_PORT=587 \
+  -e SMTP_USER=user -e SMTP_PASS=secret \
+  -e SMTP_FROM='A.S.S. Score <no-reply@ass-score.com>' \
+  -e EMAIL_SUBJECT='Your website audit is ready' \
+  -e PUBLIC_BASE_URL=https://ass-score.com ass-score
 ```
 
 > Note: `better-sqlite3` is a native module; the Alpine image installs
@@ -358,3 +473,4 @@ docker run --rm -p 4000:4000 -v "$(pwd)/data:/app/data" ass-score
 > linux-x64-musl on Node 20 (`@img/sharp-linuxmusl-x64`). The image also
 > installs `font-dejavu`: a RUNTIME dependency, because the share card
 > rasterizes SVG text server-side and Alpine has no fonts by default.
+> `nodemailer` is pure JS — no build step, no extra Alpine packages.

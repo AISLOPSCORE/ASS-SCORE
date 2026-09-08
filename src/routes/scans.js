@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { buildCardSvg, renderCardPng } from '../card.js';
+import { isHttpUrl } from '../branding.js';
 
 /**
  * GET /api/v1/scans/:id — fetch a stored scan.
@@ -46,6 +47,7 @@ export function scansRouter({ db, publicBaseUrl }) {
     if (typeof scan.partial === 'boolean') json.partial = scan.partial;
     if (typeof scan.note === 'string') json.note = scan.note;
     if (scan.worstPage) json.worstPage = scan.worstPage;
+    if (scan.branding) json.branding = scan.branding; // white-label branding used
     res.json(json);
   });
 
@@ -57,7 +59,11 @@ export function scansRouter({ db, publicBaseUrl }) {
     const scan = db.getScan(req.params.id);
     if (!scan) return missing(res, req.params.id);
     try {
-      const png = await renderCardPng(buildCardSvg({ score: scan.score, url: scan.url }));
+      const png = await renderCardPng(buildCardSvg({
+        score: scan.score,
+        url: scan.url,
+        agencyName: scan.branding?.agencyName, // white-label: small agency line only
+      }));
       res.set('Content-Type', 'image/png');
       res.set('Cache-Control', 'public, max-age=60');
       res.send(png);
@@ -111,6 +117,20 @@ const DISCLAIMER =
 /**
  * Render the HTML report.
  *
+ * White-label branding (optional, stored with the scan):
+ *   - agencyName  -> the report header shows the agency name; the metric
+ *                    label "A.S.S. Score" stays visible (title tag, "powered
+ *                    by" line + the score line below).
+ *   - logoUrl     -> <img> at the top, ONLY when it is an http(s) URL
+ *                    (re-checked at render, attrs escaped).
+ *   - accentColor -> inline style on the agency header + the A.S.S. Score
+ *                    number (only when it is a valid hex color).
+ *   - footerText  -> an extra footer line (the mandated disclaimer and the
+ *                    score id are always rendered, never replaced).
+ * Everything else renders byte-identical to the default report: the metric
+ * label, the emoji category labels, and the mandated disclaimer are ALWAYS
+ * present regardless of branding.
+ *
  * Sections (added in phase 2):
  *   - Worst Page: the fetched page with the highest combined score
  *     (0.7 × per-page v1 score + 0.3 × its duplication score; deterministic
@@ -122,6 +142,15 @@ const DISCLAIMER =
  * rendered as its note instead of a numeric row.
  */
 function renderHtmlReport(scan) {
+  // --- white-label branding (normalized + re-validated at render) -----------
+  const branding = scan.branding ?? {};
+  const agencyName = typeof branding.agencyName === 'string' ? branding.agencyName : '';
+  const logoUrl = isHttpUrl(branding.logoUrl) ? branding.logoUrl : '';
+  const accentColor = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(branding.accentColor ?? '')
+    ? branding.accentColor
+    : '';
+  const footerText = typeof branding.footerText === 'string' ? branding.footerText : '';
+
   const rows = Object.entries(scan.breakdown)
     .map(([key, rule]) => {
       if (Number.isFinite(Number(rule?.score))) {
@@ -173,6 +202,19 @@ function renderHtmlReport(scan) {
     ? `<p>Pages scanned: ${cross.pages.map((u) => `<a href="${esc(u)}">${esc(u)}</a>`).join(', ')}${scan.partial && scan.note ? ` · ${esc(scan.note)}` : ''}</p>`
     : '';
 
+  // --- white-label header (agency name, optional logo, accent color) --------
+  // The metric label "A.S.S. Score" is ALWAYS visible: in the <title>, in the
+  // "powered by" line when branded, and in the score line below.
+  const header = agencyName
+    ? `<h1${accentColor ? ` style="color:${accentColor};border-bottom:3px solid ${accentColor};display:inline-block;padding-bottom:.2rem"` : ''}>${esc(agencyName)}</h1>
+  <p class="powered">A.S.S. Score report · powered by <a href="https://ass-score.com">A.S.S. Score</a></p>`
+    : `<h1>A.S.S. Score report</h1>`;
+  const logo = logoUrl
+    ? `<img src="${esc(logoUrl)}" alt="${esc(agencyName || 'agency logo')}" style="max-height:56px;max-width:220px;display:block;margin:0 0 .75rem" />`
+    : '';
+  const scoreAccent = accentColor ? ` style="color:${accentColor}"` : '';
+  const footerLine = footerText ? `<p class="footer">${esc(footerText)}</p>` : '';
+
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -181,16 +223,19 @@ function renderHtmlReport(scan) {
   <style>
     body { font-family: system-ui, sans-serif; max-width: 760px; margin: 2rem auto; padding: 0 1rem; color: #1a202c; }
     h1 { font-size: 1.4rem; } h2 { font-size: 1.1rem; margin-top: 1.8rem; }
+    .powered { color: #64748b; font-size: .85rem; margin-top: -.25rem; }
     .score { font-size: 2.6rem; font-weight: 700; }
+    .footer { color: #64748b; font-size: .9rem; border-top: 1px solid #e2e8f0; padding-top: .75rem; margin-top: 1.5rem; }
     table { border-collapse: collapse; width: 100%; margin-top: 1rem; }
     th, td { border: 1px solid #cbd5e1; padding: .5rem .75rem; text-align: left; vertical-align: top; font-size: .9rem; }
     th { background: #f1f5f9; } ul { margin: 0; padding-left: 1.1rem; }
   </style>
 </head>
 <body>
-  <h1>A.S.S. Score report</h1>
+  ${logo}
+  ${header}
   <p><a href="${esc(scan.url)}">${esc(scan.url)}</a> · scanned ${esc(scan.created_at)}</p>
-  <p class="score">A.S.S. Score: ${Number(scan.score)} / 100</p>
+  <p class="score"${scoreAccent}>A.S.S. Score: ${Number(scan.score)} / 100</p>
   ${pagesLine}
   <table>
     <thead><tr><th>Rule</th><th>Score</th><th>Findings</th></tr></thead>
@@ -199,6 +244,7 @@ function renderHtmlReport(scan) {
   ${worstSection}
   ${templatedSection}
   <p class="disclaimer">${DISCLAIMER}</p>
+  ${footerLine}
   <p>Score id: <code>${esc(scan.id)}</code> · deterministic rule-based analysis, no AI models.</p>
 </body>
 </html>`;

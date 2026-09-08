@@ -3,6 +3,7 @@ import { openDb } from './db.js';
 import { Fetcher } from './fetch/client.js';
 import { scanRouter } from './routes/scan.js';
 import { scansRouter } from './routes/scans.js';
+import { createEmailSender } from './email.js';
 
 /**
  * Build the Express app. Options are injectable for tests:
@@ -10,21 +11,25 @@ import { scansRouter } from './routes/scans.js';
  *   fetcher         — object with fetchHtml(rawUrl) (default: SSRF-protected Fetcher)
  *   webhookDeliverer — async (scan, webhookUrl) => result (default: best-effort
  *                     POST with retries; tests inject a stub)
+ *   emailSender     — async (scan, to) => result (default: Nodemailer via
+ *                     SMTP_* env vars, or a no-op that logs "email not
+ *                     configured" when SMTP_HOST is absent; tests inject a stub)
  *   scanBudgetMs    — per-scan time budget covering target fetch + discovery
  *                     + additional fetches (default SCAN_BUDGET_MS; tests lower it)
  *   publicBaseUrl   — public origin used for share links and result pages
  *                     (default env PUBLIC_BASE_URL or https://ass-score.com)
  */
-export function createApp({ dbPath = './data/ass-score.db', fetcher, webhookDeliverer, scanBudgetMs, publicBaseUrl = process.env.PUBLIC_BASE_URL || 'https://ass-score.com' } = {}) {
+export function createApp({ dbPath = './data/ass-score.db', fetcher, webhookDeliverer, emailSender, scanBudgetMs, publicBaseUrl = process.env.PUBLIC_BASE_URL || 'https://ass-score.com' } = {}) {
   const db = openDb(dbPath);
   const fetcherImpl = fetcher ?? new Fetcher();
+  const emailSenderImpl = emailSender ?? createEmailSender({ publicBaseUrl });
 
   const app = express();
   app.disable('x-powered-by');
   app.use(express.json({ limit: '64kb' }));
 
   app.get('/health', (_req, res) => res.json({ ok: true, service: 'ass-score' }));
-  app.use(scanRouter({ db, fetcher: fetcherImpl, webhookDeliverer, scanBudgetMs }));
+  app.use(scanRouter({ db, fetcher: fetcherImpl, webhookDeliverer, emailSender: emailSenderImpl, scanBudgetMs }));
   app.use(scansRouter({ db, publicBaseUrl }));
 
   app.use((_req, res) => {

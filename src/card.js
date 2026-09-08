@@ -101,13 +101,23 @@ export function displayUrl(url, maxLen = 52) {
   return host + rest.slice(0, keepTail) + '…';
 }
 
+/** Truncate a single-line string with an ellipsis (for the agency line). */
+function elide(value, maxLen) {
+  const v = String(value);
+  return v.length <= maxLen ? v : `${v.slice(0, Math.max(0, maxLen - 1))}…`;
+}
+
 /**
  * Build the card as an SVG string. Fully deterministic — no timestamps, no
- * randomness: same (score, url) -> byte-identical SVG. All variable text is
- * entity-escaped (URL, verdict, disclaimer); the score is a validated
- * integer via clampScore().
+ * randomness: same (score, url, agencyName) -> byte-identical SVG. All
+ * variable text is entity-escaped (URL, verdict, agency name, disclaimer);
+ * the score is a validated integer via clampScore().
+ *
+ * `agencyName` is the white-label report option: when present, a small agency
+ * line renders under the product brand row. When absent, the SVG is exactly
+ * the default A.S.S. Score card.
  */
-export function buildCardSvg({ score, url }) {
+export function buildCardSvg({ score, url, agencyName }) {
   const s = clampScore(score);
   const color = scoreColor(s);
   const verdict = verdictFor(s);
@@ -115,6 +125,10 @@ export function buildCardSvg({ score, url }) {
   const footer = escapeXml('ass-score.com · A.S.S. Score (AI Slop Score)');
   const dl1 = escapeXml(DISCLAIMER_LINES[0]);
   const dl2 = escapeXml(DISCLAIMER_LINES[1]);
+  // Agency line: elided so it always fits one line (max 120 chars input).
+  const agencyLine = agencyName
+    ? `\n  <text x="64" y="92" font-family="'DejaVu Sans', sans-serif" font-size="14" font-weight="600" letter-spacing="1" fill="#94a3b8">${escapeXml(elide(agencyName, 48))}</text>`
+    : '';
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${CARD_WIDTH}" height="${CARD_HEIGHT}" viewBox="0 0 ${CARD_WIDTH} ${CARD_HEIGHT}" role="img" aria-label="A.S.S. Score ${s} out of 100 for ${escapeXml(String(url))}">
   <defs>
@@ -131,7 +145,7 @@ export function buildCardSvg({ score, url }) {
   <rect x="0.5" y="0.5" width="${CARD_WIDTH - 1}" height="${CARD_HEIGHT - 1}" fill="none" stroke="rgba(255,255,255,0.14)" stroke-width="1"/>
   <rect width="${CARD_WIDTH}" height="6" fill="url(#accent)"/>
   <text x="64" y="64" font-family="'DejaVu Sans', sans-serif" font-size="26" font-weight="700" letter-spacing="6" fill="#f8fafc">A.S.S. SCORE</text>
-  <text x="1136" y="64" text-anchor="end" font-family="'DejaVu Sans', sans-serif" font-size="17" letter-spacing="1" fill="#94a3b8">ass-score.com</text>
+  <text x="1136" y="64" text-anchor="end" font-family="'DejaVu Sans', sans-serif" font-size="17" letter-spacing="1" fill="#94a3b8">ass-score.com</text>${agencyLine}
   <text x="64" y="128" font-family="'DejaVu Sans', sans-serif" font-size="13" font-weight="600" letter-spacing="3" fill="#64748b">SCANNED WEBSITE</text>
   <text x="64" y="170" font-family="'DejaVu Sans', sans-serif" font-size="32" font-weight="600" fill="#e2e8f0">${scanned}</text>
   <rect x="64" y="196" width="1072" height="1" fill="rgba(255,255,255,0.08)"/>
