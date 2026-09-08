@@ -5,5 +5,5 @@ const host = process.env.HOST || '0.0.0.0';
 
 const app = createApp();
 app.listen(port, host, () => {
-  console.log(`AISlopScanner listening on http://${host}:${port}`);
+  console.log(`A.S.S. Score listening on http://${host}:${port}`);
 });

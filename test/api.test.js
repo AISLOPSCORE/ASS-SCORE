@@ -118,7 +118,17 @@ test('GET /api/v1/scans/:id returns the scan and renders HTML on request', async
   assert.match(resHtml.headers.get('content-type'), /text\/html/);
   const html = await resHtml.text();
   assert.match(html, /<!doctype html/i);
-  assert.match(html, /Slop Score: /);
+  // Branding: the user-facing report names the product A.S.S. Score, renders
+  // emoji-tagged category labels, and carries the mandated disclaimer verbatim.
+  assert.match(html, /A\.S\.S\. Score: /);
+  assert.ok(html.includes('🤖 AI-like copy'), 'report shows branded emoji category labels');
+  assert.ok(html.includes('🔁 Duplicate language across pages'), 'report shows crossPage under its branded label');
+  assert.ok(
+    html.includes(
+      'This tool identifies writing and design patterns commonly associated with generic or templated content. It does not detect AI authorship and is not proof that any content was AI-generated.'
+    ),
+    'report carries the mandated disclaimer'
+  );
 });
 
 test('GET /api/v1/scans/:id missing -> 404', async () => {

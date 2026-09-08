@@ -101,7 +101,7 @@ export function createWebhookDeliverer({
           method: 'POST',
           headers: {
             'content-type': 'application/json',
-            'x-aislopscanner-scan-id': scan.id,
+            'x-ass-score-scan-id': scan.id,
           },
           body,
           signal: ctrl.signal,

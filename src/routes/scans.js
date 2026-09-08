@@ -51,6 +51,26 @@ function esc(v) {
 }
 
 /**
+ * Branded, emoji-tagged display labels for the breakdown categories.
+ * Display layer only — the JSON API keys stay exactly as built (filler,
+ * boilerplate, infoDensity, repetitive, crossPage, fingerprints).
+ */
+const CATEGORY_LABELS = {
+  filler: '🤖 AI-like copy',
+  boilerplate: '🥱 Generic marketing language',
+  infoDensity: '📋 Repeated/template content',
+  repetitive: '🧱 Generic page structures',
+  crossPage: '🔁 Duplicate language across pages',
+  fingerprints: '🎨 AI-looking design patterns',
+};
+
+/**
+ * Mandated user-facing disclaimer. Appears on every HTML report, verbatim.
+ */
+const DISCLAIMER =
+  'This tool identifies writing and design patterns commonly associated with generic or templated content. It does not detect AI authorship and is not proof that any content was AI-generated.';
+
+/**
  * Render the HTML report.
  *
  * Sections (added in phase 2):
@@ -69,7 +89,7 @@ function renderHtmlReport(scan) {
       if (Number.isFinite(Number(rule?.score))) {
         return `
       <tr>
-        <td>${esc(key)}</td>
+        <td>${esc(CATEGORY_LABELS[key] ?? key)}</td>
         <td>${Number(rule.score)}</td>
         <td><ul>${(rule.findings ?? []).map((f) => `<li>${esc(f)}</li>`).join('')}</ul></td>
       </tr>`;
@@ -78,7 +98,7 @@ function renderHtmlReport(scan) {
       const note = rule?.note ? esc(rule.note) : 'skipped';
       return `
       <tr>
-        <td>${esc(key)}</td>
+        <td>${esc(CATEGORY_LABELS[key] ?? key)}</td>
         <td>—</td>
         <td><em>${note}</em></td>
       </tr>`;
@@ -119,7 +139,7 @@ function renderHtmlReport(scan) {
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>AISlopScanner report</title>
+  <title>A.S.S. Score report</title>
   <style>
     body { font-family: system-ui, sans-serif; max-width: 760px; margin: 2rem auto; padding: 0 1rem; color: #1a202c; }
     h1 { font-size: 1.4rem; } h2 { font-size: 1.1rem; margin-top: 1.8rem; }
@@ -130,9 +150,9 @@ function renderHtmlReport(scan) {
   </style>
 </head>
 <body>
-  <h1>AISlopScanner report</h1>
+  <h1>A.S.S. Score report</h1>
   <p><a href="${esc(scan.url)}">${esc(scan.url)}</a> · scanned ${esc(scan.created_at)}</p>
-  <p class="score">Slop Score: ${Number(scan.score)} / 100</p>
+  <p class="score">A.S.S. Score: ${Number(scan.score)} / 100</p>
   ${pagesLine}
   <table>
     <thead><tr><th>Rule</th><th>Score</th><th>Findings</th></tr></thead>
@@ -140,6 +160,7 @@ function renderHtmlReport(scan) {
   </table>
   ${worstSection}
   ${templatedSection}
+  <p class="disclaimer">${DISCLAIMER}</p>
   <p>Score id: <code>${esc(scan.id)}</code> · deterministic rule-based analysis, no AI models.</p>
 </body>
 </html>`;

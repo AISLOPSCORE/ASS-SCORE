@@ -1,7 +1,7 @@
 {
-  "name": "aislopscanner",
+  "name": "ass-score",
   "version": "0.1.0",
-  "description": "Deterministic rule-based Slop Score scanner for public websites. No AI models.",
+  "description": "Deterministic A.S.S. Score (AI Slop Score) scanner for public websites. No AI models.",
   "type": "module",
   "main": "src/server.js",
   "engines": {

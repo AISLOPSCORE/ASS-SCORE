@@ -1,4 +1,4 @@
-# AISlopScanner production image — Node 20 on Alpine
+# A.S.S. Score production image — Node 20 on Alpine
 FROM node:20-alpine
 
 # better-sqlite3 has no musl prebuilds, so we need a C toolchain to compile it.

@@ -1,9 +1,15 @@
-# AISlopScanner
+# A.S.S. Score
 
-Deterministic, rule-based **Slop Score** scanner for public websites. No AI models,
-no LLM calls, no external scoring APIs — the same URL in yields the same score, every
-time. A micro-SaaS service: submit a URL over HTTP, get a 0–100 score with a
-per-rule breakdown, stored in SQLite. Same input → same score, every run.
+Deterministic, rule-based **A.S.S. Score (AI Slop Score)** scanner for public
+websites, at **ass-score.com**. No AI models, no LLM calls, no external scoring
+APIs — the same URL in yields the same score, every time. A micro-SaaS service:
+submit a URL over HTTP, get a 0–100 A.S.S. Score with a per-rule breakdown,
+stored in SQLite. Same input → same score, every run.
+
+The metric is named the **A.S.S. Score** consistently across the product;
+"AI Slop Score" appears only descriptively/parenthetically for SEO clarity. The
+tool never asserts AI authorship — findings are pattern-based ("template-like",
+"AI-builder-associated", "duplicated across N pages").
 
 ## Quickstart
 
@@ -100,7 +106,7 @@ Request the webhook endpoint receives:
 ```
 POST <webhookUrl>
 Content-Type: application/json
-X-AISlopScanner-Scan-Id: <scan id>
+X-Ass-Score-Scan-Id: <scan id>
 ```
 
 Delivery semantics:
@@ -118,7 +124,18 @@ Delivery semantics:
 ### `GET /api/v1/scans/:id`
 
 Returns a stored scan as JSON, or a simple HTML report when the client sends
-`Accept: text/html`. The report renders the per-rule table (a module with
+`Accept: text/html`. The report is branded: the headline metric is the
+**A.S.S. Score**, the breakdown rows carry emoji-tagged category labels
+(e.g. `🤖 AI-like copy`, `🔁 Duplicate language across pages` — display only;
+the JSON keys stay `filler`/`boilerplate`/`infoDensity`/`repetitive`/
+`crossPage`/`fingerprints`), and every report carries the mandated disclaimer
+verbatim:
+
+> This tool identifies writing and design patterns commonly associated with
+> generic or templated content. It does not detect AI authorship and is not
+> proof that any content was AI-generated.
+
+The report renders the per-rule table (a module with
 `score: null` shows its note instead of a number) plus two phase-2 sections:
 
 - **Worst Page** — the fetched page with the highest combined score
@@ -127,7 +144,7 @@ Returns a stored scan as JSON, or a simple HTML report when the client sends
 - **Templated Content** — the flagged duplication pairs (both URLs + similarity
   percentage) from `crossPage.pairs`.
 
-## How the Slop Score works
+## How the A.S.S. Score works
 
 Six deterministic rules run over the extracted page text (and, for crossPage,
 over main content of several pages), each returning a score and findings:
@@ -235,7 +252,7 @@ src/
   server.js          entry point (PORT, default 4000)
   app.js             Express app factory (injectable db path + fetcher for tests)
   budget.js          per-scan time budget (SCAN_BUDGET_MS, injectable)
-  db.js              SQLite persistence (data/aislopscanner.db, gitignored; ALTER
+  db.js              SQLite persistence (data/ass-score.db, gitignored; ALTER
                      migration adds partial/note/worst_page for phase 2)
   text.js            deterministic HTML -> text/sentences/words extraction +
                      extractMainText (main content only) + extractHead
@@ -268,8 +285,8 @@ test/                node:test suites (ssrf, rules/scorer, API pipeline, webhook
 ## Docker (production: Node 20 on Alpine)
 
 ```bash
-docker build -t aislopscanner .
-docker run --rm -p 4000:4000 -v "$(pwd)/data:/app/data" aislopscanner
+docker build -t ass-score .
+docker run --rm -p 4000:4000 -v "$(pwd)/data:/app/data" ass-score
 ```
 
 > Note: `better-sqlite3` is a native module; the Alpine image installs

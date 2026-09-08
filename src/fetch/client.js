@@ -3,7 +3,7 @@ import { validateUrl, resolveAndCheck } from './ssrf.js';
 const CONNECT_TIMEOUT_MS = 10_000; // hard connect + read timeout
 const MAX_BODY_BYTES = 2 * 1024 * 1024; // 2 MB response body cap
 const MAX_REDIRECTS = 3; // max redirect hops, each hop re-validated against SSRF rules
-const USER_AGENT = 'AISlopScanner/0.1 (deterministic rule-based scanner)';
+const USER_AGENT = 'A.S.S.Score/0.1 (deterministic rule-based scanner)';
 
 export class FetchError extends Error {
   constructor(message) { super(message); this.name = 'FetchError'; }

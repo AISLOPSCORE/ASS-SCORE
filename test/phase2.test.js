@@ -523,11 +523,17 @@ test('integration: multi-page scan flags duplication, runs fingerprints, reports
   const resHtml = await fetch(`${api.base}/api/v1/scans/${json.id}`, { headers: { accept: 'text/html' } });
   assert.equal(resHtml.status, 200);
   const html = await resHtml.text();
-  assert.match(html, /Slop Score: /);
+  assert.match(html, /A\.S\.S\. Score: /);
+  assert.ok(
+    html.includes(
+      'This tool identifies writing and design patterns commonly associated with generic or templated content. It does not detect AI authorship and is not proof that any content was AI-generated.'
+    ),
+    'report carries the mandated disclaimer'
+  );
+  assert.ok(html.includes('🔁 Duplicate language across pages'), 'crossPage renders under its branded emoji label');
   assert.match(html, /Worst Page/);
   assert.match(html, /Templated Content/);
   assert.match(html, /similar/);
-  assert.match(html, /crossPage/);
 
   // determinism: two consecutive runs produce identical scores + pairs
   const res2 = await postScan(api.base, `${multiBase}/`);

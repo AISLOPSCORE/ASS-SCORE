@@ -1,5 +1,5 @@
 /**
- * Overall Slop Score: weighted combination of the rule scores, clamped and
+ * Overall A.S.S. Score: weighted combination of the rule scores, clamped and
  * rounded to an integer in 0–100. Deterministic: identical rule scores always
  * produce an identical overall score.
  *

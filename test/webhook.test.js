@@ -199,7 +199,7 @@ test('integration: a real 127.0.0.1 webhook endpoint receives the exact scan JSO
         method: req.method,
         url: req.url,
         contentType: req.headers['content-type'],
-        scanId: req.headers['x-aislopscanner-scan-id'],
+        scanId: req.headers['x-ass-score-scan-id'],
         body: data,
       });
       res.writeHead(200, { 'content-type': 'application/json' });
@@ -225,7 +225,7 @@ test('integration: a real 127.0.0.1 webhook endpoint receives the exact scan JSO
   assert.equal(msg.method, 'POST');
   assert.equal(msg.url, '/hook?token=abc');
   assert.match(String(msg.contentType), /application\/json/);
-  assert.equal(msg.scanId, json.id, 'X-AISlopScanner-Scan-Id header');
+  assert.equal(msg.scanId, json.id, 'X-Ass-Score-Scan-Id header');
   assert.deepEqual(JSON.parse(msg.body), json, 'webhook body equals the scan response JSON');
 });
 
@@ -251,7 +251,7 @@ test('deliverer: POSTs the exact JSON body with the right headers', async () => 
   assert.equal(captured.url, 'https://hooks.example.com/x');
   assert.equal(captured.init.method, 'POST');
   assert.equal(captured.init.headers['content-type'], 'application/json');
-  assert.equal(captured.init.headers['x-aislopscanner-scan-id'], 'scan-1');
+  assert.equal(captured.init.headers['x-ass-score-scan-id'], 'scan-1');
   assert.equal(captured.init.body, JSON.stringify(scan('scan-1')));
 });
 
