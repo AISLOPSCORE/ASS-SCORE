@@ -25,25 +25,29 @@ export function openDb(dbPath) {
     );
   `);
 
-  // Migration for phase-2 fields + branding (additive; idempotent).
+  // Migration for phase-2 fields + branding + roast (additive; idempotent).
   const cols = db.prepare('PRAGMA table_info(scans)').all().map((c) => c.name);
   if (!cols.includes('partial')) db.exec('ALTER TABLE scans ADD COLUMN partial INTEGER');
   if (!cols.includes('note')) db.exec('ALTER TABLE scans ADD COLUMN note TEXT');
   if (!cols.includes('worst_page')) db.exec('ALTER TABLE scans ADD COLUMN worst_page TEXT');
   if (!cols.includes('branding')) db.exec('ALTER TABLE scans ADD COLUMN branding TEXT');
+  // Slop Roast: the personality line. Nullable — rows written before this
+  // column existed load with roast null, and the read path derives the roast
+  // deterministically from the stored id + breakdown (see routes/scans.js).
+  if (!cols.includes('roast')) db.exec('ALTER TABLE scans ADD COLUMN roast TEXT');
 
   const insertStmt = db.prepare(
-    'INSERT INTO scans (id, url, score, breakdown, created_at, partial, note, worst_page, branding) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    'INSERT INTO scans (id, url, score, breakdown, created_at, partial, note, worst_page, branding, roast) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
   );
   const getStmt = db.prepare(
-    'SELECT id, url, score, breakdown, created_at, partial, note, worst_page, branding FROM scans WHERE id = ?'
+    'SELECT id, url, score, breakdown, created_at, partial, note, worst_page, branding, roast FROM scans WHERE id = ?'
   );
 
   return {
     /**
      * @param {{ id: string, url: string, score: number, breakdown: object,
      *           createdAt: string, partial?: boolean, note?: string,
-     *           worstPage?: object, branding?: object }} scan
+     *           worstPage?: object, branding?: object, roast?: string }} scan
      */
     insertScan(scan) {
       insertStmt.run(
@@ -56,9 +60,10 @@ export function openDb(dbPath) {
         scan.note ?? null,
         scan.worstPage === undefined ? null : JSON.stringify(scan.worstPage),
         scan.branding === undefined || scan.branding === null ? null : JSON.stringify(scan.branding),
+        scan.roast ?? null,
       );
     },
-    /** @returns {null | { id, url, score, breakdown, created_at, partial, note, worstPage, branding }} */
+    /** @returns {null | { id, url, score, breakdown, created_at, partial, note, worstPage, branding, roast }} */
     getScan(id) {
       const row = getStmt.get(id);
       if (!row) return null;
@@ -68,6 +73,7 @@ export function openDb(dbPath) {
         partial: row.partial === null ? undefined : Boolean(row.partial),
         worstPage: row.worst_page ? JSON.parse(row.worst_page) : undefined,
         branding: row.branding ? JSON.parse(row.branding) : undefined,
+        roast: row.roast ?? undefined,
       };
     },
     close() {

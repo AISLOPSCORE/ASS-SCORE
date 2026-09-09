@@ -1,0 +1,159 @@
+{
+  "_comment": "A.S.S. Score 'Slop Roast' copy pools. Config-driven like fingerprints.json: edit copy here, NO code changes needed. One pool per breakdown key (filler, boilerplate, infoDensity, repetitive, crossPage, fingerprints) plus 'clean' for mostly-good sites. Selection (src/roast.js): seeded by the scan id (deterministic, never random); the pool is chosen from the breakdown category that contributed the most weighted points to the overall score (see README 'Slop Roast'). Copy rules: loud/cheeky/meme tone, 1-2 sentences, pattern-based only — never assert AI authorship as fact (no 'was written by AI'-type claims). The mandated disclaimer on every report covers the score itself.",
+  "pools": {
+    "filler": {
+      "emoji": "🤖",
+      "label": "AI-like copy",
+      "lines": [
+        "Your copy is 60% buzzwords and 40% confidence in absolutely nothing. Honestly? Impressive.",
+        "'Revolutionize the landscape' — bold words from a page that has said nothing yet.",
+        "This page talks about synergy so much it might need couples counseling.",
+        "Leveraging robust solutions to unlock seamless experiences… ma'am, this is a website.",
+        "Your text is so generic it politely introduced itself and then left without saying anything.",
+        "Cutting-edge. Seamless. Empower. That's not a paragraph, that's a bingo card.",
+        "'In today's fast-paced world' — did you time-travel here from 2014?",
+        "Your copy says 'innovative' more often than it says anything else, and the algorithm senses this.",
+        "Unlock, unleash, elevate — your thesaurus is doing all the writing.",
+        "This reads like a mission statement written by a very confident vending machine.",
+        "Fifty words of content, forty of them verbs corporate culture told us to love.",
+        "You've discovered the secret to saying a great deal of nothing with maximum confidence.",
+        "Every sentence is a synonym for 'we exist'. We get it. You exist.",
+        "Your homepage runs on 'furthermore', 'moreover', and pure vibes.",
+        "This copy is so polished it's slippery. Nothing sticks to it.",
+        "Best-in-class, industry-leading, state-of-the-art — and yet, not one single fact."
+      ]
+    },
+    "boilerplate": {
+      "emoji": "🥱",
+      "label": "Generic marketing language",
+      "lines": [
+        "We use cookies to enhance your browsing experience. We also use them because every site says that.",
+        "Your legal page has more personality than your homepage, and that is a problem.",
+        "Subscribe to our newsletter. Follow us on Twitter. All rights reserved. Copy, paste, and scene.",
+        "'We are committed to excellence' — a sentence with the originality of a default printer font.",
+        "Your banner says 'your privacy matters to us'. Does it? Or did a template say it first?",
+        "This site has boilerplate so thick you could build a house out of it.",
+        "'Terms and conditions apply' — they always do. Especially to original content, which you've skipped.",
+        "The cookie pop-up is the most emotionally expressive part of this website.",
+        "Standard legal text, standard marketing text, and in between: nothing custom at all.",
+        "Your site reads like every 'About Us' page that was ever copy-pasted.",
+        "We value your privacy, we respect your data, and we also ran out of things to say.",
+        "'Empowering businesses worldwide' — that exact sentence lives on 40,000 other sites. We saw it on the way here.",
+        "Your footer has more compliance links than your content has sentences.",
+        "This page is 30% 'get in touch today' and 70% waiting-room ambience.",
+        "'We're dedicated to providing the best possible experience' — the conversational equivalent of elevator music.",
+        "Seamless onboarding, personalized service, enterprise-grade solutions — presumably one of these is a real thing you do."
+      ]
+    },
+    "infoDensity": {
+      "emoji": "📋",
+      "label": "Thin, low-information content",
+      "lines": [
+        "Your content is so thin we can see the next page through it.",
+        "Every paragraph is two lines long and one of them is a heading. Bold strategy.",
+        "This page has the information density of a fortune cookie, minus the enlightenment.",
+        "Your site says a lot of words, and none of them are carrying any luggage.",
+        "Word salad with extra dressing — and the dressing is also words.",
+        "Your about page has the depth of a parking-lot puddle in a drought.",
+        "'Elevate your brand' — elevate it to where, exactly? A word cloud?",
+        "Short sentences. Shorter paragraphs. Shortest on substance.",
+        "This reads like the outline of a website nobody has written yet.",
+        "Your content is a smoothie with no fruit in it. It's just ice.",
+        "Ten sections, two sentences each, zero facts. Respect the hustle.",
+        "The page is all filler and no signal, like a radio station at 3am.",
+        "Your text occupies space the way fog does — everywhere, and nothing.",
+        "We read your entire homepage in ninety seconds and learned one thing: it exists.",
+        "This is the kind of content you skim, then realize you didn't miss anything.",
+        "Your copy is a talented mime — lots of gestures, absolutely no words."
+      ]
+    },
+    "repetitive": {
+      "emoji": "🧱",
+      "label": "Repetitive structure",
+      "lines": [
+        "Every paragraph starts like the last one. It's a very committed website.",
+        "Your page has one idea, and it reintroduces itself at the start of every sentence.",
+        "Ctrl+C, Ctrl+V, and a prayer that nobody scrolls twice.",
+        "Your sentences repeat so often they're practically a chorus now.",
+        "Structure-wise, this site is a brick wall that really likes itself.",
+        "'We provide', 'we offer', 'we deliver' — was there a fourth one? We'll never know; you ran out.",
+        "Your paragraphs are so structurally identical they could be twins. Or clones. Or a typo in the matrix.",
+        "Every section is the same rectangle wearing different clip-art energy.",
+        "Your content loops like a pre-roll ad you can't skip.",
+        "Repeat after us: your site repeats. A lot.",
+        "The layout is a grid of same-shaped boxes, and each box says the same thing differently.",
+        "Your blog posts are the same post wearing different hats.",
+        "Same intro, same rhythm, same everything — this page has commitment issues.",
+        "If your page structure were a song, it would be one note, very loud, for a very long time.",
+        "Every card, every section, every heading — one layout, infinite reruns.",
+        "Your site is like a photocopier that got emotionally attached to page one."
+      ]
+    },
+    "crossPage": {
+      "emoji": "🔁",
+      "label": "Duplicate language across pages",
+      "lines": [
+        "Your pages are so similar they should start a podcast called 'We're Basically the Same Site'.",
+        "Every page on your site is the same page in a slightly different coat.",
+        "Two pages, one content, zero shame.",
+        "Your sitemap is less a map and more a list of echoes.",
+        "We scanned five pages and found one. The other four were on a loop.",
+        "Your about page and your blog share a brain cell — and it's the same sentence.",
+        "If your pages were a band, they'd be a cover band covering themselves.",
+        "Ninety-eight percent identical? That's not a website, that's a copy shop.",
+        "Your site doesn't have pages. It has tabs of the same document.",
+        "The front page and the rest of your site are basically roommates at this point.",
+        "Your website has one idea, and it's on all five pages holding different doors open.",
+        "These pages are so alike they finish each other's — sentences. Because they are the same sentences.",
+        "The nav changes, the text doesn't. We noticed. Your visitors notice too.",
+        "Your site is one page with delusions of a menu.",
+        "We found near-identical pages. We're not mad — just impressed by the commitment to sameness.",
+        "Every page on this site went to the same template school and graduated top of its class."
+      ]
+    },
+    "fingerprints": {
+      "emoji": "🎨",
+      "label": "AI-looking design patterns",
+      "lines": [
+        "Your site is wearing a very recognizable template. Fashion-forward? We guess.",
+        "A builder's signature is all over this. The autograph is hard to miss.",
+        "Your design came from a menu, and it picked the default.",
+        "This layout has been seen at 11:30am on 12,000 other sites. Say hi to your twin.",
+        "Your site has the vibe of a demo project that never got its custom paint job.",
+        "The template says 'trust us, we look professional'. It's been saying that since 2021.",
+        "Your design is a hand-me-down from a more confident website.",
+        "There's a neon sign above your site flashing 'builder default'. It's subtle.",
+        "Your site looks like it came assembled, not designed.",
+        "Every element is in its template-approved place. Too approved, honestly.",
+        "Your hero section is the same hero we've seen save five thousand other websites.",
+        "This site was put together with the precision of someone choosing 'defer to the template'.",
+        "Your design says 'we have a brand'. The template says 'we have a template'.",
+        "The stock photo of hands shaking is the most authentic thing here.",
+        "Generic icon set, gradient hero, rounded cards — the starter pack, fully equipped.",
+        "Your site was assembled from an inspiration folder, and the folder was a default theme."
+      ]
+    },
+    "clean": {
+      "emoji": "✨",
+      "label": "Mostly clean",
+      "lines": [
+        "Clean score, clean conscience. Your website barely has any A.S.S. and it shows.",
+        "Your site is mostly original, mostly focused, and mostly — we mean this lovingly — not A.S.S.",
+        "We dug for slop and found a tidy garden instead. Respect.",
+        "Low slop detected. Your website is suspiciously well-behaved.",
+        "This site's worst crime is being a little forgettable, and frankly that's fine.",
+        "A mostly clean scan — we had to stretch to find something to complain about.",
+        "Your website is the designated driver of the internet. Nothing but respect.",
+        "Not much A.S.S. here. Almost disappointing. Almost.",
+        "The slop meter barely twitched. Your content must have actual thoughts in it.",
+        "We came for slop and found a website with actual, real, human-plausible content. We were not prepared.",
+        "Your site is fine. Like, genuinely fine. We're a little thrown.",
+        "Clean enough that even the template-averse are impressed.",
+        "Low on the slop, high on keeping it together. A rare combo.",
+        "We rated your website and it did not embarrass itself. Cherish this moment.",
+        "Your A.S.S. is minimal today. The internet says thanks.",
+        "This page committed no crimes. We checked. Twice."
+      ]
+    }
+  }
+}

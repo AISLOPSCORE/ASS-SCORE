@@ -1,6 +1,25 @@
 import { Router } from 'express';
 import { buildCardSvg, renderCardPng } from '../card.js';
 import { isHttpUrl } from '../branding.js';
+import { selectRoast, selectRoastInfo } from '../roast.js';
+
+/**
+ * The stored line when the row has one; for rows written before the roast
+ * column existed (roast null), derive it deterministically from the stored
+ * id + score + breakdown — the same function the scan pipeline used, so the
+ * result is identical to what a fresh scan would have stored.
+ */
+function roastFor(scan) {
+  if (typeof scan.roast === 'string' && scan.roast.trim() !== '') return scan.roast;
+  return selectRoast({ id: scan.id, slopScore: scan.score, breakdown: scan.breakdown });
+}
+
+/** Roast info (pool emoji/label + line) with the stored-line override. */
+function roastInfoFor(scan) {
+  const info = selectRoastInfo({ id: scan.id, slopScore: scan.score, breakdown: scan.breakdown });
+  if (typeof scan.roast === 'string' && scan.roast.trim() !== '') info.line = scan.roast;
+  return info;
+}
 
 /**
  * GET /api/v1/scans/:id — fetch a stored scan.
@@ -36,6 +55,7 @@ export function scansRouter({ db, publicBaseUrl }) {
       url: scan.url,
       slopScore: scan.score,
       breakdown: scan.breakdown,
+      roast: roastFor(scan),
       createdAt: scan.created_at,
     };
     if (Array.isArray(scan.breakdown?.crossPage?.pages) && scan.breakdown.crossPage.pages.length >= 2) {
@@ -63,6 +83,7 @@ export function scansRouter({ db, publicBaseUrl }) {
         score: scan.score,
         url: scan.url,
         agencyName: scan.branding?.agencyName, // white-label: small agency line only
+        roast: roastFor(scan),
       }));
       res.set('Content-Type', 'image/png');
       res.set('Cache-Control', 'public, max-age=60');
@@ -142,6 +163,13 @@ const DISCLAIMER =
  * rendered as its note instead of a numeric row.
  */
 function renderHtmlReport(scan) {
+  // --- Slop Roast: the personality line, emoji-tagged like other findings. ---
+  // Deterministic per scan id; stored on the scan, derived for pre-roast rows.
+  const roastInfo = roastInfoFor(scan);
+  const roastSection = `
+  <h2>Slop Roast</h2>
+  <p class="roast">${roastInfo.emoji} ${esc(roastInfo.line)}</p>`;
+
   // --- white-label branding (normalized + re-validated at render) -----------
   const branding = scan.branding ?? {};
   const agencyName = typeof branding.agencyName === 'string' ? branding.agencyName : '';
@@ -225,6 +253,7 @@ function renderHtmlReport(scan) {
     h1 { font-size: 1.4rem; } h2 { font-size: 1.1rem; margin-top: 1.8rem; }
     .powered { color: #64748b; font-size: .85rem; margin-top: -.25rem; }
     .score { font-size: 2.6rem; font-weight: 700; }
+    .roast { font-size: 1.15rem; font-weight: 600; margin: .75rem 0 .25rem; }
     .footer { color: #64748b; font-size: .9rem; border-top: 1px solid #e2e8f0; padding-top: .75rem; margin-top: 1.5rem; }
     table { border-collapse: collapse; width: 100%; margin-top: 1rem; }
     th, td { border: 1px solid #cbd5e1; padding: .5rem .75rem; text-align: left; vertical-align: top; font-size: .9rem; }
@@ -236,6 +265,7 @@ function renderHtmlReport(scan) {
   ${header}
   <p><a href="${esc(scan.url)}">${esc(scan.url)}</a> · scanned ${esc(scan.created_at)}</p>
   <p class="score"${scoreAccent}>A.S.S. Score: ${Number(scan.score)} / 100</p>
+  ${roastSection}
   ${pagesLine}
   <table>
     <thead><tr><th>Rule</th><th>Score</th><th>Findings</th></tr></thead>

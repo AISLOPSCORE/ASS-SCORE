@@ -385,6 +385,33 @@ Durable script & CDN origins, Replit badge, meta generator tags declaring a
 builder, "Made with &lt;builder&gt;" footers, Unsplash stock imagery, placeholder-image
 services, Font Awesome default icons); no fabricated fingerprints.
 
+### Slop Roast
+Every scan gets a punchy on-brand one-liner (the "roast") on top of the score.
+It is **deterministic, never random, and never an AI-authorship claim**: the
+copy pokes at the *evidence* the rules found (template-like wording, duplicated
+pages, thin content, builder fingerprints).
+
+- **Pools file:** `src/roasts.json` — one pool per breakdown category
+  (`filler`, `boilerplate`, `infoDensity`, `repetitive`, `crossPage`,
+  `fingerprints`) plus `clean` for mostly-good sites. Each pool has an `emoji`,
+  a `label`, and 15–20 `lines` (1–2 sentences each, ≤180 chars, no factual
+  "was written by AI" phrasing — enforced by `test/roast.test.js`).
+- **Selection rule** (`src/roast.js`): the pool is picked from the breakdown
+  category with the highest *weighted* contribution to the score (same math as
+  `computeSlopScore`), provided it clears a 4.0 weighted-point dominance floor
+  and the overall score is ≥ 20; otherwise the `clean` pool wins. The exact
+  line is chosen by a deterministic FNV-1a hash of the scan id — same id, same
+  line, forever; different scans usually land on different lines.
+- **How to edit copy:** edit `src/roasts.json` only — no code changes. Keep
+  each line 1–2 sentences, ≤180 chars, loud but evidence-based. The chosen
+  line is stored on the scan row (`roast` column, nullable: pre-roast rows
+  derive it on read) and surfaces in the JSON response, webhook payload, HTML
+  report, and share-card PNG alike.
+- **Escaping:** the card SVG and HTML report escape the roast like all other
+  variable text (`'` → `&apos;` in the SVG; apostrophes stay literal in the
+  HTML text node); sharp resolves the entities back to glyphs when it
+  rasterizes the card, so users always see the literal apostrophe.
+
 ## SSRF protection
 
 Hard requirement: the scanner must never reach internal/private networks. Every
@@ -428,7 +455,12 @@ src/
                      Worst Page, Templated Content sections) + /card + /share
   card.js            shareable result card: verdictFor() bands, SVG template,
                      sharp PNG rasterizer (deterministic, no headless browser;
-                     optional small agency-name line under the brand row)
+                     optional small agency-name line under the brand row, and
+                     the Slop Roast line under the verdict)
+  roast.js           Slop Roast: deterministic pool pick (weighted-dominance
+                     math) + FNV-1a scan-id seed; selectRoast/selectRoastInfo
+  roasts.json        Slop Roast copy pools (six categories + clean, 15-20 lines
+                     each; edit copy here, no code changes)
   webhook.js         webhookUrl validation + async best-effort deliverer (retries)
   branding.js        white-label branding validation/normalization (strict types,
                      http(s) logo, hex accent; fail-fast 400 invalid_branding)

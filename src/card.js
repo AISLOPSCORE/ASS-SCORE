@@ -109,15 +109,20 @@ function elide(value, maxLen) {
 
 /**
  * Build the card as an SVG string. Fully deterministic — no timestamps, no
- * randomness: same (score, url, agencyName) -> byte-identical SVG. All
- * variable text is entity-escaped (URL, verdict, agency name, disclaimer);
- * the score is a validated integer via clampScore().
+ * randomness: same (score, url, agencyName, roast) -> byte-identical SVG. All
+ * variable text is entity-escaped (URL, verdict, roast, agency name,
+ * disclaimer); the score is a validated integer via clampScore().
  *
  * `agencyName` is the white-label report option: when present, a small agency
  * line renders under the product brand row. When absent, the SVG is exactly
  * the default A.S.S. Score card.
+ *
+ * `roast` (optional) is the Slop Roast line: rendered under the one-line
+ * verdict, elided to fit the 1072px text column at 20px — the roast never
+ * overflows the card. When absent, the layout is byte-identical to the
+ * pre-roast card.
  */
-export function buildCardSvg({ score, url, agencyName }) {
+export function buildCardSvg({ score, url, agencyName, roast }) {
   const s = clampScore(score);
   const color = scoreColor(s);
   const verdict = verdictFor(s);
@@ -128,6 +133,11 @@ export function buildCardSvg({ score, url, agencyName }) {
   // Agency line: elided so it always fits one line (max 120 chars input).
   const agencyLine = agencyName
     ? `\n  <text x="64" y="92" font-family="'DejaVu Sans', sans-serif" font-size="14" font-weight="600" letter-spacing="1" fill="#94a3b8">${escapeXml(elide(agencyName, 48))}</text>`
+    : '';
+  // Slop Roast: one elided line under the verdict (fits: 88 chars at 20px in
+  // the 1072px text column; reacts to no layout below it until the 560px footer).
+  const roastLine = roast
+    ? `\n  <text x="64" y="514" font-family="'DejaVu Sans', sans-serif" font-size="20" font-weight="600" fill="#cbd5e1">${escapeXml(elide(roast, 88))}</text>`
     : '';
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${CARD_WIDTH}" height="${CARD_HEIGHT}" viewBox="0 0 ${CARD_WIDTH} ${CARD_HEIGHT}" role="img" aria-label="A.S.S. Score ${s} out of 100 for ${escapeXml(String(url))}">
@@ -151,7 +161,7 @@ export function buildCardSvg({ score, url, agencyName }) {
   <rect x="64" y="196" width="1072" height="1" fill="rgba(255,255,255,0.08)"/>
   <text x="64" y="250" font-family="'DejaVu Sans', sans-serif" font-size="22" font-weight="700" letter-spacing="3" fill="#fbbf24">A.S.S. SCORE</text>
   <text x="64" y="398" font-family="'DejaVu Sans', sans-serif" font-size="150" font-weight="800" fill="${color}">${s}<tspan dx="26" dy="-34" font-size="54" font-weight="600" fill="#cbd5e1">/ 100</tspan></text>
-  <text x="64" y="472" font-family="'DejaVu Sans', sans-serif" font-size="34" font-weight="600" fill="#f8fafc">${verdict}</text>
+  <text x="64" y="472" font-family="'DejaVu Sans', sans-serif" font-size="34" font-weight="600" fill="#f8fafc">${verdict}</text>${roastLine}
   <text x="64" y="560" font-family="'DejaVu Sans', sans-serif" font-size="17" font-weight="600" fill="#94a3b8">${footer}</text>
   <text x="64" y="584" font-family="'DejaVu Sans', sans-serif" font-size="12" fill="#64748b">${dl1}</text>
   <text x="64" y="602" font-family="'DejaVu Sans', sans-serif" font-size="12" fill="#64748b">${dl2}</text>

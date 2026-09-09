@@ -12,6 +12,7 @@ import { FetchError } from '../fetch/client.js';
 import { validateWebhookUrl, createWebhookDeliverer } from '../webhook.js';
 import { validateBranding } from '../branding.js';
 import { validateEmail } from '../email.js';
+import { selectRoast } from '../roast.js';
 
 /** Per-scan time budget (ms): target fetch + discovery + additional fetches +
  *  similarity. When it elapses, in-flight work is aborted and whatever
@@ -211,8 +212,11 @@ export function scanRouter({ db, fetcher, now = () => new Date().toISOString(), 
 
       const id = randomUUID();
       const createdAt = now();
+      // Slop Roast: deterministic per scan id (same id -> same line, forever),
+      // pool picked from the category that contributed the most to the score.
+      const roast = selectRoast({ id, slopScore, breakdown });
       // Response object AND webhook payload — delivered bytes-exact as returned.
-      const payload = { id, url: page.url, slopScore, breakdown, createdAt };
+      const payload = { id, url: page.url, slopScore, breakdown, roast, createdAt };
       if (branding.branding) payload.branding = branding.branding;
       if (pages.length >= 2) {
         payload.pages = pages.map((p) => p.url);
@@ -232,6 +236,7 @@ export function scanRouter({ db, fetcher, now = () => new Date().toISOString(), 
         note: payload.note,
         worstPage: payload.worstPage,
         branding: payload.branding,
+        roast,
       });
 
       if (webhook.url) {
