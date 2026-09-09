@@ -43,6 +43,41 @@ export function openDb(dbPath) {
     'SELECT id, url, score, breakdown, created_at, partial, note, worst_page, branding, roast FROM scans WHERE id = ?'
   );
 
+  // Webhook fulfillment ledger (order webhooks -> scans).
+  // One row per accepted order webhook event:
+  //   event_key    – idempotency key: "<provider>:<provider event id>"
+  //                  (providers without an event id get a random key — kept so
+  //                  per-IP daily rate counting stays one-query).
+  //   provider     – 'fiverr' | 'stripe' | 'lemonsqueezy'
+  //   event_id     – the provider's event/order id (null when absent)
+  //   ip, day      – rate-limit bucket: per-IP per-UTC-day event count
+  //   scan_id      – the scan row created for this order (filled on completion)
+  //   status       – 'pending' | 'completed' | 'failed'
+  //   business_name– extracted order brand (nullable)
+  //   payload      – the raw webhook body, for debugging/reconciliation
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS webhook_events (
+      event_key     TEXT PRIMARY KEY,
+      provider      TEXT NOT NULL,
+      event_id      TEXT,
+      ip            TEXT NOT NULL,
+      day           TEXT NOT NULL,
+      scan_id       TEXT,
+      status        TEXT NOT NULL DEFAULT 'pending',
+      business_name TEXT,
+      payload       TEXT NOT NULL,
+      created_at    TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_webhook_events_day_ip ON webhook_events (day, ip);
+  `);
+
+  const insertWebhookEventStmt = db.prepare(
+    'INSERT OR IGNORE INTO webhook_events (event_key, provider, event_id, ip, day, scan_id, status, business_name, payload, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+  );
+  const getWebhookEventStmt = db.prepare('SELECT * FROM webhook_events WHERE event_key = ?');
+  const markWebhookEventStmt = db.prepare('UPDATE webhook_events SET status = ?, scan_id = ? WHERE event_key = ?');
+  const countWebhookEventsStmt = db.prepare('SELECT COUNT(*) AS n FROM webhook_events WHERE day = ? AND ip = ?');
+
   return {
     /**
      * @param {{ id: string, url: string, score: number, breakdown: object,
@@ -75,6 +110,41 @@ export function openDb(dbPath) {
         branding: row.branding ? JSON.parse(row.branding) : undefined,
         roast: row.roast ?? undefined,
       };
+    },
+
+    // --- Webhook fulfillment ledger -------------------------------------------
+    /**
+     * Record an accepted order webhook event (idempotency + rate-limit ledger).
+     * @returns {boolean} true if a new row was inserted; false when the
+     *   event_key already exists (caller then treats it as already processed).
+     */
+    insertWebhookEvent({ eventKey, provider, eventId, ip, day, business_name: businessName, payload, createdAt, status = 'pending' }) {
+      const info = insertWebhookEventStmt.run(
+        eventKey,
+        provider,
+        eventId ?? null,
+        ip,
+        day,
+        null, // scan_id — filled when the scan completes
+        status,
+        businessName ?? null,
+        JSON.stringify(payload),
+        createdAt,
+      );
+      return info.changes > 0;
+    },
+    /** @returns {null | { event_key, provider, event_id, ip, day, scan_id, status, business_name, payload, created_at }} */
+    getWebhookEvent(eventKey) {
+      const row = getWebhookEventStmt.get(eventKey);
+      if (!row) return null;
+      return { ...row, payload: JSON.parse(row.payload) };
+    },
+    markWebhookEvent(eventKey, { status, scanId }) {
+      markWebhookEventStmt.run(status, scanId ?? null, eventKey);
+    },
+    /** Accepted webhook-event count for a (UTC day, IP) bucket — the per-IP daily cap. */
+    countWebhookEvents(day, ip) {
+      return countWebhookEventsStmt.get(day, ip)?.n ?? 0;
     },
     close() {
       db.close();

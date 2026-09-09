@@ -138,6 +138,88 @@ Delivery semantics:
   injectable (`webhookDeliverer` option on the app/router factory) so tests can
   stub it.
 
+### `POST /api/v1/webhook` — paid-order fulfillment
+
+Accepts order webhooks from **Fiverr**, **Stripe Checkout**, and
+**LemonSqueezy**, extracts the ordered scan target, the client's brand name and
+email, and triggers a REAL scan through the exact same pipeline as
+`POST /api/v1/scan` (shared `runScan` in `src/scan.js`). On completion the
+client is emailed the report link via the existing best-effort email sender —
+an email failure never fails the webhook response. This is the automation that
+fulfills paid scan orders without the dashboard.
+
+```bash
+curl -s -X POST http://localhost:4000/api/v1/webhook \
+  -H 'content-type: application/json' \
+  -d '{ "type": "checkout.session.completed", "data": { "object": {
+         "id": "cs_test_abc123",
+         "customer_email": "buyer@example.com",
+         "metadata": { "target_url": "https://example.com",
+                       "business_name": "Example Brand",
+                       "client_email": "client@example.com" } } } }'
+```
+
+Response contract:
+
+| Outcome | HTTP | Body |
+| --- | --- | --- |
+| Accepted — scan queued (runs async) | `202` | `{ "accepted": true, "status": "queued", "provider", "eventId", "targetUrl", "businessName", "emailDeliveredTo" }` |
+| Replayed event id — already processed | `200` | `{ "accepted": true, "status": "already_processed", "note": "already processed", "scanId", ... }` |
+| Malformed / unknown provider payload | `400` | `error.code "invalid_payload"` with a reason |
+| SSRF-blocked / invalid target URL | `400` | `error.code "blocked"` (same guard as `/scan`) |
+| Malformed client email | `400` | `error.code "invalid_email"` (missing email is allowed — order still scans, email skipped) |
+| Per-IP daily cap exceeded | `429` | `error.code "rate_limited"` (see `MAX_WEBHOOKS_PER_DAY`) |
+| Genuine internal error | `500` | `error.code "internal_error"` |
+
+**Internal order shape.** All three providers normalize to
+`{ targetUrl, businessName?, clientEmail }` (`src/orderNormalizer.js`), plus a
+provider event id used as the idempotency key. Detection and extraction are
+explicit and tolerant:
+
+- **Fiverr** — marker: top-level `type`/`event_type` starting with `ORDER`
+  (e.g. `ORDER_CREATED`) with `data.order`. `eventId` from `order.id`; the
+  target URL is the first `http(s)://` string found in `order.requirements`
+  (or `requirement`/`message`/`url`/`link` — buyers paste the site to scan);
+  `businessName` from `order.business_name` / `brand_name` / `company_name` /
+  `title` / `gig.title`; `clientEmail` from `order.buyer.email` /
+  `buyer_email` / `email` (Fiverr often omits buyer email in webhooks — when
+  absent the order still scans, just no email).
+- **Stripe Checkout** — marker: `type === "checkout.session.completed"` with
+  `data.object`. Assumed metadata keys on the checkout session **`metadata`**:
+  - `metadata.target_url` — the website to scan (**required**)
+  - `metadata.business_name` — client brand (optional; `businessName`,
+    `brand_name`, `company_name` also accepted)
+  - `metadata.client_email` — report recipient (optional; falls back to
+    `customer_email`, then `customer_details.email`)
+- **LemonSqueezy** — marker: `meta.event_name` like `order_created` /
+  `payment_*` or `data.type === "orders"`. Assumed fields: `data.id` is the
+  event id; `meta.custom_data.target_url` (custom checkout field) with
+  fallbacks `custom_data.url`/`website` and `attributes.target_url`/`url`/
+  `website`; `meta.custom_data.business_name` with `attributes.business_name`
+  fallback; `clientEmail` from `meta.custom_data.client_email`, else
+  `attributes.user_email` / `payer_email` / `meta.customer_email`.
+
+Anything that matches no provider shape (or misses a target URL) is a `400
+invalid_payload` with the provider/reason named — never a crash.
+
+**Idempotency.** When the provider supplies an event id, it is stored in the
+SQLite `webhook_events` ledger (`<provider>:<eventId>`); a replayed event
+returns `200 already_processed` (with the original `scanId` once completed)
+and **never creates a second scan**. Events without an id are processed
+normally (rate limit still applies) but cannot be deduplicated.
+
+**Rate limiting (webhooks only).** Per-IP daily cap on accepted webhooks —
+`MAX_WEBHOOKS_PER_DAY` (default `10`, `0` disables), counted in the same
+SQLite ledger per UTC day per IP. Over the cap → `429`. This is independent of
+any future rate limiting on `POST /api/v1/scan`.
+
+**Delivery.** After the scan completes, the report link is emailed to the
+client's address with the existing soft-fail sender (see
+[Email delivery](#email-delivery)): report URL = `GET /api/v1/scans/:id`
+(public HTML report at `{PUBLIC_BASE_URL}/scan/{id}`), including the Slop Roast
+on the report page. Sending is best-effort and asynchronous — the `202` is
+returned first.
+
 ### White-label report branding
 
 Agencies can inject their own branding into a scan request; the metric stays

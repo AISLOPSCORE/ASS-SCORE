@@ -3,6 +3,7 @@ import { openDb } from './db.js';
 import { Fetcher } from './fetch/client.js';
 import { scanRouter } from './routes/scan.js';
 import { scansRouter } from './routes/scans.js';
+import { webhookRouter } from './routes/webhook.js';
 import { createEmailSender } from './email.js';
 
 /**
@@ -18,18 +19,35 @@ import { createEmailSender } from './email.js';
  *                     + additional fetches (default SCAN_BUDGET_MS; tests lower it)
  *   publicBaseUrl   — public origin used for share links and result pages
  *                     (default env PUBLIC_BASE_URL or https://ass-score.com)
+ *   now             — ISO timestamp provider (default new Date().toISOString())
+ *   maxWebhooksPerDay — per-IP daily cap on POST /api/v1/webhook (default env
+ *                     MAX_WEBHOOKS_PER_DAY or 10; 0 disables the cap)
+ *   validateTarget  — SSRF guard for webhook order targets (default: the same
+ *                     validateUrl + resolveAndCheck the Fetcher runs)
  */
-export function createApp({ dbPath = './data/ass-score.db', fetcher, webhookDeliverer, emailSender, scanBudgetMs, publicBaseUrl = process.env.PUBLIC_BASE_URL || 'https://ass-score.com' } = {}) {
+export function createApp({ dbPath = './data/ass-score.db', fetcher, webhookDeliverer, emailSender, scanBudgetMs, publicBaseUrl = process.env.PUBLIC_BASE_URL || 'https://ass-score.com', now, maxWebhooksPerDay, validateTarget } = {}) {
   const db = openDb(dbPath);
   const fetcherImpl = fetcher ?? new Fetcher();
   const emailSenderImpl = emailSender ?? createEmailSender({ publicBaseUrl });
+  const nowImpl = now ?? (() => new Date().toISOString());
+  const rawMax = maxWebhooksPerDay ?? process.env.MAX_WEBHOOKS_PER_DAY;
+  const webhookCap = Number.isFinite(Number(rawMax)) ? Math.max(0, Number(rawMax)) : 10;
 
   const app = express();
   app.disable('x-powered-by');
   app.use(express.json({ limit: '64kb' }));
 
   app.get('/health', (_req, res) => res.json({ ok: true, service: 'ass-score' }));
-  app.use(scanRouter({ db, fetcher: fetcherImpl, webhookDeliverer, emailSender: emailSenderImpl, scanBudgetMs }));
+  app.use(scanRouter({ db, fetcher: fetcherImpl, webhookDeliverer, emailSender: emailSenderImpl, scanBudgetMs, now: nowImpl }));
+  app.use(webhookRouter({
+    db,
+    fetcher: fetcherImpl,
+    emailSender: emailSenderImpl,
+    scanBudgetMs,
+    now: nowImpl,
+    maxWebhooksPerDay: webhookCap,
+    validateTarget,
+  }));
   app.use(scansRouter({ db, publicBaseUrl }));
 
   app.use((_req, res) => {
