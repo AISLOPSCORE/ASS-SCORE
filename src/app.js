@@ -6,6 +6,7 @@ import { scanRouter } from './routes/scan.js';
 import { scansRouter } from './routes/scans.js';
 import { webhookRouter } from './routes/webhook.js';
 import { createEmailSender } from './email.js';
+import { createCors } from './cors.js';
 
 /** The full SSRF guard both routes run before their rate caps (validateUrl +
  *  resolveAndCheck — the Fetcher applies the same checks on every hop). */
@@ -35,6 +36,9 @@ const defaultCheckTarget = async (raw) => {
  *                     MAX_WEBHOOKS_PER_DAY or 10; 0 disables the cap)
  *   maxScansPerDay  — per-IP daily cap on POST /api/v1/scan (default env
  *                     MAX_SCANS_PER_DAY or 3; 0 disables the cap)
+ *   allowedOrigins  — browser origins allowed cross-origin access (default
+ *                     env CORS_ORIGINS or the site's known origins; see
+ *                     src/cors.js)
  *   validateTarget  — SSRF guard for scan/webhook targets (default: the same
  *                     validateUrl + resolveAndCheck the Fetcher runs; tests
  *                     inject a DNS-skipping guard)
@@ -46,7 +50,7 @@ const defaultCheckTarget = async (raw) => {
  * src/clientIp.js; without trust proxy, Express ignores X-Forwarded-For and
  * every request would look like the LB's IP, collapsing the per-IP caps.
  */
-export function createApp({ dbPath = './data/ass-score.db', fetcher, webhookDeliverer, emailSender, scanBudgetMs, publicBaseUrl = process.env.PUBLIC_BASE_URL || 'https://ass-score.com', now, maxWebhooksPerDay, maxScansPerDay, validateTarget } = {}) {
+export function createApp({ dbPath = './data/ass-score.db', fetcher, webhookDeliverer, emailSender, scanBudgetMs, publicBaseUrl = process.env.PUBLIC_BASE_URL || 'https://ass-score.com', now, maxWebhooksPerDay, maxScansPerDay, validateTarget, allowedOrigins } = {}) {
   const db = openDb(dbPath);
   const fetcherImpl = fetcher ?? new Fetcher();
   const emailSenderImpl = emailSender ?? createEmailSender({ publicBaseUrl });
@@ -60,6 +64,7 @@ export function createApp({ dbPath = './data/ass-score.db', fetcher, webhookDeli
   const app = express();
   app.disable('x-powered-by');
   app.set('trust proxy', 1); // platform edge in front; req.ip = real client (XFF / socket)
+  app.use(createCors({ allowedOrigins })); // browser origins only; no-op for non-browser clients
   app.use(express.json({ limit: '64kb' }));
 
   app.get('/health', (_req, res) => res.json({ ok: true, service: 'ass-score' }));
