@@ -29,14 +29,14 @@ import { clientIp } from '../clientIp.js';
  * the scan id on success, 'failed' on scan failure — never double-counted by
  * the best-effort webhook/email delivery paths.
  *
- * Response shape: PUBLIC scan JSON — id, url, score (0-100, higher = better),
- * verdict (grade label), breakdown (per-category scores flipped to the public
- * direction), createdAt — plus `pages`, `partial`, `note`, `worstPage` when
- * multi-page, plus `branding` when white-label branding was supplied and
- * `roast` (Slop Roast) on every scan. The internal slop scores live only in
- * the DB row; the flip happens once, here, at the serialization boundary
- * (see src/serialize.js), and the webhook payload + email are the exact
- * public response object.
+ * Response shape: PUBLIC scan JSON — id, url, score (0-100, higher = worse,
+ * 0 = clean, 100 = maximum ass), verdict (grade label), breakdown
+ * (per-category scores in the same direction), createdAt — plus `pages`,
+ * `partial`, `note`, `worstPage` when multi-page, plus `branding` when
+ * white-label branding was supplied and `roast` (Slop Roast) on every scan.
+ * Engine scores and the DB row are already in the public direction (higher =
+ * more slop); the serialization boundary (see src/serialize.js) only relabels
+ * and the webhook payload + email are the exact public response object.
  */
 export function scanRouter({
   db,
@@ -147,10 +147,10 @@ export function scanRouter({
 
       const { payload } = result;
       // PUBLIC shape at the serialization boundary: runScan computes + stores
-      // the internal slop score (higher = worse); the response, webhook
-      // delivery and email all carry the flipped public scan (score 0-100
-      // higher = better, verdict label, per-category scores flipped).
-      // The DB row keeps the internal direction — no migration needed.
+      // the slop score (higher = worse, 0 = clean); the response, webhook
+      // delivery and email all carry the same score unchanged (higher =
+      // worse), the verdict label, and per-category scores in the same
+      // direction. The DB row needs no migration — engine == public.
       const pub = toPublicScan(payload);
       const id = payload.id;
       db.markScanEvent(eventKey, { status: 'completed', scanId: id });

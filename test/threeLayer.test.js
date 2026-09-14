@@ -448,7 +448,7 @@ test('E2E: legacy row without insights gets deterministic derivation (additive c
     assert.ok(get1.breakdown.filler.insights[0].roast.includes('game-changer'), 'legacy roast cites the stored phrase');
     assert.deepEqual(get1.breakdown.filler.findings, ['2× "game-changer"', '3× "seamless"'], 'findings untouched');
     assert.equal(get1.breakdown.crossPage.score, null, 'skipped module passes through');
-    assert.equal(get1.score, 45, 'stored internal 55 -> public 45');
+    assert.equal(get1.score, 55, 'stored 55 -> public 55 (same direction, no inversion)');
     assert.equal(get1.roast, 'A stored roast.', 'stored roast kept');
   } finally {
     app.server.close();

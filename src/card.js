@@ -33,8 +33,9 @@ const DISCLAIMER_LINES = [
  * labels + band colors (shared with the JSON API, HTML report and emails).
  * card.js only re-exports the helpers it used to own (verdictFor/scoreColor)
  * so existing importers keep working; ALL band logic is in verdict.js.
- * Score direction: PUBLIC score, 0-100, higher = better. The caller (the
- * routes layer, via toPublicScan) passes the FLIPPED public score here.
+ * Score direction: 0-100, HIGHER = WORSE (0 = clean, 100 = maximum ass).
+ * The caller (the routes layer, via toPublicScan) passes the public score
+ * here; the band color is looked up straight from that score.
  */
 
 /**
@@ -113,10 +114,10 @@ export function buildCardSvg({ score, url, agencyName, roast }) {
   const roastLine = roast
     ? `\n  <text x="64" y="514" font-family="'DejaVu Sans', sans-serif" font-size="20" font-weight="600" fill="#cbd5e1">${escapeXml(elide(roast, 88))}</text>`
     : '';
-  // Score bar: fills from the LEFT (low, bad — red bands) toward the RIGHT
-  // (high, good — green bands), colored by the score's band. A red sliver says
-  // "bad" at a glance; a long green fill says "good". Direction is the public
-  // scale: 0 on the left, 100 at the right edge.
+  // Score bar: fills from the LEFT (low, good — green bands) toward the RIGHT
+  // (high, bad — red bands), colored by the score's band. A long red fill says
+  // "bad" at a glance; a short green fill says "good". Direction is the public
+  // scale: 0 on the left, 100 at the right edge, higher = worse.
   const barX = 64;
   const barW = 1072;
   const barY = 418;

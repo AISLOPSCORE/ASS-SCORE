@@ -153,8 +153,8 @@ export function webhookRouter({
             scanId = result.payload.id;
             if (mail.email && emailSender) {
               try {
-                // PUBLIC scan shape (score flipped, verdict added) — same
-                // serialization boundary as POST /api/v1/scan.
+                // PUBLIC scan shape (score 0-100 higher = worse, verdict
+                // added) — same serialization boundary as POST /api/v1/scan.
                 await emailSender(toPublicScan(result.payload), mail.email);
               } catch (err) {
                 logError(`[webhook] email to ${mail.email} for scan ${scanId} crashed:`, err?.message ?? err);

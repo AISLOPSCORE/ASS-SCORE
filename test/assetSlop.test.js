@@ -252,11 +252,11 @@ test('POST scan: breakdown has the assets key with score+findings; persisted byt
   assert.ok(Number.isInteger(json.score) && json.score >= 0 && json.score <= 100, 'overall public score in 0-100');
   assert.equal(typeof json.verdict, 'string', 'verdict grade label present');
 
-  // persisted identically (internal direction at rest; response is the flip)
+  // persisted identically (slop direction at rest == public direction)
   const row = new (await import('better-sqlite3')).default(dbPath)
     .prepare('SELECT breakdown FROM scans WHERE id = ?').get(json.id);
   const stored = JSON.parse(row.breakdown);
-  assert.equal(stored.assets.score + json.breakdown.assets.score, 100, 'assets score flipped at rest');
+  assert.equal(stored.assets.score, json.breakdown.assets.score, 'assets score equal at rest (no inversion)');
   assert.deepEqual(stored.assets.findings, json.breakdown.assets.findings, 'assets findings stored bytes-exact');
 
   // GET JSON returns the same assets breakdown

@@ -85,9 +85,9 @@ function esc(v) {
  * @returns {{ from: string, to: string, subject: string, text: string, html: string }}
  */
 export function buildReportEmail({ scan, to, publicBaseUrl, subject = DEFAULT_SUBJECT, from = DEFAULT_FROM }) {
-  // The scan payload is the PUBLIC scan shape (`score` 0-100, higher = better,
-  // with a `verdict`); legacy internal payloads carry `slopScore` (opposite
-  // direction) — accept both, prefer the public `score`.
+  // The scan payload is the PUBLIC scan shape (`score` 0-100, higher = worse,
+  // with a `verdict`); legacy payloads may carry `slopScore` (same direction)
+  // — accept both, prefer the public `score`.
   const score = Number(scan.score ?? scan.slopScore);
   const reportUrl = `${String(publicBaseUrl).replace(/\/+$/, '')}/scan/${scan.id}`;
 

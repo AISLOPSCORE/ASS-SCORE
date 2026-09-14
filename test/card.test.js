@@ -47,19 +47,19 @@ const post = (base, body) =>
 
 // ---------------------------------------------------------------- unit tests
 
-test('verdict bands: FLIPPED scale (higher = better) with exact boundary labels', () => {
+test('verdict bands: HIGHER = WORSE scale with exact boundary labels', () => {
   const cases = [
-    [0, 'Catastrophically ass', 'CATASTROPHICALLY ASS'],
-    [19, 'Catastrophically ass', 'CATASTROPHICALLY ASS'],
-    [34, 'Catastrophically ass', 'CATASTROPHICALLY ASS'],
-    [35, 'Extremely ass', 'EXTREMELY ASS'],
-    [54, 'Extremely ass', 'EXTREMELY ASS'],
+    [0, 'Cleanest', 'CLEANEST'],
+    [19, 'Cleanest', 'CLEANEST'],
+    [34, 'Cleanest', 'CLEANEST'],
+    [35, 'Mildly generic', 'MILDLY GENERIC'],
+    [54, 'Mildly generic', 'MILDLY GENERIC'],
     [55, 'Very ass', 'VERY ASS'],
     [74, 'Very ass', 'VERY ASS'],
-    [75, 'Mildly generic', 'MILDLY GENERIC'],
-    [89, 'Mildly generic', 'MILDLY GENERIC'],
-    [90, 'Cleanest', 'CLEANEST'],
-    [100, 'Cleanest', 'CLEANEST'],
+    [75, 'Extremely ass', 'EXTREMELY ASS'],
+    [89, 'Extremely ass', 'EXTREMELY ASS'],
+    [90, 'Catastrophically ass', 'CATASTROPHICALLY ASS'],
+    [100, 'Catastrophically ass', 'CATASTROPHICALLY ASS'],
   ];
   for (const [score, label, shortLabel] of cases) {
     assert.equal(verdictFor(score), label, `score ${score}`);
@@ -71,18 +71,18 @@ test('verdict bands: FLIPPED scale (higher = better) with exact boundary labels'
     assert.ok(labels.has(verdictFor(s)), `score ${s} mapped to unlisted verdict "${verdictFor(s)}"`);
   }
   // Out-of-range / non-integer inputs clamp deterministically (public scale):
-  assert.equal(verdictFor(-5), 'Catastrophically ass');
-  assert.equal(verdictFor(150), 'Cleanest');
+  assert.equal(verdictFor(-5), 'Cleanest');
+  assert.equal(verdictFor(150), 'Catastrophically ass');
   assert.equal(verdictFor(73.6), 'Very ass'); // rounds to 74
   assert.equal(verdictFor('59'), 'Very ass');
-  assert.equal(verdictFor(NaN), 'Catastrophically ass');
+  assert.equal(verdictFor(NaN), 'Cleanest');
 });
 
-test('scoreColor: red for low/bad bands -> green for high/good, band-changing at boundaries', () => {
-  assert.equal(scoreColor(10), '#f87171', 'low (bad) -> red');
-  assert.equal(scoreColor(25), '#f87171');
-  assert.equal(scoreColor(60), '#facc15', 'mid -> amber');
-  assert.equal(scoreColor(90), '#4ade80', 'high (good) -> green');
+test('scoreColor: green for low/good bands -> red for high/bad, band-changing at boundaries', () => {
+  assert.equal(scoreColor(10), '#4ade80', 'low (clean/good) -> green');
+  assert.equal(scoreColor(25), '#4ade80');
+  assert.equal(scoreColor(60), '#facc15', 'mid -> amber (VERY ASS)');
+  assert.equal(scoreColor(90), '#f87171', 'high (bad) -> red');
   assert.equal(scoreColor(100), scoreColor(90));
   assert.notEqual(scoreColor(34), scoreColor(35), 'color flips at the band boundary');
   assert.match(scoreColor(73), /^#[0-9a-f]{6}$/i);
@@ -118,8 +118,8 @@ test('buildCardSvg: escaped URL, verdict, footer + disclaimer verbatim, determin
   assert.ok(svgA.includes('&lt;q&quot;r'), 'hostile fragment must be entity-escaped');
   assert.ok(svgA.includes("&amp;x="), '& escaped as entity');
   assert.ok(svgA.includes('&apos;y&apos;'), "apostrophes escaped (attr- and text-safe)");
-  // Score + verdict + branding + disclaimer verbatim (FLIPPED scale: 73 =
-  // "VERY ASS", shown as the uppercase grade label):
+  // Score + verdict + branding + disclaimer verbatim (HIGHER = WORSE scale:
+  // 73 = "VERY ASS", shown as the uppercase grade label):
   assert.ok(svgA.includes('>73<tspan'), 'score rendered as text');
   assert.ok(svgA.includes('/ 100'), 'scale rendered');
   assert.ok(svgA.includes('VERY ASS'), 'uppercase verdict label embedded');
@@ -185,27 +185,27 @@ test('POST scan -> GET /card: 200 image/png, PNG magic, 1200x630, >20KB, determi
   assert.ok(png.equals(again), 'two HTTP renders -> identical PNG bytes');
 });
 
-test('POST scan -> GET /share: pre-filled text + public result URL (flipped score)', async () => {
+test('POST scan -> GET /share: pre-filled text + public result URL (public score)', async () => {
   const created = await (await post(api.base, { url: 'https://example.com/' })).json();
 
   const res = await fetch(`${api.base}/api/v1/scans/${created.id}/share`);
   assert.equal(res.status, 200);
   const json = await res.json();
   assert.equal(json.url, `https://ass-score.com/scan/${created.id}`);
-  assert.ok(json.text.includes(`${created.score}/100`), 'text carries the PUBLIC (flipped) score');
+  assert.ok(json.text.includes(`${created.score}/100`), 'text carries the PUBLIC score');
   assert.ok(json.text.includes('A.S.S. Score (AI Slop Score)'), 'text carries the branded metric name');
   assert.ok(json.text.includes(json.url), 'text carries the public share URL');
   assert.ok(json.text.startsWith('My website scored '), 'pre-filled social post shape');
 });
 
-test('POST scan -> GET /card: pixel check — the rendered PNG shows the FLIPPED score in its band color', async () => {
-  // The card fixture scores internal 75 (slop-heavy) -> PUBLIC 25, which is
-  // in the red "catastrophically ass" band (0-34). If the route passed the
-  // internal slop score (75 -> green/amber band), the number + verdict would
-  // render in a high-band color instead.
+test('POST scan -> GET /card: pixel check — the rendered PNG shows the score in its band color', async () => {
+  // The card fixture scores internal 75 (slop-heavy) -> PUBLIC 75, which is
+  // in the orange "extremely ass" band (75-89). If the route passed an
+  // inverted score (100 - 75 = 25 -> green "cleanest" band), the number +
+  // verdict would render in a green band color instead.
   const created = await (await post(api.base, { url: 'https://example.com/' })).json();
-  assert.equal(created.score, 25, 'fixture internal 75 -> public 25');
-  assert.equal(created.verdict, 'CATASTROPHICALLY ASS');
+  assert.equal(created.score, 75, 'fixture scores 75 (higher = worse)');
+  assert.equal(created.verdict, 'EXTREMELY ASS');
 
   const res = await fetch(`${api.base}/api/v1/scans/${created.id}/card`);
   assert.equal(res.status, 200);
@@ -214,10 +214,10 @@ test('POST scan -> GET /card: pixel check — the rendered PNG shows the FLIPPED
   assert.equal(info.width, CARD_WIDTH);
   assert.equal(info.height, CARD_HEIGHT);
 
-  // Count pixels inside the score-number region that match the red band color
-  // #f87171 (tolerance ±10/channel) — the big digits + verdict text + bar fill.
-  const target = [0xf8, 0x71, 0x71];
-  let redPixels = 0;
+  // Count pixels inside the score-number region that match the orange band
+  // color #fb923c (tolerance ±10/channel) — the big digits + verdict text + bar fill.
+  const target = [0xfb, 0x92, 0x3c];
+  let orangePixels = 0;
   for (let y = 250; y < 480; y += 1) {
     for (let x = 64; x < 1000; x += 1) {
       const i = (y * info.width + x) * info.channels;
@@ -226,11 +226,11 @@ test('POST scan -> GET /card: pixel check — the rendered PNG shows the FLIPPED
         Math.abs(data[i + 1] - target[1]) <= 10 &&
         Math.abs(data[i + 2] - target[2]) <= 10
       ) {
-        redPixels += 1;
+        orangePixels += 1;
       }
     }
   }
-  assert.ok(redPixels > 500, `expected the red band color in the score region, got ${redPixels} px`);
+  assert.ok(orangePixels > 500, `expected the orange band color in the score region, got ${orangePixels} px`);
 });
 
 test('publicBaseUrl option overrides the share-link base', async () => {

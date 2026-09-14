@@ -57,16 +57,18 @@ optional report-delivery address (see
 invalid values are `400 invalid_branding` / `400 invalid_email` with the scan
 never started.
 
-**Score direction (public A.S.S. Score): 0-100, HIGHER = BETTER.** Every scan
-response carries `score` (the public A.S.S. Score, `100 - internal slop`, clamped
-0-100 integer) and `verdict` (the grade label, e.g. `VERY ASS`).
-`breakdown.<category>.score` is also on the public scale (higher = better);
-`findings`/`evidence`/`pages`/`pairs`/`roast`/`partial` describe problems and are
-unchanged. **Storage is unchanged**: the DB column and the stored breakdown keep
-the INTERNAL slop direction (higher = worse), so pre-flip rows read correctly
-with no migration - the flip happens only at the serialization boundary
-(`src/serialize.js`). One exception: `worstPage.score` is an internal slop score
-(higher = worse); treat it as "how much slop this page has".
+**Score direction (public A.S.S. Score): 0-100, HIGHER = WORSE.** 0 = clean /
+actually good, 100 = maximum ass. Every scan response carries `score` (the
+public A.S.S. Score, a clamped 0-100 integer) and `verdict` (the grade label,
+e.g. `VERY ASS`). `breakdown.<category>.score` is on the same scale (higher =
+worse); `findings`/`evidence`/`pages`/`pairs`/`roast`/`partial` describe
+problems and are unchanged. **Storage matches the public direction**: the DB
+column and the stored breakdown hold the same higher = worse scores, so rows
+written before the temporary flip experiment read correctly with no migration
+— the serialization boundary (`src/serialize.js`) only relabels, it does not
+invert. `worstPage.score` is in the same direction (higher = worse); treat it
+as "how much slop this page has". Lower is better everywhere: the improvement
+story is "I took my A.S.S. Score from 83 down to 21".
 
 Response `200` (single-page site — the v1 shape, unchanged for single-page scans):
 
@@ -92,7 +94,7 @@ Multi-page scans add four top-level fields (all webhook-delivered too):
 
 ```json
 {
-  "id": "...", "url": "https://site.example/", "score": 48, "verdict": "EXTREMELY ASS", "breakdown": { "...": "..." },
+  "id": "...", "url": "https://site.example/", "score": 48, "verdict": "MILDLY GENERIC", "breakdown": { "...": "..." },
   "pages": ["https://site.example/", "https://site.example/about", "https://site.example/blog"],
   "worstPage": { "url": "https://site.example/blog", "score": 71, "findings": ["...up to 6 top findings..."] },
   "partial": false,
@@ -142,7 +144,7 @@ the response body returned to the caller (including `pages`/`partial`/`note`/
 `worstPage` when multi-page):
 
 ```json
-{ "id": "…", "url": "https://example.com/", "score": 94, "verdict": "CLEANEST", "breakdown": {…}, "createdAt": "…" }
+{ "id": "…", "url": "https://example.com/", "score": 94, "verdict": "CATASTROPHICALLY ASS", "breakdown": {…}, "createdAt": "…" }
 ```
 
 Request the webhook endpoint receives:
@@ -463,15 +465,15 @@ curl -s http://localhost:4000/api/v1/scans/<id>/card -o card.png
   `GET /api/v1/scans/:id`.
 
 **Verdict bands** (single source of truth: `src/verdict.js`, consumed by the
-JSON response, the HTML report and the share card - higher = better, red =
-low/bad, green = high/good):
+JSON response, the HTML report and the share card — higher = worse, green =
+low/good, red = high/bad):
 | Score | Verdict | Accent |
 | --- | --- | --- |
-| 90-100 | CLEANEST / most original | green |
-| 75-89 | MILDLY GENERIC | lime |
+| 90-100 | CATASTROPHICALLY ASS / certified slop | red |
+| 75-89 | EXTREMELY ASS | orange |
 | 55-74 | VERY ASS | yellow |
-| 35-54 | EXTREMELY ASS | orange |
-| 0-34 | CATASTROPHICALLY ASS / certified slop | red |
+| 35-54 | MILDLY GENERIC | lime |
+| 0-34 | CLEANEST / most original | green |
 
 ### `GET /api/v1/scans/:id/share`
 

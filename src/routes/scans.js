@@ -3,7 +3,7 @@ import { buildCardSvg, renderCardPng } from '../card.js';
 import { isHttpUrl } from '../branding.js';
 import { selectRoast, selectRoastInfo } from '../roast.js';
 import { withInsights } from '../threeLayer.js';
-import { toPublicScan, flipScore } from '../serialize.js';
+import { toPublicScan, publicScore } from '../serialize.js';
 import { verdictBand, verdictLabel, scoreColor } from '../verdict.js';
 
 /**
@@ -65,10 +65,10 @@ export function scansRouter({ db, publicBaseUrl }) {
     if (wantsHtml) {
       return res.type('html').send(renderHtmlReport({ ...scan, breakdown: breakdownFor(scan) }));
     }
-    // PUBLIC shape: stored internal slop scores are flipped at this read
-    // boundary (score = 100 - internal, verdict added, breakdown flipped).
-    // Pre-flip rows read correctly with NO migration: the flip happens here,
-    // at response time; the DB column keeps the internal slop direction.
+    // PUBLIC shape: the stored internal slop score IS the public score
+    // (score 0-100, higher = worse — same direction, no inversion; verdict
+    // added). Pre-flip rows read correctly with NO migration: the DB column
+    // keeps the slop direction, which is exactly the public direction.
     // Three-layer insights are guaranteed on the breakdown (stored, or derived
     // for legacy rows).
     const pub = toPublicScan({ ...scan, breakdown: breakdownFor(scan) });
@@ -103,7 +103,7 @@ export function scansRouter({ db, publicBaseUrl }) {
     if (!scan) return missing(res, req.params.id);
     try {
       const png = await renderCardPng(buildCardSvg({
-        score: flipScore(scan.score), // PUBLIC score: 100 - stored internal slop
+        score: publicScore(scan.score), // public score = stored slop direction (higher = worse, 0 = clean)
         url: scan.url,
         agencyName: scan.branding?.agencyName, // white-label: small agency line only
         roast: roastFor(scan),
@@ -123,7 +123,7 @@ export function scansRouter({ db, publicBaseUrl }) {
     const shareUrl = `${shareBase.replace(/\/+$/, '')}/scan/${scan.id}`;
     res.json({
       url: shareUrl,
-      text: `My website scored ${flipScore(scan.score)}/100 on the A.S.S. Score (AI Slop Score). Check yours: ${shareUrl}`,
+      text: `My website scored ${publicScore(scan.score)}/100 on the A.S.S. Score (AI Slop Score). Check yours: ${shareUrl}`,
     });
   });
 
@@ -225,7 +225,7 @@ function renderHtmlReport(scan) {
   const rows = Object.entries(scan.breakdown)
     .map(([key, rule]) => {
       if (Number.isFinite(Number(rule?.score)) && rule.score !== null) {
-        const catScore = flipScore(rule.score); // public direction: higher = better
+        const catScore = publicScore(rule.score); // same direction as the overall score: higher = worse
         return `
       <tr>
         <td>${esc(CATEGORY_LABELS[key] ?? key)}</td>
@@ -249,8 +249,8 @@ function renderHtmlReport(scan) {
   const worst = scan.worstPage || null;
   let worstSection = '';
   if (worst && Array.isArray(cross.pages) && cross.pages.length >= 2) {
-    // worstPage.score is the INTERNAL slop direction (higher = worse) — the
-    // label below says so explicitly so the flipped public scale is not misread.
+    // worstPage.score is in the same direction as the overall score (higher =
+    // worse) — the label below says so explicitly.
     worstSection = `
   <h2>Worst Page</h2>
   <p><a href="${esc(worst.url)}">${esc(worst.url)}</a> — combined slop score ${Number(worst.score)} / 100 (higher = more slop)</p>
@@ -288,13 +288,13 @@ function renderHtmlReport(scan) {
     : '';
   const scoreAccent = accentColor ? ` style="color:${accentColor}"` : '';
   const footerLine = footerText ? `<p class="footer">${esc(footerText)}</p>` : '';
-  // PUBLIC score + verdict: the stored internal slop score is flipped here
-  // (score = 100 - internal, higher = better); the grade label and its band
-  // color come from the shared verdict module (src/verdict.js).
-  const publicScore = flipScore(scan.score);
-  const publicVerdict = verdictBand(publicScore);
+  // Score + verdict: the stored score IS the public score (0-100, higher =
+  // worse — no inversion); the grade label and its band color come from the
+  // shared verdict module (src/verdict.js).
+  const pubScore = publicScore(scan.score);
+  const publicVerdict = verdictBand(pubScore);
   const verdictClass = { 'CATASTROPHICALLY ASS': 'b-catastrophic', 'EXTREMELY ASS': 'b-extreme', 'VERY ASS': 'b-very', 'MILDLY GENERIC': 'b-mild', 'CLEANEST': 'b-clean' }[publicVerdict.shortLabel] ?? 'b-very';
-  const verdictLine = `<p class="verdict ${verdictClass}">${verdictLabel(publicScore)}</p>`;
+  const verdictLine = `<p class="verdict ${verdictClass}">${verdictLabel(pubScore)}</p>`;
 
   return `<!doctype html>
 <html lang="en">
@@ -323,7 +323,7 @@ function renderHtmlReport(scan) {
   ${logo}
   ${header}
   <p><a href="${esc(scan.url)}">${esc(scan.url)}</a> · scanned ${esc(scan.created_at)}</p>
-  <p class="score"${scoreAccent}>A.S.S. Score: ${publicScore} / 100</p>
+  <p class="score"${scoreAccent}>A.S.S. Score: ${pubScore} / 100</p>
   ${verdictLine}
   ${roastSection}
   ${pagesLine}
