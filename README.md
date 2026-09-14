@@ -57,13 +57,25 @@ optional report-delivery address (see
 invalid values are `400 invalid_branding` / `400 invalid_email` with the scan
 never started.
 
+**Score direction (public A.S.S. Score): 0-100, HIGHER = BETTER.** Every scan
+response carries `score` (the public A.S.S. Score, `100 - internal slop`, clamped
+0-100 integer) and `verdict` (the grade label, e.g. `VERY ASS`).
+`breakdown.<category>.score` is also on the public scale (higher = better);
+`findings`/`evidence`/`pages`/`pairs`/`roast`/`partial` describe problems and are
+unchanged. **Storage is unchanged**: the DB column and the stored breakdown keep
+the INTERNAL slop direction (higher = worse), so pre-flip rows read correctly
+with no migration - the flip happens only at the serialization boundary
+(`src/serialize.js`). One exception: `worstPage.score` is an internal slop score
+(higher = worse); treat it as "how much slop this page has".
+
 Response `200` (single-page site — the v1 shape, unchanged for single-page scans):
 
 ```json
 {
   "id": "7d5f2b1a-...",
   "url": "https://example.com/",
-  "slopScore": 30,
+  "score": 70,
+  "verdict": "VERY ASS",
   "breakdown": {
     "filler":       { "score": 0, "findings": ["0 filler phrase occurrence(s) in 112 words (0.0 per 300 words)"] },
     "boilerplate":  { "score": 0, "findings": ["0 boilerplate signal(s) in 112 words (0.0 per 300 words)"] },
@@ -80,7 +92,7 @@ Multi-page scans add four top-level fields (all webhook-delivered too):
 
 ```json
 {
-  "id": "...", "url": "https://site.example/", "slopScore": 52, "breakdown": { "...": "..." },
+  "id": "...", "url": "https://site.example/", "score": 48, "verdict": "EXTREMELY ASS", "breakdown": { "...": "..." },
   "pages": ["https://site.example/", "https://site.example/about", "https://site.example/blog"],
   "worstPage": { "url": "https://site.example/blog", "score": 71, "findings": ["...up to 6 top findings..."] },
   "partial": false,
@@ -130,7 +142,7 @@ the response body returned to the caller (including `pages`/`partial`/`note`/
 `worstPage` when multi-page):
 
 ```json
-{ "id": "…", "url": "https://example.com/", "slopScore": 6, "breakdown": {…}, "createdAt": "…" }
+{ "id": "…", "url": "https://example.com/", "score": 94, "verdict": "CLEANEST", "breakdown": {…}, "createdAt": "…" }
 ```
 
 Request the webhook endpoint receives:
@@ -376,16 +388,16 @@ curl -s http://localhost:4000/api/v1/scans/<id>/card -o card.png
 - Invalid/missing id → `404` with the same JSON error shape as
   `GET /api/v1/scans/:id`.
 
-**Verdict bands** (pure function `verdictFor(score)` in `src/card.js`; the
-product's one-line verdicts):
-
+**Verdict bands** (single source of truth: `src/verdict.js`, consumed by the
+JSON response, the HTML report and the share card - higher = better, red =
+low/bad, green = high/good):
 | Score | Verdict | Accent |
 | --- | --- | --- |
-| 0–19 | Clean as a whistle. Impressive. | green |
-| 20–39 | Congrats — less A.S.S. than most. | lime |
-| 40–59 | A moderate amount of A.S.S. detected. | yellow |
-| 60–79 | Oh no. That's a lot of A.S.S. | orange |
-| 80–100 | Your website has a serious slop problem. | red |
+| 90-100 | CLEANEST / most original | green |
+| 75-89 | MILDLY GENERIC | lime |
+| 55-74 | VERY ASS | yellow |
+| 35-54 | EXTREMELY ASS | orange |
+| 0-34 | CATASTROPHICALLY ASS / certified slop | red |
 
 ### `GET /api/v1/scans/:id/share`
 
