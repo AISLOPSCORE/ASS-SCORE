@@ -3,7 +3,17 @@
  * Detects generic/template content: cookie/consent banners, legal boilerplate,
  * newsletter blocks, generic marketing passages, and repeated low-variation
  * blocks (duplicate paragraphs). Score maps signal density per ~300 words to 0–100.
+ *
+ * The Copy Slop hedge dimension (src/rules/copySlop.js) folds into this
+ * category: vague marketing constructions ("we aim to", "world-class",
+ * "seamless experience") ARE generic marketing language, so their hits add to
+ * the same density math and appear in the findings with the exact sentence as
+ * evidence. The hedge phrase list (src/rules/copySlop.json) is deliberately
+ * disjoint from the regexes below so a single sentence is never counted twice
+ * inside this category.
  */
+
+import { analyzeHedges } from './copySlop.js';
 
 const SIGNALS = [
   { re: /\bwe use cookies\b/i, label: 'cookie notice' },
@@ -38,10 +48,15 @@ const SIGNALS = [
 const NORMALIZATION_WORDS = 300;
 const MAX_FINDINGS = 8;
 
+/** The boilerplate regex signals (exported for the Copy Slop disjointness
+ *  guarantee: the hedge phrase list must never collide with one of these so a
+ *  single sentence is never double-counted inside this category). */
+export const boilerplateRegexes = Object.freeze(SIGNALS.map((s) => s.re));
+
 /**
- * @param {{ text?: string, words?: string[], paragraphs?: string[] }} ctx
+ * @param {{ text?: string, words?: string[], sentences?: string[], paragraphs?: string[] }} ctx
  */
-export function analyze({ text = '', words = [], paragraphs = [] } = {}) {
+export function analyze({ text = '', words = [], sentences = [], paragraphs = [] } = {}) {
   if (!text) return { score: 0, findings: [] };
 
   const found = [];
@@ -54,6 +69,13 @@ export function analyze({ text = '', words = [], paragraphs = [] } = {}) {
       if (m.index === re.lastIndex) re.lastIndex += 1;
     }
     if (count > 0) found.push({ label: sig.label, count });
+  }
+
+  // Copy Slop hedge dimension: vague marketing constructions count as
+  // boilerplate-family signals; quote the exact sentence as evidence.
+  const hedges = analyzeHedges(text, sentences);
+  for (const h of hedges.hits) {
+    found.push({ label: `hedge phrase "${h.phrase}"`, count: h.count });
   }
 
   // Repeated low-variation blocks: exact duplicate paragraphs (normalized).
@@ -73,6 +95,7 @@ export function analyze({ text = '', words = [], paragraphs = [] } = {}) {
   const findings = [
     `${totalSignals} boilerplate signal(s) in ${wordCount} words (${density.toFixed(1)} per ${NORMALIZATION_WORDS} words)`,
     ...found.sort((a, b) => b.count - a.count).slice(0, MAX_FINDINGS).map((f) => `${f.count}× ${f.label}`),
+    ...hedges.quotes.map((q) => `hedge evidence: "${q.sentence}"`),
     ...dupBlocks.slice(0, 3).map((d) => `${d.count}× repeated block: "${d.text.slice(0, 80)}${d.text.length > 80 ? '…' : ''}"`),
   ];
 

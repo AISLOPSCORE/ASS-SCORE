@@ -9,7 +9,17 @@
  *   short-paragraph prevalence 0.30    one/two-line paragraphs = thin content
  *
  * Pure function: no randomness, no timestamps.
+ *
+ * The Copy Slop concrete-specifics dimension (src/rules/copySlop.js) attaches
+ * here: substance is an information-density concern. When the visible copy is
+ * vague by default (fewer than ~1 concrete specific per 75 words — no dates,
+ * numbers, prices, percentages, or named references) a gap penalty (0–100) is
+ * added to the score and a findings line reports the exact count with quoted
+ * examples. When specifics are plentiful the penalty is exactly 0 and no
+ * finding is emitted — legitimately specific pages are never penalized.
  */
+
+import { specificsFinding, specificsGapPenalty } from './copySlop.js';
 
 const MATTR_WINDOW = 50;
 const MAX_WINDOWS_SAMPLE = 400; // cap on windows evaluated (fixed stride sampling keeps it deterministic)
@@ -78,13 +88,21 @@ export function analyze({ text = '', words = [], sentences = [], paragraphs = []
     paraSub = clamp(frac * 120, 0, 100);
   }
 
-  const score = Math.round(ttrSub * 0.3 + stopSub * 0.2 + sentSub * 0.2 + paraSub * 0.3);
+  let score = Math.round(ttrSub * 0.3 + stopSub * 0.2 + sentSub * 0.2 + paraSub * 0.3);
+
+  // Copy Slop concrete specifics: gap penalty is 0 when specifics are
+  // plentiful (≥1 per ~75 words) and rises toward 100 as the copy becomes
+  // vague by default (0 specifics = fullest penalty). Findings only on a gap.
+  const specPenalty = specificsGapPenalty(text, wordCount);
+  if (specPenalty > 0) score = clamp(score + specPenalty, 0, 100);
+  const specFinding = specificsFinding(text, wordCount);
 
   const findings = [
     `vocabulary diversity (MATTR-${MATTR_WINDOW}): ${ttr.toFixed(3)} (lower = more repetitive vocabulary)`,
     `stopword ratio: ${(stopwordRatio * 100).toFixed(1)}%`,
     `mean sentence length: ${sentences.length > 0 ? (wordCount / sentences.length).toFixed(1) : 'n/a'} words (${sentences.length} sentences)`,
     `short paragraphs (<25 words): ${paragraphs.length > 0 ? Math.round((paragraphs.filter((p) => tokenCount(p) < 25).length / paragraphs.length) * 100) : 'n/a'}% (${paragraphs.length} paragraphs)`,
+    ...(specFinding ? [specFinding] : []),
   ];
 
   return { score, findings };

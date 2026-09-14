@@ -419,8 +419,8 @@ findings:
 | Rule | Weight (full) | Signal measured |
 | --- | --- | --- |
 | **Filler phrasing** | 12.5% | occurrences of known slop/AI-buzz phrases, normalized per 300 words |
-| **Boilerplate** | 10% | cookie/consent banners, legal boilerplate, newsletter blocks, generic marketing passages |
-| **Low info density** | 15% | vocabulary diversity (MATTR-50), stopword ratio, mean sentence length, short-paragraph prevalence |
+| **Boilerplate** | 10% | cookie/consent banners, legal boilerplate, newsletter blocks, generic marketing passages, **hedge phrases** ("we aim to", "world-class", … — Copy Slop) |
+| **Low info density** | 15% | vocabulary diversity (MATTR-50), stopword ratio, mean sentence length, short-paragraph prevalence, **concrete-specifics gap** (Copy Slop: <1 specific per 75 words) |
 | **Repetitive structure** | 12.5% | repeated sentence openings, near-identical sentences, repeated paragraphs |
 | **Cross-page duplication** | **30%** | word 4-gram Jaccard similarity of MAIN content across up to 5 pages (highest weight) |
 | **Build/tool fingerprints** | 10% | public markers of AI builders (v0.dev, Lovable, Framer, Durable, Replit) + generic template markers |
@@ -543,6 +543,76 @@ there, the score does not move. Breakdown key: `assets` (JSON
 `breakdown.assets = { score, findings }`); HTML report row: "🖼️
 Stock/placeholder imagery".
 
+### Copy slop (hedging + concrete specifics)
+
+The Copy Slop extension folds two deterministic copy-quality dimensions into
+the EXISTING seven categories — no new breakdown key, no weight changes:
+
+**1. Hedge phrases → boilerplate findings.** Vague marketing constructions are
+generic marketing language, so their hits join the boilerplate category's
+density math and findings. The phrase list lives in `src/rules/copySlop.json`
+(`hedgePhrases` — **edit the file, no code change**): 38 phrases covering the
+"we aim/strive/goal" family (`we aim to`, `we strive to`, `our goal is to`,
+`our goal is simple`), the "we're here/we understand" family, `we pride
+ourselves on`, `we're thrilled`, `we look forward to`, `at the heart of
+everything we do`, `in today's fast-paced world`, `seamless experience`,
+`innovative solutions`, `cutting-edge`, `state-of-the-art`, `best-in-class`,
+`leading provider`, `world-class`, `unlock your potential`, `take it to the
+next level`, `revolutionize`, `empower`, `game-changing`, `synergy`, `we're
+committed to`, `our mission is simple`, `your trusted partner`, `we are
+passionate about`, `your success is our`, `exceed your expectations`, `helping
+you`/`helping businesses`, `your journey`, `tailored solutions`. Matching is
+lowercased/trimmed substring counting (case-insensitive; `"We Aim To"` hits).
+Every hit is counted and the EXACT sentence containing the phrase is quoted in
+the findings (`hedge evidence: "We aim to empower your journey."`), capped at 8
+quotes so the report stays bounded. The phrase list is deliberately DISJOINT
+from the boilerplate rule's own regexes (checked by `test/copySlop.test.js`) so
+a single sentence is never double-counted inside the boilerplate category —
+phrases the boilerplate rule already owns (`we are committed to`, `we are
+dedicated to`, `driven by passion`, `our mission is to`, ...) are not repeated
+here. Some phrases also appear in the filler rule's list (e.g. `cutting-edge`,
+`world-class`) — that is fine and intended: filler and boilerplate are separate
+categories, and the same construction can be both buzz and hedge.
+
+**2. Concrete specifics gap → infoDensity findings.** Substance is an
+information-density concern. The rule counts concrete specifics in the visible
+copy — digits and numbers (`10,000`, `99.9`), currency (`$2`, `£4.5M`),
+percentages (`23%`), dates/years (`2013`, `March 2022`, `12 March 2022`), named
+brands (`knownNames` list in `copySlop.json`, e.g. Apple, Adobe, AWS, Figma,
+Google, Shopify, Zoom), and capitalized multi-word proper nouns (sentence-
+initial capitals are skipped — grammar, not a name). Overlapping spans count
+once (`2022` is a year, not a "number and a year"; `$99` is currency).
+Threshold: at least **1 concrete specific per 75 words**
+(`specificsPerWords` in the config). Below that the page is vague-by-default
+and infoDensity gets a findings line with the exact count and quoted examples:
+`concrete specifics: 0 found in 210 words — no dates, numbers, prices,
+percentages, or named references (need at least 3 per 75 words)`, or the count
+variant `concrete specifics: only 2 in 265 words (need at least 4 per 75
+words) — e.g. 2022, 3`. A 0–100 gap penalty (proportional: 100 when nothing
+concrete at all, smaller for "almost enough") is ADDED to the infoDensity
+score. When specifics are plentiful the penalty is exactly **0** and no finding
+is emitted — legitimately specific pages are never penalized. Detection is
+conservative on purpose (digits/dates/currency are the strongest signals; names
+are optional), so a number-free technical page is treated as vague even when
+its vocabulary is precise.
+
+**Which categories carry the findings:** hedges → `boilerplate` (`🥱 Generic
+marketing language` row in the HTML report; `breakdown.boilerplate.findings` in
+JSON, with `N× hedge phrase "…"` labels + `hedge evidence: "…"` quotes); the
+specifics gap → `infoDensity` (`📋 Repeated/template content` row;
+`breakdown.infoDensity.findings`). Surfaces pick them up automatically — JSON,
+HTML report, persisted breakdown, and webhook payload all carry the same
+strings. Score effect: hedges raise the boilerplate density (a hedge-heavy page
+scores high in boilerplate); a specifics gap raises the infoDensity score. No
+new breakdown keys, no weight-table changes — single-page v1 bit-identity and
+the seven-category table are untouched.
+
+**How to edit:** add/remove phrases in `src/rules/copySlop.json`
+(`hedgePhrases`, `knownNames`, `specificsPerWords`, `maxEvidenceQuotes`) — no
+code changes. The rule module is `src/rules/copySlop.js`
+(`analyzeHedges`/`analyzeSpecifics`, pure and deterministic); the disjointness
+guarantee vs the boilerplate regexes is enforced by the test suite.
+
 ### Slop Roast
 Every scan gets a punchy on-brand one-liner (the "roast") on top of the score.
 It is **deterministic, never random, and never an AI-authorship claim**: the
@@ -637,13 +707,18 @@ src/
     assets.js        asset-slop matcher: stock/placeholder CDN hosts + generic
                      filenames + missing/generic alt (loads assets.json)
     assets.json      editable stock-host / filename-pattern / alt-text lists
+    copySlop.js      Copy Slop rule: hedge-phrase counting + concrete-specifics
+                     gap (pure; consumed by boilerplate.js and infoDensity.js)
+    copySlop.json    editable hedge-phrase / known-name list + specifics thresholds
 test/                node:test suites (ssrf, rules/scorer, API pipeline, webhook,
                      phase2: similarity/discovery/fingerprints/scorer + integration
                      against local fixture sites incl. budget-expiry, card:
                      verdict bands, SVG escaping, PNG determinism + /card & /share
                      integration, branding: validation + report/card rendering +
                      injection safety, email: validation + content + best-effort
-                     sender semantics)
+                     sender semantics, assetSlop: imagery unit + API/HTML surfaces,
+                     copySlop: hedge/specifics unit + dedupe + determinism +
+                     API/HTML surfaces)
 ```
 
 ## Docker (production: Node 20 on Alpine)
