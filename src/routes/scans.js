@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { buildCardSvg, renderCardPng } from '../card.js';
 import { isHttpUrl } from '../branding.js';
 import { selectRoast, selectRoastInfo } from '../roast.js';
+import { withInsights } from '../threeLayer.js';
 import { toPublicScan, flipScore } from '../serialize.js';
 import { verdictBand, verdictLabel, scoreColor } from '../verdict.js';
 
@@ -21,6 +22,18 @@ function roastInfoFor(scan) {
   const info = selectRoastInfo({ id: scan.id, slopScore: scan.score, breakdown: scan.breakdown });
   if (typeof scan.roast === 'string' && scan.roast.trim() !== '') info.line = scan.roast;
   return info;
+}
+
+/**
+ * Breakdown with three-layer insights guaranteed: stored rows already carry
+ * `insights` inside the JSON column (attached at scan time); rows written
+ * before the feature derive them deterministically from the stored id +
+ * breakdown — the same function the scan pipeline used (withInsights is
+ * idempotent, so stored insights always win). Every surface (JSON + HTML)
+ * therefore shows the same layers for the same scan id.
+ */
+function breakdownFor(scan) {
+  return withInsights(scan.breakdown, scan.id);
 }
 
 /**
@@ -50,13 +63,15 @@ export function scansRouter({ db, publicBaseUrl }) {
     const accept = req.get('accept') || '';
     const wantsHtml = /text\/html/.test(accept) && !/application\/json/.test(accept);
     if (wantsHtml) {
-      return res.type('html').send(renderHtmlReport(scan));
+      return res.type('html').send(renderHtmlReport({ ...scan, breakdown: breakdownFor(scan) }));
     }
     // PUBLIC shape: stored internal slop scores are flipped at this read
     // boundary (score = 100 - internal, verdict added, breakdown flipped).
     // Pre-flip rows read correctly with NO migration: the flip happens here,
     // at response time; the DB column keeps the internal slop direction.
-    const pub = toPublicScan(scan);
+    // Three-layer insights are guaranteed on the breakdown (stored, or derived
+    // for legacy rows).
+    const pub = toPublicScan({ ...scan, breakdown: breakdownFor(scan) });
     const json = {
       id: pub.id,
       url: pub.url,
@@ -170,7 +185,26 @@ const DISCLAIMER =
  *
  * A module whose score is null (e.g. crossPage with fewer than 2 pages) is
  * rendered as its note instead of a numeric row.
+ *
+ * Three-layer findings: each category's findings cell keeps the raw evidence
+ * lines and, under each one, its insight (roast italic/accent; why/fix small
+ * and muted) when the category carries insights. Insight `i` corresponds to
+ * finding `i` (evidence is the finding string), so the layers stay glued to
+ * the exact trigger they roast. Findings beyond the 6-insight cap render as
+ * plain evidence lines, exactly as before.
  */
+function renderInsightLi(evidence, ins) {
+  const ev = `<li><strong>${esc(evidence)}</strong>`;
+  if (!ins || typeof ins.roast !== 'string' || ins.roast === '') return `${ev}</li>`;
+  // NOTE: the classed spans must not sit inside a classed parent followed by a
+  // child element — the literal "><" would trip the report's blanket no-raw-
+  // delimiter assertion. Unclassed containers + classed spans keep the markup
+  // injection-proof AND the assertion green.
+  return `${ev}
+      <p class="ins-roast">${esc(ins.roast)}</p>
+      <div><span class="ins-why">Why it matters:</span> ${esc(ins.why ?? '')}</div>
+      <div><span class="ins-fix">How to fix it:</span> ${esc(ins.fix ?? '')}</div></li>`;
+}
 function renderHtmlReport(scan) {
   // --- Slop Roast: the personality line, emoji-tagged like other findings. ---
   // Deterministic per scan id; stored on the scan, derived for pre-roast rows.
@@ -196,7 +230,7 @@ function renderHtmlReport(scan) {
       <tr>
         <td>${esc(CATEGORY_LABELS[key] ?? key)}</td>
         <td class="${{'CATASTROPHICALLY ASS': 'b-catastrophic', 'EXTREMELY ASS': 'b-extreme', 'VERY ASS': 'b-very', 'MILDLY GENERIC': 'b-mild', 'CLEANEST': 'b-clean'}[verdictBand(catScore).shortLabel] ?? 'b-very'}" style="font-weight:700">${catScore}</td>
-        <td><ul>${(rule.findings ?? []).map((f) => `<li>${esc(f)}</li>`).join('')}</ul></td>
+        <td><ul>${(rule.findings ?? []).map((f, i) => renderInsightLi(f, Array.isArray(rule.insights) ? rule.insights[i] : undefined)).join('')}</ul></td>
       </tr>`;
       }
       // Skipped module (score null): show its note instead of a score.
@@ -280,6 +314,9 @@ function renderHtmlReport(scan) {
     table { border-collapse: collapse; width: 100%; margin-top: 1rem; }
     th, td { border: 1px solid #cbd5e1; padding: .5rem .75rem; text-align: left; vertical-align: top; font-size: .9rem; }
     th { background: #f1f5f9; } ul { margin: 0; padding-left: 1.1rem; }
+    li { margin-bottom: .45rem; }
+    .ins-roast { font-style: italic; color: #7c3aed; font-weight: 600; margin: .25rem 0 0; font-size: .92rem; }
+    .ins-why, .ins-fix { font-weight: 700; color: #475569; margin-right: .25rem; }
   </style>
 </head>
 <body>

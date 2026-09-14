@@ -360,6 +360,55 @@ The report renders the per-rule table (a module with
 - **Templated Content** — the flagged duplication pairs (both URLs + similarity
   percentage) from `crossPage.pairs`.
 
+### Three-layer findings (`insights`)
+
+Every scan's breakdown categories carry **three-layer insights** — the product's
+spine (spec §5). Each category object gains an `insights` array, one entry per
+finding (capped at **6** per category, first findings in list order; `insight[i]`
+corresponds to `findings[i]`):
+
+```json
+"filler": {
+  "score": 40,
+  "findings": ["3× \"cutting-edge\"", "..."],
+  "insights": [
+    {
+      "roast": "\"cutting-edge\" appears 3× on this page. Bold words from a phrase that means nothing.",
+      "why": "Filler phrases signal that the copy was written to sound impressive, not to inform — and visitors who smell vague marketing lose trust in seconds.",
+      "fix": "Delete each flagged phrase and replace it with plain English that names a real outcome — \"elevate your brand\" becomes \"we redesign menus for restaurants.\"",
+      "evidence": "3× \"cutting-edge\""
+    }
+  ]
+}
+```
+
+- **Shape** — `{ roast, why, fix, evidence }` per insight, where `evidence` is
+  the finding string itself (the trigger the other three layers are about).
+  `roast` is funny, blunt and SPECIFIC: it interpolates `{tokens}` from the
+  finding's real parsed evidence (the exact phrase, label, sentence, page URLs,
+  image host/alt, counts). When a finding carries verbatim-evidence tokens, the
+  roast MUST cite at least one of them — a roast never fabricates a detail it
+  cannot point at. Findings with no interpolatable token fall back to
+  group-level roasts that still reference the summary values.
+- **Where the copy lives** — `src/threeLayer.json`, one pool per breakdown
+  category (`roasts`, `whys`, `fixes`). Editable WITHOUT code changes; token
+  names per group are documented in the file's `_comment`. House style matches
+  `src/roasts.json`: loud, meme-friendly, pattern-based only, never asserting
+  AI authorship (automated forbidden-phrase test).
+- **Determinism** — selection is seeded by scan id + category + finding index
+  through the same FNV-1a `hashScanId` the Slop Roast uses (`src/threeLayer.js`).
+  Same scan id → identical insights, forever; a fresh rescan (new id) may pick
+  different variants — that freshness is what keeps repeated free scans from
+  reconstructing the paid report, and it is still never random.
+- **Persistence** — insights are attached at scan time and stored inside the
+  breakdown JSON column, so every surface (JSON, webhook, email, HTML report)
+  is stable. Legacy rows written before the feature derive insights on read
+  with the same deterministic function (`withInsights` is idempotent: stored
+  insights always win). The HTML report renders each insight under its
+  evidence line (evidence bold; roast italic/accent; why/fix small and muted).
+- **Additive** — scores, findings, verdicts, the score flip and rate limiting
+  are untouched; `insights` is a new key on each category object.
+
 ### `GET /api/v1/scans/:id/card`
 
 The **shareable result card** — the viral distribution feature. Returns a

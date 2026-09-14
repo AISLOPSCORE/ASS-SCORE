@@ -10,6 +10,7 @@ import { createBudget } from './budget.js';
 import { SsrfError, InvalidUrlError } from './fetch/ssrf.js';
 import { FetchError } from './fetch/client.js';
 import { selectRoast } from './roast.js';
+import { withInsights } from './threeLayer.js';
 
 /** Per-scan time budget (ms): target fetch + discovery + additional fetches +
  *  similarity. When it elapses, in-flight work is aborted and whatever
@@ -184,8 +185,13 @@ export async function runScan({ db, fetcher, url, branding = null, now = () => n
   // Slop Roast: deterministic per scan id (same id -> same line, forever),
   // pool picked from the category that contributed the most to the score.
   const roast = selectRoast({ id, slopScore, breakdown });
+  // Three-layer findings: every category finding gains { roast, why, fix,
+  // evidence } (deterministic per scan id — see src/threeLayer.js). The
+  // enriched breakdown rides into the stored JSON column AND the response
+  // object, so every surface (JSON, HTML report, webhook, email) is stable.
+  const enrichedBreakdown = withInsights(breakdown, id);
   // Response object AND webhook payload — delivered bytes-exact as returned.
-  const payload = { id, url: page.url, slopScore, breakdown, roast, createdAt };
+  const payload = { id, url: page.url, slopScore, breakdown: enrichedBreakdown, roast, createdAt };
   if (branding) payload.branding = branding;
   if (pages.length >= 2) {
     payload.pages = pages.map((p) => p.url);
@@ -199,7 +205,7 @@ export async function runScan({ db, fetcher, url, branding = null, now = () => n
     id,
     url: page.url,
     score: slopScore,
-    breakdown,
+    breakdown: enrichedBreakdown,
     createdAt,
     partial: payload.partial,
     note: payload.note,

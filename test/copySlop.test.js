@@ -252,11 +252,27 @@ test('E2E: hedge-y fixture -> JSON breakdown shows hedge findings under boilerpl
   assert.deepEqual(stored.boilerplate.findings, bp.findings, 'findings stored bytes-exact');
   assert.equal(stored.infoDensity.score, 100 - id.score);
 
-  // Determinism across rescans: same public score, same findings.
+  // Determinism across rescans: same public score, same findings, same
+  // evidence. Insights are seeded per scan id, so a FRESH rescan may pick
+  // different (still deterministic) roast/why/fix variants — that is the
+  // free-teaser freshness property, not nondeterminism: the same scan id
+  // always yields identical insights (see test/threeLayer.test.js).
   const res2 = await postScan(hedgeApi.base, 'https://acme.example/');
   const json2 = await res2.json();
   assert.equal(json2.score, json.score);
-  assert.deepEqual(json2.breakdown, json.breakdown);
+  for (const key of Object.keys(json.breakdown)) {
+    const a = json.breakdown[key];
+    const b = json2.breakdown[key];
+    assert.equal(b.score, a.score, `${key} score identical across rescans`);
+    assert.deepEqual(b.findings, a.findings, `${key} findings identical across rescans`);
+    assert.ok(Array.isArray(b.insights), `${key} carries insights`);
+    assert.equal(b.insights.length, Math.min(a.findings.length, 6), `${key} insights capped at 6`);
+    if (b.insights.length > 0) {
+      assert.equal(b.insights[0].evidence, b.findings[0], `${key} insight evidence mirrors the finding`);
+      assert.ok(b.insights[0].roast.length > 0 && b.insights[0].why.length > 0 && b.insights[0].fix.length > 0,
+        `${key} insight carries all three layers`);
+    }
+  }
 });
 
 test('E2E: hedge-y fixture -> HTML report renders the hedge + specifics rows under the right category', async () => {

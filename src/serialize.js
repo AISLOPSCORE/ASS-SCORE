@@ -13,9 +13,10 @@
  *   verdict                 = grade label for the public score (see src/verdict.js)
  *
  * Everything else passes through EXACTLY as built: `findings`, `evidence`,
- * `roast`, `partial`, `note`, `pages`, `pairs`, `branding`. `worstPage` also
- * passes through unchanged — `worstPage.score` remains an INTERNAL slop score
- * (higher = worse); that is documented in the README.
+ * `insights` (three-layer findings, attached at scan time), `roast`, `partial`,
+ * `note`, `pages`, `pairs`, `branding`. `worstPage` also passes through
+ * unchanged — `worstPage.score` remains an INTERNAL slop score (higher =
+ * worse); that is documented in the README.
  *
  * Same internal input -> identical public output, always (deterministic).
  */
