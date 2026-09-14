@@ -66,9 +66,9 @@ const breakdown = (scores, { crossPage = null } = {}) => {
 
 // ---------------------------------------------------------------- data checks
 
-test('roasts.json: exactly the six breakdown pools + clean, 15–20 lines each', () => {
+test('roasts.json: exactly the seven breakdown pools + clean, 15–20 lines each', () => {
   assert.deepEqual([...ROAST_POOL_KEYS].sort(),
-    [...CATEGORY_ORDER, 'clean'].sort(), 'pool keys = six breakdown keys + clean');
+    [...CATEGORY_ORDER, 'clean'].sort(), 'pool keys = seven breakdown keys + clean');
   for (const key of ROAST_POOL_KEYS) {
     const pool = ROAST_POOLS[key];
     assert.ok(pool, `pool ${key}`);
@@ -141,20 +141,21 @@ test('pickSlopPool: diffuse slop (no category above the dominance floor) -> clea
   // Full-table (crossPage present). Every category lands <= 4 weighted points
   // (nothing dominates) and the total is a mid score -> "clean" pool.
   const diffuse = breakdown({ filler: 26, boilerplate: 33, infoDensity: 22, repetitive: 26 }, { crossPage: 13 });
-  // filler 3.90, boilerplate 3.96, infoDensity 3.96, repetitive 3.90,
-  // crossPage 3.90 -> winner (boilerplate) 3.96 <= DOMINANCE_MIN_WEIGHTED.
+  // filler 3.25, boilerplate 3.30, infoDensity 3.30, repetitive 3.25,
+  // crossPage 3.90 -> winner (crossPage) 3.90 <= DOMINANCE_MIN_WEIGHTED.
   assert.equal(pickSlopPool({ slopScore: 20, breakdown: diffuse }), 'clean');
 
   // Near-tie where the winner does clear the floor -> deterministic winner.
   const nearTie = breakdown({ filler: 27, boilerplate: 34, infoDensity: 22, repetitive: 27 }, { crossPage: 14 });
-  // filler 4.05, boilerplate 4.08, infoDensity 3.96, repetitive 4.05,
+  // filler 3.375, boilerplate 3.40, infoDensity 3.30, repetitive 3.375,
   // crossPage 4.20 -> crossPage wins (4.2 > 4).
   assert.equal(pickSlopPool({ slopScore: 20, breakdown: nearTie }), 'crossPage');
 
-  // v1 (crossPage skipped): winner > floor picks the leading v1 category.
-  const uniform = breakdown({ filler: 30, boilerplate: 35, infoDensity: 25, repetitive: 30 }, { crossPage: 0 });
-  // filler 4.5, boilerplate 4.2, infoDensity 4.5, repetitive 4.5 ->
-  // winner (filler, tie-break) 4.5 > 4.
+  // v1 (crossPage skipped): winner clears the floor and picks the leading v1
+  // category (phase-2 preserved v1 weighting for single-page scans).
+  const uniform = breakdown({ filler: 30, boilerplate: 35, infoDensity: 25, repetitive: 30 }, { crossPage: null });
+  // v1 table: filler 7.5, boilerplate 7.0, infoDensity 7.5, repetitive 7.5 ->
+  // winner (filler, tie-break) 7.5 > 4.
   assert.equal(pickSlopPool({ slopScore: 20, breakdown: uniform }), 'filler');
 });
 

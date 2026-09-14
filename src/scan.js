@@ -5,6 +5,7 @@ import { computeSlopScore } from './scorer.js';
 import { discoverPages } from './rules/discover.js';
 import { analyzeCrossPage, DUPLICATION_THRESHOLD } from './rules/crossPage.js';
 import { analyzeFingerprints } from './rules/fingerprints.js';
+import { analyzeAssets } from './rules/assets.js';
 import { createBudget } from './budget.js';
 import { SsrfError, InvalidUrlError } from './fetch/ssrf.js';
 import { FetchError } from './fetch/client.js';
@@ -129,12 +130,15 @@ export async function runScan({ db, fetcher, url, branding = null, now = () => n
     head: extractHead(page.body),
     text: text.text,
   });
+  // assets: stock/placeholder imagery on the target page (HTML-only, no downloads).
+  const assets = analyzeAssets(page.body);
 
   // --- v1 breakdown on the target + new categories ---------------------------
   const breakdown = {
     ...runRules(text),
     crossPage,
     fingerprints,
+    assets,
   };
 
   const { slopScore } = computeSlopScore(breakdown);

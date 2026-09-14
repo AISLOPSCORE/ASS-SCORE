@@ -26,22 +26,34 @@
  *   ------------ ----
  *   total        1.00
  *
- * The four v1 categories keep their exact v1 RELATIVE weights
- * (5 : 4 : 6 : 5) in both tables.
+ * Phase-3 full weights (all seven categories participate — multi-page scans):
  *
- * RENORMALIZATION (when a module is skipped)
+ *   filler       0.125
+ *   boilerplate  0.10
+ *   infoDensity  0.15
+ *   repetitive   0.125
+ *   crossPage    0.30   <- HIGHEST single weight (unchanged; site-wide
+ *                          duplication remains the strongest slop signal)
+ *   fingerprints 0.10
+ *   assets       0.10   <- NEW: stock/placeholder imagery (weight comparable
+ *                          to fingerprints — a strong, but not dominant, slop
+ *                          signal in a multi-page scan)
+ *   ------------ ----
+ *   total        1.00
+ *
+ * Renormalization (when a module is skipped)
  * ------------------------------------------
  * Only crossPage can be skipped (it returns score null when fewer than 2 pages
  * are discoverable — see src/rules/crossPage.js). When that happens the
  * composite returns to the exact v1 four-rule weights above, so a single-page
  * scan scores BIT-IDENTICALLY to v1 (the phase-2 requirement: "4-cat
  * renormalized weights == v1 weights {0.25, 0.20, 0.30, 0.25}"). The
- * fingerprints module still runs and its score/findings are reported in the
- * breakdown, but it contributes weight 0 to the composite in this case —
- * fingerprint evidence enters the score only when cross-page analysis runs
- * (this keeps single-page results strictly comparable to v1). If any other
- * module ever returned null, it would be dropped and the remaining weights
- * renormalized to sum 1.00 preserving their ratios.
+ * fingerprints and assets modules still run and their scores/findings are
+ * reported in the breakdown, but they contribute weight 0 to the composite in
+ * this case — evidence-based categories enter the score only when cross-page
+ * analysis runs (this keeps single-page results strictly comparable to v1). If
+ * any other module ever returned null, it would be dropped and the remaining
+ * weights renormalized to sum 1.00 preserving their ratios.
  */
 
 export const RULE_WEIGHTS = Object.freeze({
@@ -51,20 +63,25 @@ export const RULE_WEIGHTS = Object.freeze({
   repetitive: 0.25,
 });
 
-/** Full phase-2 weights used when crossPage participates (sums to 1.00). */
+/** Full phase-3 weights used when crossPage participates (sums to 1.00).
+ *  The four content categories keep their exact v1 RELATIVE weights
+ *  (5 : 4 : 6 : 5); crossPage stays the largest; fingerprints and assets
+ *  each carry 0.10 (comparable slop signals, additive). */
 export const FULL_RULE_WEIGHTS = Object.freeze({
-  filler: 0.15,
-  boilerplate: 0.12,
-  infoDensity: 0.18,
-  repetitive: 0.15,
+  filler: 0.125,
+  boilerplate: 0.10,
+  infoDensity: 0.15,
+  repetitive: 0.125,
   crossPage: 0.30,
   fingerprints: 0.10,
+  assets: 0.10,
 });
 
 /**
  * @param {{ filler?: {score?:number}, boilerplate?: {score?:number},
  *            infoDensity?: {score?:number}, repetitive?: {score?:number},
- *            crossPage?: {score?:number|null}, fingerprints?: {score?:number} }} ruleResults
+ *            crossPage?: {score?:number|null}, fingerprints?: {score?:number},
+ *            assets?: {score?:number} }} ruleResults
  * @returns {{ slopScore: number, components: Record<string,{score:number,weight:number,weighted:number}> }}
  */
 export function computeSlopScore(ruleResults = {}) {
@@ -81,12 +98,20 @@ export function computeSlopScore(ruleResults = {}) {
     total += weighted;
   }
 
-  // crossPage skipped (single-page scan): fingerprints runs but is excluded
-  // from the composite to reproduce v1 scoring exactly (documented above).
+  // crossPage skipped (single-page scan): fingerprints and assets run but are
+  // excluded from the composite to reproduce v1 scoring exactly (documented
+  // above).
   if (!hasCrossPage) {
     const fpScore = Number.isFinite(ruleResults.fingerprints?.score) ? ruleResults.fingerprints.score : 0;
     components.fingerprints = {
       score: fpScore,
+      weight: 0,
+      weighted: 0,
+      note: 'excluded from the composite when crossPage is skipped (single-page scans reproduce v1 scoring)',
+    };
+    const assetsScore = Number.isFinite(ruleResults.assets?.score) ? ruleResults.assets.score : 0;
+    components.assets = {
+      score: assetsScore,
       weight: 0,
       weighted: 0,
       note: 'excluded from the composite when crossPage is skipped (single-page scans reproduce v1 scoring)',

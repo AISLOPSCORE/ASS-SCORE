@@ -118,7 +118,7 @@ function esc(v) {
 /**
  * Branded, emoji-tagged display labels for the breakdown categories.
  * Display layer only — the JSON API keys stay exactly as built (filler,
- * boilerplate, infoDensity, repetitive, crossPage, fingerprints).
+ * boilerplate, infoDensity, repetitive, crossPage, fingerprints, assets).
  */
 const CATEGORY_LABELS = {
   filler: '🤖 AI-like copy',
@@ -127,6 +127,7 @@ const CATEGORY_LABELS = {
   repetitive: '🧱 Generic page structures',
   crossPage: '🔁 Duplicate language across pages',
   fingerprints: '🎨 AI-looking design patterns',
+  assets: '🖼️ Stock/placeholder imagery',
 };
 
 /**

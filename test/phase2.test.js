@@ -257,15 +257,17 @@ test('scorer: crossPage skipped (null) -> renormalized 4-cat weights EQUAL v1 we
   assert.equal(renorm.slopScore, v1Only.slopScore, 'single-page score == v1 score');
 });
 
-test('scorer: full 6-cat composite respects weights', () => {
+test('scorer: full 7-cat composite respects weights', () => {
   const r = computeSlopScore({
     filler: { score: 100 }, boilerplate: { score: 100 }, infoDensity: { score: 100 },
     repetitive: { score: 100 }, crossPage: { score: 100 }, fingerprints: { score: 100 },
+    assets: { score: 100 },
   });
   assert.equal(r.slopScore, 100);
   const zero = computeSlopScore({
     filler: { score: 0 }, boilerplate: { score: 0 }, infoDensity: { score: 0 },
     repetitive: { score: 0 }, crossPage: { score: 0 }, fingerprints: { score: 0 },
+    assets: { score: 0 },
   });
   assert.equal(zero.slopScore, 0);
   const onlyCross = computeSlopScore({ crossPage: { score: 100 } });

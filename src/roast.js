@@ -22,7 +22,7 @@ import { computeSlopScore } from './scorer.js';
  *      slop is diffuse (no category meaningfully dominated) -> "clean" pool.
  *   3. Otherwise roast the top category. Ties break on a fixed category order
  *      (filler > boilerplate > infoDensity > repetitive > crossPage >
- *      fingerprints) — always deterministic.
+ *      fingerprints > assets) — always deterministic.
  *
  * `infoDensity` note: in this rule set a HIGH infoDensity score means MORE
  * slop (thin, low-information content — low vocabulary diversity, high
@@ -48,11 +48,11 @@ export const ROAST_POOLS = Object.freeze(
   Object.fromEntries(Object.entries(ROAST_DATA.pools).map(([k, v]) => [k, Object.freeze({ ...v, lines: Object.freeze([...v.lines]) })])),
 );
 
-/** Valid pool keys: the six breakdown categories + `clean`. */
+/** Valid pool keys: the seven breakdown categories + `clean`. */
 export const ROAST_POOL_KEYS = Object.freeze(Object.keys(ROAST_POOLS));
 
 /** Deterministic tie-break order for category pools (weight-table order). */
-export const CATEGORY_ORDER = Object.freeze(['filler', 'boilerplate', 'infoDensity', 'repetitive', 'crossPage', 'fingerprints']);
+export const CATEGORY_ORDER = Object.freeze(['filler', 'boilerplate', 'infoDensity', 'repetitive', 'crossPage', 'fingerprints', 'assets']);
 
 /** Overall-score floor below which the "clean" pool always wins. */
 export const CLEAN_SCORE_THRESHOLD = 20;

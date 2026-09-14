@@ -1,0 +1,43 @@
+{
+  "_comment": "Asset Slop rule config (src/rules/assets.js). Editable WITHOUT code changes: add/remove entries here. Matching is case-insensitive and deterministic (config order).",
+  "stockImageHosts": [
+    "unsplash.com",
+    "pexels.com",
+    "pixabay.com",
+    "shutterstock.com",
+    "istockphoto.com",
+    "gettyimages.com",
+    "stock.adobe.com",
+    "freepik.com",
+    "via.placeholder.com",
+    "placehold.co",
+    "dummyimage.com",
+    "picsum.photos",
+    "placeholdit.imgix.net"
+  ],
+  "placeholderFilenamePatterns": [
+    "^placeholder",
+    "^dummy",
+    "screenshot",
+    "^image\\d+",
+    "^photo\\d+",
+    "^img\\d+",
+    "^logo$",
+    "spacer",
+    "^1x1",
+    "blank",
+    "transparent",
+    "pixel"
+  ],
+  "genericAltTexts": [
+    "image",
+    "photo",
+    "picture",
+    "placeholder",
+    "screenshot",
+    "img",
+    "pic",
+    "thumbnail",
+    "image place holder"
+  ]
+}

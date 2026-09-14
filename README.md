@@ -412,34 +412,43 @@ by default and SVG text needs one.
 
 ## How the A.S.S. Score works
 
-Six deterministic rules run over the extracted page text (and, for crossPage,
-over main content of several pages), each returning a score and findings:
+Seven deterministic rules run over the extracted page text, the raw HTML, and
+(for crossPage) main content of several pages — each returning a score and
+findings:
 
 | Rule | Weight (full) | Signal measured |
 | --- | --- | --- |
-| **Filler phrasing** | 15% | occurrences of known slop/AI-buzz phrases, normalized per 300 words |
-| **Boilerplate** | 12% | cookie/consent banners, legal boilerplate, newsletter blocks, generic marketing passages |
-| **Low info density** | 18% | vocabulary diversity (MATTR-50), stopword ratio, mean sentence length, short-paragraph prevalence |
-| **Repetitive structure** | 15% | repeated sentence openings, near-identical sentences, repeated paragraphs |
+| **Filler phrasing** | 12.5% | occurrences of known slop/AI-buzz phrases, normalized per 300 words |
+| **Boilerplate** | 10% | cookie/consent banners, legal boilerplate, newsletter blocks, generic marketing passages |
+| **Low info density** | 15% | vocabulary diversity (MATTR-50), stopword ratio, mean sentence length, short-paragraph prevalence |
+| **Repetitive structure** | 12.5% | repeated sentence openings, near-identical sentences, repeated paragraphs |
 | **Cross-page duplication** | **30%** | word 4-gram Jaccard similarity of MAIN content across up to 5 pages (highest weight) |
 | **Build/tool fingerprints** | 10% | public markers of AI builders (v0.dev, Lovable, Framer, Durable, Replit) + generic template markers |
+| **Asset slop** | 10% | stock/placeholder image CDN origins, placeholder/generic filenames, missing/generic alt text |
 
 ### Weight tables and renormalization
 
-Full six-category weights (multi-page scans): `filler 0.15, boilerplate 0.12,
-infoDensity 0.18, repetitive 0.15, crossPage 0.30, fingerprints 0.10` — total
-1.00; **crossPage is the largest single weight**. The four v1 categories keep
-their exact v1 *relative* weights (5 : 4 : 6 : 5) in both tables.
+Full seven-category weights (multi-page scans): `filler 0.125, boilerplate
+0.10, infoDensity 0.15, repetitive 0.125, crossPage 0.30, fingerprints 0.10,
+assets 0.10` — total 1.00; **crossPage is the largest single weight**. The four
+v1 categories keep their exact v1 *relative* weights (5 : 4 : 6 : 5) in both
+tables; **assets** (the phase-3 addition) carries 0.10 — comparable to
+fingerprints: stock/placeholder imagery is a strong slop signal, but not the
+dominant one, and it never outranks site-wide duplication. Adding assets
+diluted every pre-existing full-table weight proportionally (the previous
+six-category table was `filler 0.15, boilerplate 0.12, infoDensity 0.18,
+repetitive 0.15, crossPage 0.30, fingerprints 0.10`); crossPage kept its 0.30
+because duplication remains the strongest signal.
 
 When a module is skipped (only crossPage returns `score: null`, which happens
 when fewer than 2 pages are discoverable), the composite returns to the exact
 v1 four-rule weights `{filler 0.25, boilerplate 0.20, infoDensity 0.30,
 repetitive 0.25}` — a single-page scan scores bit-identically to v1. The
-fingerprints module still runs and its findings appear in the breakdown, but it
-contributes weight 0 in this case so single-page results stay strictly
-comparable to v1 (fingerprint evidence enters the score when cross-page
-analysis runs). Any other null module would be dropped and the remaining
-weights renormalized to sum 1.00 preserving their ratios.
+fingerprints and assets modules still run and their findings appear in the
+breakdown, but they contribute weight 0 in this case so single-page results
+stay strictly comparable to v1 (evidence-based categories enter the score when
+cross-page analysis runs). Any other null module would be dropped and the
+remaining weights renormalized to sum 1.00 preserving their ratios.
 
 Overall score = `round(Σ weight × score)`, clamped to 0–100. No randomness;
 timestamps are stored but never enter the score. Deterministic: identical rule
@@ -495,17 +504,56 @@ Durable script & CDN origins, Replit badge, meta generator tags declaring a
 builder, "Made with &lt;builder&gt;" footers, Unsplash stock imagery, placeholder-image
 services, Font Awesome default icons); no fabricated fingerprints.
 
+### Asset slop (editable CDN list + alt rules)
+
+`src/rules/assets.json` is a **pure pattern list — no code changes needed to
+add signal**. It detects stock/placeholder imagery from `<img>` tags only
+(HTML attributes: `src` / `data-src` / first `srcset` candidate) — **no image
+downloads, no headless browser, no image analysis**, fully deterministic:
+
+- `stockImageHosts` — hostname suffixes of stock-image CDNs and placeholder
+  services (Unsplash, Pexels, Pixabay, Shutterstock, iStock, Getty, Adobe
+  Stock, Freepik, via.placeholder.com, placehold.co, dummyimage.com,
+  picsum.photos, placeholdit.imgix.net). A host matches when it equals or
+  ends with one of these (so `images.unsplash.com` and `media.gettyimages.com`
+  hit; `unsplash.com.evil.test` and relative paths never do).
+- `placeholderFilenamePatterns` — regex strings matched (case-insensitively)
+  against the image filename stem: `placeholder*`, `dummy*`, `screenshot`,
+  `imageN`/`photoN`/`imgN`, a bare `logo`, `spacer`, `1x1`, `blank`,
+  `pixel`, `transparent`.
+- `genericAltTexts` — exact alt values considered generic after trim +
+  lowercase (image, photo, picture, placeholder, screenshot, img, pic,
+  thumbnail). Alt is flagged as missing when the attribute is absent, as
+  empty when it is `""` or whitespace-only (decorative-vs-content logic is
+  deliberately not applied — simple and deterministic), and as generic when
+  it matches the list.
+
+**Scoring** (deterministic): `round(clamp(100 × (0.50 · stockCdnShare +
+0.25 · filenameShare + 0.25 · altShare), 0, 100))` over all `<img>` tags —
+a page whose every image is stock-hosted, placeholder-named **and** alt-less
+scores 100; half its images from a stock CDN alone scores 25. No images →
+score 0, no findings. Findings read "N of M images from stock/placeholder
+CDNs", "…with placeholder/generic filenames", "…with missing or generic alt
+text" plus per-image details (capped at 8 per signal so the report stays
+bounded). **Effect on the overall score:** assets is a full-table category
+(weight 0.10 in multi-page scans), so stock-heavy pages score up to 10 points
+higher from imagery alone; like fingerprints, it contributes weight 0 to
+single-page scans (v1 bit-identity preserved) — its breakdown stays visible
+there, the score does not move. Breakdown key: `assets` (JSON
+`breakdown.assets = { score, findings }`); HTML report row: "🖼️
+Stock/placeholder imagery".
+
 ### Slop Roast
 Every scan gets a punchy on-brand one-liner (the "roast") on top of the score.
 It is **deterministic, never random, and never an AI-authorship claim**: the
 copy pokes at the *evidence* the rules found (template-like wording, duplicated
-pages, thin content, builder fingerprints).
+pages, thin content, builder fingerprints, stock imagery).
 
 - **Pools file:** `src/roasts.json` — one pool per breakdown category
   (`filler`, `boilerplate`, `infoDensity`, `repetitive`, `crossPage`,
-  `fingerprints`) plus `clean` for mostly-good sites. Each pool has an `emoji`,
-  a `label`, and 15–20 `lines` (1–2 sentences each, ≤180 chars, no factual
-  "was written by AI" phrasing — enforced by `test/roast.test.js`).
+  `fingerprints`, `assets`) plus `clean` for mostly-good sites. Each pool has
+  an `emoji`, a `label`, and 15–20 `lines` (1–2 sentences each, ≤180 chars, no
+  factual "was written by AI" phrasing — enforced by `test/roast.test.js`).
 - **Selection rule** (`src/roast.js`): the pool is picked from the breakdown
   category with the highest *weighted* contribution to the score (same math as
   `computeSlopScore`), provided it clears a 4.0 weighted-point dominance floor
@@ -552,7 +600,7 @@ src/
   text.js            deterministic HTML -> text/sentences/words extraction +
                      extractMainText (main content only) + extractHead
   scorer.js          weighted 0–100 combination (+ renormalization when a module
-                     is skipped; FULL_RULE_WEIGHTS for 6 categories)
+                     is skipped; FULL_RULE_WEIGHTS for 7 categories)
   fetch/
     ssrf.js          URL validation + blocked-range checks + DNS resolution
     client.js        fetch with re-validated redirects, timeout, 2 MB cap;
@@ -569,8 +617,8 @@ src/
                      the Slop Roast line under the verdict)
   roast.js           Slop Roast: deterministic pool pick (weighted-dominance
                      math) + FNV-1a scan-id seed; selectRoast/selectRoastInfo
-  roasts.json        Slop Roast copy pools (six categories + clean, 15-20 lines
-                     each; edit copy here, no code changes)
+  roasts.json        Slop Roast copy pools (seven categories + clean, 15-20
+                     lines each; edit copy here, no code changes)
   webhook.js         webhookUrl validation + async best-effort deliverer (retries)
   branding.js        white-label branding validation/normalization (strict types,
                      http(s) logo, hex accent; fail-fast 400 invalid_branding)
@@ -586,6 +634,9 @@ src/
     crossPage.js     cross-page duplication rule (threshold 0.80, score mapping)
     fingerprints.js  build/tool fingerprint matcher (loads fingerprints.json)
     fingerprints.json  extensible pattern list (no code changes to add entries)
+    assets.js        asset-slop matcher: stock/placeholder CDN hosts + generic
+                     filenames + missing/generic alt (loads assets.json)
+    assets.json      editable stock-host / filename-pattern / alt-text lists
 test/                node:test suites (ssrf, rules/scorer, API pipeline, webhook,
                      phase2: similarity/discovery/fingerprints/scorer + integration
                      against local fixture sites incl. budget-expiry, card:

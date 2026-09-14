@@ -1,5 +1,5 @@
 {
-  "_comment": "A.S.S. Score 'Slop Roast' copy pools. Config-driven like fingerprints.json: edit copy here, NO code changes needed. One pool per breakdown key (filler, boilerplate, infoDensity, repetitive, crossPage, fingerprints) plus 'clean' for mostly-good sites. Selection (src/roast.js): seeded by the scan id (deterministic, never random); the pool is chosen from the breakdown category that contributed the most weighted points to the overall score (see README 'Slop Roast'). Copy rules: loud/cheeky/meme tone, 1-2 sentences, pattern-based only — never assert AI authorship as fact (no 'was written by AI'-type claims). The mandated disclaimer on every report covers the score itself.",
+  "_comment": "A.S.S. Score 'Slop Roast' copy pools. Config-driven like fingerprints.json: edit copy here, NO code changes needed. One pool per breakdown key (filler, boilerplate, infoDensity, repetitive, crossPage, fingerprints, assets) plus 'clean' for mostly-good sites. Selection (src/roast.js): seeded by the scan id (deterministic, never random); the pool is chosen from the breakdown category that contributed the most weighted points to the overall score (see README 'Slop Roast'). Copy rules: loud/cheeky/meme tone, 1-2 sentences, pattern-based only — never assert AI authorship as fact (no 'was written by AI'-type claims). The mandated disclaimer on every report covers the score itself.",
   "pools": {
     "filler": {
       "emoji": "🤖",
@@ -131,6 +131,28 @@
         "The stock photo of hands shaking is the most authentic thing here.",
         "Generic icon set, gradient hero, rounded cards — the starter pack, fully equipped.",
         "Your site was assembled from an inspiration folder, and the folder was a default theme."
+      ]
+    },
+    "assets": {
+      "emoji": "🖼️",
+      "label": "Stock/placeholder imagery",
+      "lines": [
+        "Your hero image has appeared on forty thousand other websites. Introduce yourself to it.",
+        "The filename says it all: image2.png is doing its best.",
+        "That 'photo' is so generic it's basically a word, not a picture.",
+        "Every image on this page came from a stock CDN, and the CDN is tired of it.",
+        "Your alt-text department filed exactly one report: 'image'. Great work, team.",
+        "This gallery was assembled from a folder called 'Free Templates'. We peeked.",
+        "spacer.gif is the most honest thing on this page.",
+        "A bare 'logo' file, a blank spacer, and zero alt text. Real art.",
+        "Your site has more placeholder pixels than a parking lot has empty spaces.",
+        "Alt text: 'image'. Image: image. Caption: 'image'. Immersive.",
+        "Stock photos are doing 90% of the storytelling here, and they're unionizing.",
+        "The template's default gallery found a new home. Congrats to it.",
+        "So many generic pictures, the page feels like a showroom for itself.",
+        "Every image here came from the same template drawer. Different drawer? No.",
+        "image1.jpg, photo2.png and their friend logo.png are running this site now.",
+        "We counted more 'image' alt texts than real words on the page. Say hi."
       ]
     },
     "clean": {
