@@ -502,7 +502,10 @@ the whole list to 0–100. Wording is pattern-evidence only — "template-like",
 AI authorship. Only publicly known markers are included (v0.dev/Lovable/Framer/
 Durable script & CDN origins, Replit badge, meta generator tags declaring a
 builder, "Made with &lt;builder&gt;" footers, Unsplash stock imagery, placeholder-image
-services, Font Awesome default icons); no fabricated fingerprints.
+services, Font Awesome default icons) plus generic **layout-trope class
+patterns** (hero sections, gradient utilities, bento/card grids,
+feature/services/testimonial/pricing/CTA sections, stats/logo-cloud/FAQ/team
+blocks); no fabricated fingerprints.
 
 ### Asset slop (editable CDN list + alt rules)
 

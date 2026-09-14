@@ -102,5 +102,123 @@
     "patterns": [
       "(?:use\\.)?fontawesome\\.com"
     ]
+  },
+  {
+    "id": "hero-section-layout",
+    "label": "generic hero-section classes (template hero layout)",
+    "confidence": "low",
+    "scope": "html",
+    "patterns": [
+      "class=[\"'][^\"']*\\b(?:hero|hero-content|hero-section|home-hero|landing-hero|banner)\\b"
+    ]
+  },
+  {
+    "id": "gradient-utility-layout",
+    "label": "gradient/shine utility classes (template gradient styling)",
+    "confidence": "low",
+    "scope": "html",
+    "patterns": [
+      "class=[\"'][^\"']*\\b(?:bg-gradient-to-r|bg-gradient-to-b|bg-gradient-to-br|bg-gradient|gradient|hero-gradient)\\b",
+      "linear-gradient\\s*\\("
+    ]
+  },
+  {
+    "id": "card-grid-layout",
+    "label": "generic card/grid layout classes (template card-grid)",
+    "confidence": "low",
+    "scope": "html",
+    "patterns": [
+      "class=[\"'][^\"']*\\b(?:card|cards|card-grid|grid-cards)\\b"
+    ]
+  },
+  {
+    "id": "bento-layout",
+    "label": "bento-grid layout classes (template bento pattern)",
+    "confidence": "low",
+    "scope": "html",
+    "patterns": [
+      "class=[\"'][^\"']*\\b(?:bento|bento-grid)\\b"
+    ]
+  },
+  {
+    "id": "feature-grid-layout",
+    "label": "generic feature-section classes (3-column template blocks)",
+    "confidence": "low",
+    "scope": "html",
+    "patterns": [
+      "class=[\"'][^\"']*\\b(?:features|features-grid|feature-grid|feature-card|feature-section)\\b"
+    ]
+  },
+  {
+    "id": "services-grid-layout",
+    "label": "generic services-grid classes (template offerings blocks)",
+    "confidence": "low",
+    "scope": "html",
+    "patterns": [
+      "class=[\"'][^\"']*\\b(?:services|services-grid|services-cards|services-section)\\b"
+    ]
+  },
+  {
+    "id": "testimonial-layout",
+    "label": "generic testimonial-section classes (template social proof)",
+    "confidence": "low",
+    "scope": "html",
+    "patterns": [
+      "class=[\"'][^\"']*\\b(?:testimonials|testimonial-section|testimonial-grid|testimonial-card)\\b"
+    ]
+  },
+  {
+    "id": "pricing-layout",
+    "label": "generic pricing-section classes (template pricing cards)",
+    "confidence": "low",
+    "scope": "html",
+    "patterns": [
+      "class=[\"'][^\"']*\\b(?:pricing|pricing-grid|pricing-section|pricing-card|pricing-table)\\b"
+    ]
+  },
+  {
+    "id": "cta-layout",
+    "label": "generic CTA section/button classes (template call-to-action)",
+    "confidence": "low",
+    "scope": "html",
+    "patterns": [
+      "class=[\"'][^\"']*\\b(?:cta|cta-section|cta-button|call-to-action)\\b"
+    ]
+  },
+  {
+    "id": "stats-band-layout",
+    "label": "generic stats-band classes (template stat band)",
+    "confidence": "low",
+    "scope": "html",
+    "patterns": [
+      "class=[\"'][^\"']*\\b(?:stats|stats-grid|stats-section)\\b"
+    ]
+  },
+  {
+    "id": "logo-cloud-layout",
+    "label": "generic logo-cloud classes (template trusted-by strip)",
+    "confidence": "low",
+    "scope": "html",
+    "patterns": [
+      "class=[\"'][^\"']*\\b(?:logos|logo-cloud|logo-clouds)\\b"
+    ]
+  },
+  {
+    "id": "faq-layout",
+    "label": "generic FAQ-section classes (template FAQ accordion)",
+    "confidence": "low",
+    "scope": "html",
+    "patterns": [
+      "class=[\"'][^\"']*\\b(?:faq|faq-section|faq-grid)\\b"
+    ]
+  },
+  {
+    "id": "team-layout",
+    "label": "generic team-section classes (template team grid)",
+    "confidence": "low",
+    "scope": "html",
+    "patterns": [
+      "class=[\"'][^\"']*\\b(?:team|team-grid|team-card|team-section)\\b"
+    ]
   }
 ]
