@@ -232,7 +232,7 @@ test('E2E: Fiverr order -> 202, scan row exists with targetUrl/businessName, ema
   // The report-link email is built from the scan payload -> prove the link exists.
   const mail = buildReportEmail({ scan: sent.scan, to: sent.to, publicBaseUrl: 'https://ass-score.com' });
   assert.ok(mail.text.includes(`https://ass-score.com/scan/${row.id}`), 'email carries the report link');
-  assert.ok(mail.text.includes(`${row.score} / 100`), 'email carries the score');
+  assert.ok(mail.text.includes(`${100 - row.score} / 100`), 'email carries the public (flipped) score');
 });
 
 test('idempotency: replay of the same provider event id -> 200 already_processed, no second scan', async () => {

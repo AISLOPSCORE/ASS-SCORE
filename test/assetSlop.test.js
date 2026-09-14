@@ -249,12 +249,15 @@ test('POST scan: breakdown has the assets key with score+findings; persisted byt
   assert.ok(json.breakdown.assets.findings.some((f) => f.includes('generic alt "image"')));
   assert.ok(json.breakdown.assets.findings.some((f) => f.includes('generic filename "logo"')));
 
-  assert.ok(Number.isInteger(json.slopScore) && json.slopScore >= 0 && json.slopScore <= 100, 'overall score in 0-100');
+  assert.ok(Number.isInteger(json.score) && json.score >= 0 && json.score <= 100, 'overall public score in 0-100');
+  assert.equal(typeof json.verdict, 'string', 'verdict grade label present');
 
-  // persisted identically
+  // persisted identically (internal direction at rest; response is the flip)
   const row = new (await import('better-sqlite3')).default(dbPath)
     .prepare('SELECT breakdown FROM scans WHERE id = ?').get(json.id);
-  assert.deepEqual(JSON.parse(row.breakdown), json.breakdown, 'stored breakdown == response breakdown');
+  const stored = JSON.parse(row.breakdown);
+  assert.equal(stored.assets.score + json.breakdown.assets.score, 100, 'assets score flipped at rest');
+  assert.deepEqual(stored.assets.findings, json.breakdown.assets.findings, 'assets findings stored bytes-exact');
 
   // GET JSON returns the same assets breakdown
   const get1 = await (await fetch(`${api.base}/api/v1/scans/${json.id}`, { headers: { accept: 'application/json' } })).json();
@@ -270,7 +273,7 @@ test('GET HTML report: renders the "Stock/placeholder imagery" row with its find
   const html = await (await fetch(`${api.base}/api/v1/scans/${created.id}`, { headers: { accept: 'text/html' } })).text();
   assert.ok(html.includes('🖼️ Stock/placeholder imagery'), 'assets row renders under its emoji label');
   assert.ok(html.includes('Stock/placeholder imagery'), 'plain label present');
-  assert.match(html, /<td>50<\/td>/, 'assets score cell rendered');
+  assert.match(html, /<td[^>]*>50<\/td>/, 'assets score cell rendered');
   assert.ok(html.includes('2 of 4 images from stock/placeholder CDNs'), 'stock finding rendered');
   assert.ok(html.includes('generic alt'), 'alt finding rendered');
   // The mandated disclaimer and score line still present (report intact).

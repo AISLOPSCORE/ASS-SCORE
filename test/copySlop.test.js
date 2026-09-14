@@ -229,6 +229,10 @@ test('E2E: hedge-y fixture -> JSON breakdown shows hedge findings under boilerpl
   const res = await postScan(hedgeApi.base, 'https://acme.example/');
   assert.equal(res.status, 200);
   const json = await res.json();
+  // Flipped public contract: hedge fixture internal 75 -> public 25, which is
+  // the catastrophically-ass band (0-34).
+  assert.equal(json.score, 25, 'hedge fixture internal 75 -> public 25');
+  assert.equal(json.verdict, 'CATASTROPHICALLY ASS');
 
   const bp = json.breakdown.boilerplate;
   assert.ok(bp.findings.some((f) => /× hedge phrase/.test(f)), 'hedge label findings');
@@ -239,15 +243,19 @@ test('E2E: hedge-y fixture -> JSON breakdown shows hedge findings under boilerpl
   assert.ok(id.findings.some((f) => f.startsWith('concrete specifics:')), 'specifics gap finding present');
   assert.match(id.findings.find((f) => f.startsWith('concrete specifics:')), /0 found|only \d+/);
 
-  // Persisted bytes-exact (the stored breakdown == the response breakdown).
+  // Persisted unchanged: the DB stores the INTERNAL slop scores; the response
+  // is the flip (public + internal == 100 per category), findings untouched.
   const row = new (await import('better-sqlite3')).default(hedgeDb)
     .prepare('SELECT breakdown FROM scans WHERE id = ?').get(json.id);
-  assert.deepEqual(JSON.parse(row.breakdown), json.breakdown);
+  const stored = JSON.parse(row.breakdown);
+  assert.equal(stored.boilerplate.score, 100 - bp.score, 'stored boilerplate == flipped public');
+  assert.deepEqual(stored.boilerplate.findings, bp.findings, 'findings stored bytes-exact');
+  assert.equal(stored.infoDensity.score, 100 - id.score);
 
-  // Determinism across rescans: same score, same findings.
+  // Determinism across rescans: same public score, same findings.
   const res2 = await postScan(hedgeApi.base, 'https://acme.example/');
   const json2 = await res2.json();
-  assert.equal(json2.slopScore, json.slopScore);
+  assert.equal(json2.score, json.score);
   assert.deepEqual(json2.breakdown, json.breakdown);
 });
 
@@ -269,6 +277,10 @@ test('E2E: specifics-rich fixture -> zero gap finding in JSON; clean-copy page u
     const res = await postScan(api.base, 'https://acme.example/');
     assert.equal(res.status, 200);
     const json = await res.json();
+    // Flipped public contract: specifics-rich fixture internal 10 -> public 90
+    // -> the cleanest band (90-100).
+    assert.equal(json.score, 90, 'specifics fixture internal 10 -> public 90');
+    assert.equal(json.verdict, 'CLEANEST');
     const id = json.breakdown.infoDensity;
     assert.ok(!id.findings.some((f) => f.startsWith('concrete specifics:')), 'no gap finding for specific copy');
     assert.ok(json.breakdown.boilerplate.findings.every((f) => !f.includes('hedge phrase')), 'no hedge findings on a specific, hedge-free page');

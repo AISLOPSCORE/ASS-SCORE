@@ -515,15 +515,18 @@ test('integration: multi-page scan flags duplication, runs fingerprints, reports
   for (const rule of ['filler', 'boilerplate', 'infoDensity', 'repetitive', 'crossPage', 'fingerprints']) {
     assert.ok(rule in json.breakdown, `breakdown.${rule}`);
   }
-  // crossPage: flagged near-identical pair (home ~ about, main content)
-  assert.ok(json.breakdown.crossPage.score > 0, `crossPage.score ${json.breakdown.crossPage.score}`);
+  // crossPage: flagged near-identical pair (home ~ about, main content).
+  // Public scale (FLIPPED): the flagged pair means INTERNAL slop > 0, so the
+  // public sub-score reads < 100 (lower = worse duplication… inverted, good).
+  assert.ok(json.breakdown.crossPage.score < 100, `crossPage.score ${json.breakdown.crossPage.score}`);
   const flagged = json.breakdown.crossPage.pairs.filter((p) => p.similarity >= DUPLICATION_THRESHOLD);
   assert.ok(flagged.length >= 1, JSON.stringify(json.breakdown.crossPage.pairs));
   const hit = flagged.find((p) => p.pageA.endsWith('/') && p.pageB.includes('/about'));
   assert.ok(hit, 'target page ~ /about flagged');
   assert.ok(hit.similarity >= 0.8, `similarity ${hit.similarity}`);
-  // fingerprints evidence on the target page
-  assert.ok(json.breakdown.fingerprints.score > 0);
+  // fingerprints evidence on the target page (v0.dev asset detected -> internal
+  // score > 0 -> public sub-score < 100)
+  assert.ok(json.breakdown.fingerprints.score < 100);
   assert.ok(json.breakdown.fingerprints.findings.some((f) => f.includes('v0.dev')));
   // multi-page metadata
   assert.ok(Array.isArray(json.pages) && json.pages.length === 3, JSON.stringify(json.pages));
@@ -550,7 +553,7 @@ test('integration: multi-page scan flags duplication, runs fingerprints, reports
   // determinism: two consecutive runs produce identical scores + pairs
   const res2 = await postScan(api.base, `${multiBase}/`);
   const json2 = await res2.json();
-  assert.equal(json2.slopScore, json.slopScore);
+  assert.equal(json2.score, json.score);
   assert.deepEqual(json2.breakdown.crossPage.pairs, json.breakdown.crossPage.pairs);
   assert.equal(json2.breakdown.fingerprints.score, json.breakdown.fingerprints.score);
   assert.deepEqual(json2.worstPage, json.worstPage);
@@ -570,11 +573,11 @@ test('integration: single-page fixture -> graceful crossPage skip + 4-cat scorin
   assert.equal(cross.note, 'insufficient pages for cross-page analysis');
   assert.equal(json.pages, undefined, 'no pages key for single-page scans (v1 shape preserved)');
 
-  // score equals the pure v1 four-rule computation
+  // public score == flipped pure v1 computation (100 - internal slop)
   const body = await (await fetch(`${singleBase}/`)).text();
   const text = (await import('../src/text.js')).extractText(body);
   const v1 = computeSlopScore(runRules(text));
-  assert.equal(json.slopScore, v1.slopScore, 'single-page score == v1 score');
+  assert.equal(json.score, 100 - v1.slopScore, 'public score == 100 - internal v1 slop score');
 
   api.server.close();
 });
@@ -593,7 +596,7 @@ test('integration: budget expiry yields partial results without hanging', async 
   assert.ok(json.note.includes('/slow'), `note: ${json.note}`);
   assert.ok(json.pages.length >= 2, 'fast page completed, slow page dropped');
   assert.ok(!json.pages.some((u) => u.includes('/slow')), 'stalled page never returned');
-  assert.equal(json.breakdown.crossPage.score, 0, '2 completed pages -> crossPage ran without flagged pairs');
+  assert.equal(json.breakdown.crossPage.score, 100, '2 completed pages -> crossPage ran without flagged pairs (internal 0 -> public 100)');
   assert.ok(json.breakdown.crossPage.pairs.length === 1);
 
   api.server.close();

@@ -22,7 +22,8 @@
  * inbox can A/B test against real delivery.
  */
 
-import { DISCLAIMER, verdictFor } from './card.js';
+import { DISCLAIMER } from './card.js';
+import { verdictFor } from './verdict.js';
 import nodemailer from 'nodemailer';
 
 /** Conservative default primary — deliverability-safe, no emoji/brand tokens. */
@@ -76,8 +77,10 @@ function esc(v) {
  * @returns {{ from: string, to: string, subject: string, text: string, html: string }}
  */
 export function buildReportEmail({ scan, to, publicBaseUrl, subject = DEFAULT_SUBJECT, from = DEFAULT_FROM }) {
-  // The scan payload carries `slopScore`; stored rows use `score`. Accept both.
-  const score = Number(scan.slopScore ?? scan.score);
+  // The scan payload is the PUBLIC scan shape (`score` 0-100, higher = better,
+  // with a `verdict`); legacy internal payloads carry `slopScore` (opposite
+  // direction) — accept both, prefer the public `score`.
+  const score = Number(scan.score ?? scan.slopScore);
   const reportUrl = `${String(publicBaseUrl).replace(/\/+$/, '')}/scan/${scan.id}`;
 
   const text = [

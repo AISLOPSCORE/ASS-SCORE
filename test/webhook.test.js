@@ -158,7 +158,7 @@ test('POST /api/v1/scan: valid webhookUrl -> 200 and deliverer invoked with the 
   assert.equal(stub.calls.length - baseline, 1);
   const { payload, webhookUrl } = stub.calls[stub.calls.length - 1];
   assert.equal(webhookUrl, 'https://hooks.example.com/x');
-  for (const key of ['id', 'url', 'slopScore', 'breakdown', 'createdAt']) {
+  for (const key of ['id', 'url', 'score', 'verdict', 'breakdown', 'createdAt']) {
     assert.ok(key in payload, `payload has ${key}`);
   }
   // The delivered payload is the exact response object returned to the caller.
@@ -172,7 +172,8 @@ test('POST /api/v1/scan: a failing deliverer does not break the 200 response', a
   const res = await post(app.base, { url: 'https://example.com/', webhookUrl: 'https://hooks.example.com/x' });
   assert.equal(res.status, 200);
   const json = await res.json();
-  assert.ok(json.id && json.slopScore >= 0);
+  assert.ok(json.id && json.score >= 0 && json.score <= 100);
+  assert.equal(typeof json.verdict, 'string');
   await withTimeout(badStub.called, 2000, 'deliverer was not invoked');
   assert.equal(badStub.calls.length, 1);
   app.server.close();

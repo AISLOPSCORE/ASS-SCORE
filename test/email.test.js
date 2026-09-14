@@ -260,7 +260,7 @@ test('POST /api/v1/scan: valid email -> 200 and the sender is invoked with the e
   const { scan, to } = stub.calls[stub.calls.length - 1];
   assert.equal(to, 'owner@example.com');
   assert.deepEqual(scan, json, 'sender receives the exact response object');
-  for (const key of ['id', 'url', 'slopScore', 'breakdown', 'createdAt']) assert.ok(key in scan);
+  for (const key of ['id', 'url', 'score', 'verdict', 'breakdown', 'createdAt']) assert.ok(key in scan);
 });
 
 test('POST /api/v1/scan: a failing sender does not break the 200 response (best-effort)', async () => {
@@ -269,7 +269,8 @@ test('POST /api/v1/scan: a failing sender does not break the 200 response (best-
   const res = await post(app.base, { url: 'https://example.com/', email: 'owner@example.com' });
   assert.equal(res.status, 200);
   const json = await res.json();
-  assert.ok(json.id && json.slopScore >= 0.0 && json.slopScore <= 100);
+  assert.ok(json.id && json.score >= 0.0 && json.score <= 100);
+  assert.equal(typeof json.verdict, 'string');
   await withTimeout(bad.called, 2000, 'sender was not invoked');
   assert.equal(bad.calls.length, 1);
   app.server.close();

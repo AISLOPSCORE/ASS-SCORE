@@ -1,4 +1,7 @@
 import sharp from 'sharp';
+import { clampScore, verdictBand, verdictFor, scoreColor } from './verdict.js';
+// Re-exported so existing importers (emails, tests) keep one band source.
+export { verdictFor, scoreColor };
 
 /**
  * Shareable result card — server-side rendered PNG per scan (the viral loop).
@@ -26,43 +29,13 @@ const DISCLAIMER_LINES = [
 ];
 
 /**
- * Verdict bands, lowest-first. `max` is inclusive; e.g. `{ max: 39 }` covers
- * scores 20-39. These are the product's one-line verdicts — keep the tone.
- *   [0-19]  Clean as a whistle. Impressive.
- *   [20-39] Congrats — less A.S.S. than most.
- *   [40-59] A moderate amount of A.S.S. detected.
- *   [60-79] Oh no. That's a lot of A.S.S.
- *   [80-100] Your website has a serious slop problem.
+ * Verdict bands live in src/verdict.js — the single source of truth for grade
+ * labels + band colors (shared with the JSON API, HTML report and emails).
+ * card.js only re-exports the helpers it used to own (verdictFor/scoreColor)
+ * so existing importers keep working; ALL band logic is in verdict.js.
+ * Score direction: PUBLIC score, 0-100, higher = better. The caller (the
+ * routes layer, via toPublicScan) passes the FLIPPED public score here.
  */
-export const VERDICT_BANDS = [
-  { max: 19, color: '#4ade80', verdict: 'Clean as a whistle. Impressive.' },
-  { max: 39, color: '#a3e635', verdict: 'Congrats — less A.S.S. than most.' },
-  { max: 59, color: '#facc15', verdict: 'A moderate amount of A.S.S. detected.' },
-  { max: 79, color: '#fb923c', verdict: "Oh no. That's a lot of A.S.S." },
-  { max: 100, color: '#f87171', verdict: 'Your website has a serious slop problem.' },
-];
-
-/** Normalize any input to a valid 0-100 integer (defined for NaN/Infinity too). */
-function clampScore(score) {
-  const n = Number(score);
-  if (!Number.isFinite(n)) return 0;
-  return Math.max(0, Math.min(100, Math.round(n)));
-}
-
-/** One-line verdict for a score (0-100). Pure and deterministic. */
-export function verdictFor(score) {
-  return bandFor(score).verdict;
-}
-
-/** Score accent color by band (deterministic; used for the big number). */
-export function scoreColor(score) {
-  return bandFor(score).color;
-}
-
-function bandFor(score) {
-  const s = clampScore(score);
-  return VERDICT_BANDS.find((b) => s <= b.max) ?? VERDICT_BANDS[VERDICT_BANDS.length - 1];
-}
 
 /**
  * XML/SVG text escaping. Escapes the five XML entities and strips control
@@ -124,8 +97,9 @@ function elide(value, maxLen) {
  */
 export function buildCardSvg({ score, url, agencyName, roast }) {
   const s = clampScore(score);
-  const color = scoreColor(s);
-  const verdict = verdictFor(s);
+  const band = verdictBand(s);
+  const color = band.color;
+  const verdict = band.shortLabel; // the uppercase grade label (same as the API `verdict`)
   const scanned = escapeXml(displayUrl(url));
   const footer = escapeXml('ass-score.com · A.S.S. Score (AI Slop Score)');
   const dl1 = escapeXml(DISCLAIMER_LINES[0]);
@@ -139,6 +113,18 @@ export function buildCardSvg({ score, url, agencyName, roast }) {
   const roastLine = roast
     ? `\n  <text x="64" y="514" font-family="'DejaVu Sans', sans-serif" font-size="20" font-weight="600" fill="#cbd5e1">${escapeXml(elide(roast, 88))}</text>`
     : '';
+  // Score bar: fills from the LEFT (low, bad — red bands) toward the RIGHT
+  // (high, good — green bands), colored by the score's band. A red sliver says
+  // "bad" at a glance; a long green fill says "good". Direction is the public
+  // scale: 0 on the left, 100 at the right edge.
+  const barX = 64;
+  const barW = 1072;
+  const barY = 418;
+  const barH = 10;
+  const fillW = Math.round((barW * s) / 100);
+  const scoreBar = `
+  <rect x="${barX}" y="${barY}" width="${barW}" height="${barH}" rx="5" fill="rgba(255,255,255,0.08)"/>
+  <rect x="${barX}" y="${barY}" width="${fillW}" height="${barH}" rx="5" fill="${color}"/>`;
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${CARD_WIDTH}" height="${CARD_HEIGHT}" viewBox="0 0 ${CARD_WIDTH} ${CARD_HEIGHT}" role="img" aria-label="A.S.S. Score ${s} out of 100 for ${escapeXml(String(url))}">
   <defs>
@@ -160,8 +146,8 @@ export function buildCardSvg({ score, url, agencyName, roast }) {
   <text x="64" y="170" font-family="'DejaVu Sans', sans-serif" font-size="32" font-weight="600" fill="#e2e8f0">${scanned}</text>
   <rect x="64" y="196" width="1072" height="1" fill="rgba(255,255,255,0.08)"/>
   <text x="64" y="250" font-family="'DejaVu Sans', sans-serif" font-size="22" font-weight="700" letter-spacing="3" fill="#fbbf24">A.S.S. SCORE</text>
-  <text x="64" y="398" font-family="'DejaVu Sans', sans-serif" font-size="150" font-weight="800" fill="${color}">${s}<tspan dx="26" dy="-34" font-size="54" font-weight="600" fill="#cbd5e1">/ 100</tspan></text>
-  <text x="64" y="472" font-family="'DejaVu Sans', sans-serif" font-size="34" font-weight="600" fill="#f8fafc">${verdict}</text>${roastLine}
+  <text x="64" y="398" font-family="'DejaVu Sans', sans-serif" font-size="150" font-weight="800" fill="${color}">${s}<tspan dx="26" dy="-34" font-size="54" font-weight="600" fill="#cbd5e1">/ 100</tspan></text>${scoreBar}
+  <text x="64" y="472" font-family="'DejaVu Sans', sans-serif" font-size="34" font-weight="600" fill="${color}">${verdict}</text>${roastLine}
   <text x="64" y="560" font-family="'DejaVu Sans', sans-serif" font-size="17" font-weight="600" fill="#94a3b8">${footer}</text>
   <text x="64" y="584" font-family="'DejaVu Sans', sans-serif" font-size="12" fill="#64748b">${dl1}</text>
   <text x="64" y="602" font-family="'DejaVu Sans', sans-serif" font-size="12" fill="#64748b">${dl2}</text>

@@ -4,6 +4,7 @@ import { validateWebhookUrl, createWebhookDeliverer } from '../webhook.js';
 import { validateBranding } from '../branding.js';
 import { validateEmail } from '../email.js';
 import { runScan, SCAN_BUDGET_MS } from '../scan.js';
+import { toPublicScan } from '../serialize.js';
 import { validateUrl, resolveAndCheck, SsrfError, InvalidUrlError } from '../fetch/ssrf.js';
 import { clientIp } from '../clientIp.js';
 
@@ -28,13 +29,14 @@ import { clientIp } from '../clientIp.js';
  * the scan id on success, 'failed' on scan failure — never double-counted by
  * the best-effort webhook/email delivery paths.
  *
- * Response shape is unchanged from v1 (id, url, slopScore, breakdown,
- * createdAt) plus `pages`, `partial`, `note`, `worstPage` when multi-page,
- * plus `branding` when white-label branding was supplied and `roast` (Slop
- * Roast) on every scan.
- * The webhook payload is the exact response object. The email (if requested)
- * is delivered async + best-effort exactly like webhooks: failures are logged,
- * never propagated to the caller.
+ * Response shape: PUBLIC scan JSON — id, url, score (0-100, higher = better),
+ * verdict (grade label), breakdown (per-category scores flipped to the public
+ * direction), createdAt — plus `pages`, `partial`, `note`, `worstPage` when
+ * multi-page, plus `branding` when white-label branding was supplied and
+ * `roast` (Slop Roast) on every scan. The internal slop scores live only in
+ * the DB row; the flip happens once, here, at the serialization boundary
+ * (see src/serialize.js), and the webhook payload + email are the exact
+ * public response object.
  */
 export function scanRouter({
   db,
@@ -144,6 +146,12 @@ export function scanRouter({
       }
 
       const { payload } = result;
+      // PUBLIC shape at the serialization boundary: runScan computes + stores
+      // the internal slop score (higher = worse); the response, webhook
+      // delivery and email all carry the flipped public scan (score 0-100
+      // higher = better, verdict label, per-category scores flipped).
+      // The DB row keeps the internal direction — no migration needed.
+      const pub = toPublicScan(payload);
       const id = payload.id;
       db.markScanEvent(eventKey, { status: 'completed', scanId: id });
 
@@ -151,7 +159,7 @@ export function scanRouter({
         // Best-effort, non-blocking: defer delivery out of the request path.
         setImmediate(async () => {
           try {
-            await deliver(payload, webhook.url);
+            await deliver(pub, webhook.url);
           } catch (err) {
             console.error(`[webhook] delivery to ${webhook.url} for scan ${id} crashed:`, err?.message ?? err);
           }
@@ -164,14 +172,14 @@ export function scanRouter({
         // below is never affected.
         setImmediate(async () => {
           try {
-            await emailSender(payload, mail.email);
+            await emailSender(pub, mail.email);
           } catch (err) {
             console.error(`[email] delivery to ${mail.email} for scan ${id} crashed:`, err?.message ?? err);
           }
         });
       }
 
-      res.status(200).json(payload);
+      res.status(200).json(pub);
     } catch (err) {
       next(err); // centralized error handler; never leaks stack traces
     }

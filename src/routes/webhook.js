@@ -4,6 +4,7 @@ import { validateUrl, resolveAndCheck, SsrfError, InvalidUrlError } from '../fet
 import { normalizeOrder } from '../orderNormalizer.js';
 import { validateEmail } from '../email.js';
 import { runScan, SCAN_BUDGET_MS } from '../scan.js';
+import { toPublicScan } from '../serialize.js';
 import { clientIp } from '../clientIp.js';
 
 /**
@@ -152,7 +153,9 @@ export function webhookRouter({
             scanId = result.payload.id;
             if (mail.email && emailSender) {
               try {
-                await emailSender(result.payload, mail.email);
+                // PUBLIC scan shape (score flipped, verdict added) — same
+                // serialization boundary as POST /api/v1/scan.
+                await emailSender(toPublicScan(result.payload), mail.email);
               } catch (err) {
                 logError(`[webhook] email to ${mail.email} for scan ${scanId} crashed:`, err?.message ?? err);
               }

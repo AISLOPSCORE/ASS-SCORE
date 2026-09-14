@@ -283,7 +283,7 @@ test('card: branded scan -> GET /card returns a real PNG (1200x630) and rasteriz
   assert.deepEqual([...png.subarray(0, 8)], [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], 'PNG magic');
   assert.ok(png.length > 20_000, 'card is a real rendered image');
   // The same SVG renders to PNG without crashing (sharp rasterizes agency line).
-  const svg = buildCardSvg({ score: created.slopScore, url: created.url, agencyName: AGENCY.agencyName });
+  const svg = buildCardSvg({ score: created.score, url: created.url, agencyName: AGENCY.agencyName });
   const out = await renderCardPng(svg);
   assert.ok(Buffer.isBuffer(out) && out.length > 20_000);
 });

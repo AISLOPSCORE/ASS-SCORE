@@ -2,6 +2,8 @@ import { Router } from 'express';
 import { buildCardSvg, renderCardPng } from '../card.js';
 import { isHttpUrl } from '../branding.js';
 import { selectRoast, selectRoastInfo } from '../roast.js';
+import { toPublicScan, flipScore } from '../serialize.js';
+import { verdictBand, verdictLabel, scoreColor } from '../verdict.js';
 
 /**
  * The stored line when the row has one; for rows written before the roast
@@ -50,24 +52,30 @@ export function scansRouter({ db, publicBaseUrl }) {
     if (wantsHtml) {
       return res.type('html').send(renderHtmlReport(scan));
     }
+    // PUBLIC shape: stored internal slop scores are flipped at this read
+    // boundary (score = 100 - internal, verdict added, breakdown flipped).
+    // Pre-flip rows read correctly with NO migration: the flip happens here,
+    // at response time; the DB column keeps the internal slop direction.
+    const pub = toPublicScan(scan);
     const json = {
-      id: scan.id,
-      url: scan.url,
-      slopScore: scan.score,
-      breakdown: scan.breakdown,
-      roast: roastFor(scan),
-      createdAt: scan.created_at,
+      id: pub.id,
+      url: pub.url,
+      score: pub.score,
+      verdict: pub.verdict,
+      breakdown: pub.breakdown,
+      roast: roastFor(scan), // stored line, or derived for pre-roast legacy rows
+      createdAt: pub.created_at ?? pub.createdAt,
     };
-    if (Array.isArray(scan.breakdown?.crossPage?.pages) && scan.breakdown.crossPage.pages.length >= 2) {
-      json.pages = scan.breakdown.crossPage.pages;
+    if (Array.isArray(pub.breakdown?.crossPage?.pages) && pub.breakdown.crossPage.pages.length >= 2) {
+      json.pages = pub.breakdown.crossPage.pages;
     }
-    if (scan.breakdown?.crossPage?.pairs?.length) {
-      json.pairs = scan.breakdown.crossPage.pairs;
+    if (pub.breakdown?.crossPage?.pairs?.length) {
+      json.pairs = pub.breakdown.crossPage.pairs;
     }
-    if (typeof scan.partial === 'boolean') json.partial = scan.partial;
-    if (typeof scan.note === 'string') json.note = scan.note;
-    if (scan.worstPage) json.worstPage = scan.worstPage;
-    if (scan.branding) json.branding = scan.branding; // white-label branding used
+    if (typeof pub.partial === 'boolean') json.partial = pub.partial;
+    if (typeof pub.note === 'string') json.note = pub.note;
+    if (pub.worstPage) json.worstPage = pub.worstPage; // worstPage.score stays INTERNAL slop direction (see README)
+    if (pub.branding) json.branding = pub.branding; // white-label branding used
     res.json(json);
   });
 
@@ -80,7 +88,7 @@ export function scansRouter({ db, publicBaseUrl }) {
     if (!scan) return missing(res, req.params.id);
     try {
       const png = await renderCardPng(buildCardSvg({
-        score: scan.score,
+        score: flipScore(scan.score), // PUBLIC score: 100 - stored internal slop
         url: scan.url,
         agencyName: scan.branding?.agencyName, // white-label: small agency line only
         roast: roastFor(scan),
@@ -100,7 +108,7 @@ export function scansRouter({ db, publicBaseUrl }) {
     const shareUrl = `${shareBase.replace(/\/+$/, '')}/scan/${scan.id}`;
     res.json({
       url: shareUrl,
-      text: `My website scored ${scan.score}/100 on the A.S.S. Score (AI Slop Score). Check yours: ${shareUrl}`,
+      text: `My website scored ${flipScore(scan.score)}/100 on the A.S.S. Score (AI Slop Score). Check yours: ${shareUrl}`,
     });
   });
 
@@ -182,11 +190,12 @@ function renderHtmlReport(scan) {
 
   const rows = Object.entries(scan.breakdown)
     .map(([key, rule]) => {
-      if (Number.isFinite(Number(rule?.score))) {
+      if (Number.isFinite(Number(rule?.score)) && rule.score !== null) {
+        const catScore = flipScore(rule.score); // public direction: higher = better
         return `
       <tr>
         <td>${esc(CATEGORY_LABELS[key] ?? key)}</td>
-        <td>${Number(rule.score)}</td>
+        <td class="${{'CATASTROPHICALLY ASS': 'b-catastrophic', 'EXTREMELY ASS': 'b-extreme', 'VERY ASS': 'b-very', 'MILDLY GENERIC': 'b-mild', 'CLEANEST': 'b-clean'}[verdictBand(catScore).shortLabel] ?? 'b-very'}" style="font-weight:700">${catScore}</td>
         <td><ul>${(rule.findings ?? []).map((f) => `<li>${esc(f)}</li>`).join('')}</ul></td>
       </tr>`;
       }
@@ -206,14 +215,16 @@ function renderHtmlReport(scan) {
   const worst = scan.worstPage || null;
   let worstSection = '';
   if (worst && Array.isArray(cross.pages) && cross.pages.length >= 2) {
+    // worstPage.score is the INTERNAL slop direction (higher = worse) — the
+    // label below says so explicitly so the flipped public scale is not misread.
     worstSection = `
   <h2>Worst Page</h2>
-  <p><a href="${esc(worst.url)}">${esc(worst.url)}</a> — combined score ${Number(worst.score)} / 100</p>
+  <p><a href="${esc(worst.url)}">${esc(worst.url)}</a> — combined slop score ${Number(worst.score)} / 100 (higher = more slop)</p>
   <ul>${(worst.findings ?? []).map((f) => `<li>${esc(f)}</li>`).join('')}</ul>`;
   } else if (worst) {
     worstSection = `
   <h2>Worst Page</h2>
-  <p><a href="${esc(worst.url)}">${esc(worst.url)}</a> — combined score ${Number(worst.score)} / 100</p>`;
+  <p><a href="${esc(worst.url)}">${esc(worst.url)}</a> — combined slop score ${Number(worst.score)} / 100 (higher = more slop)</p>`;
   }
 
   // --- Templated Content section (flagged duplication pairs) -----------------
@@ -243,6 +254,13 @@ function renderHtmlReport(scan) {
     : '';
   const scoreAccent = accentColor ? ` style="color:${accentColor}"` : '';
   const footerLine = footerText ? `<p class="footer">${esc(footerText)}</p>` : '';
+  // PUBLIC score + verdict: the stored internal slop score is flipped here
+  // (score = 100 - internal, higher = better); the grade label and its band
+  // color come from the shared verdict module (src/verdict.js).
+  const publicScore = flipScore(scan.score);
+  const publicVerdict = verdictBand(publicScore);
+  const verdictClass = { 'CATASTROPHICALLY ASS': 'b-catastrophic', 'EXTREMELY ASS': 'b-extreme', 'VERY ASS': 'b-very', 'MILDLY GENERIC': 'b-mild', 'CLEANEST': 'b-clean' }[publicVerdict.shortLabel] ?? 'b-very';
+  const verdictLine = `<p class="verdict ${verdictClass}">${verdictLabel(publicScore)}</p>`;
 
   return `<!doctype html>
 <html lang="en">
@@ -254,6 +272,9 @@ function renderHtmlReport(scan) {
     h1 { font-size: 1.4rem; } h2 { font-size: 1.1rem; margin-top: 1.8rem; }
     .powered { color: #64748b; font-size: .85rem; margin-top: -.25rem; }
     .score { font-size: 2.6rem; font-weight: 700; }
+    .verdict { font-size: 1.15rem; font-weight: 700; margin: .25rem 0 .75rem; }
+    .b-catastrophic { color: #f87171; } .b-extreme { color: #fb923c; } .b-very { color: #facc15; }
+    .b-mild { color: #a3e635; } .b-clean { color: #4ade80; }
     .roast { font-size: 1.15rem; font-weight: 600; margin: .75rem 0 .25rem; }
     .footer { color: #64748b; font-size: .9rem; border-top: 1px solid #e2e8f0; padding-top: .75rem; margin-top: 1.5rem; }
     table { border-collapse: collapse; width: 100%; margin-top: 1rem; }
@@ -265,7 +286,8 @@ function renderHtmlReport(scan) {
   ${logo}
   ${header}
   <p><a href="${esc(scan.url)}">${esc(scan.url)}</a> · scanned ${esc(scan.created_at)}</p>
-  <p class="score"${scoreAccent}>A.S.S. Score: ${Number(scan.score)} / 100</p>
+  <p class="score"${scoreAccent}>A.S.S. Score: ${publicScore} / 100</p>
+  ${verdictLine}
   ${roastSection}
   ${pagesLine}
   <table>
