@@ -7,6 +7,7 @@ import Database from 'better-sqlite3';
 import { createApp } from '../src/app.js';
 import { validateBranding, isHttpUrl } from '../src/branding.js';
 import { buildCardSvg, renderCardPng } from '../src/card.js';
+import { validateUrl } from '../src/fetch/ssrf.js';
 
 const tmpDb = () => path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'aislop-brand-')), 'test.db');
 
@@ -31,8 +32,11 @@ function stubDeliverer() {
   return deliver;
 }
 
-function startApp(dbPath, fetcher, webhookDeliverer) {
-  const app = createApp({ dbPath, fetcher, webhookDeliverer });
+// Route-level SSRF guard, DNS-skipping variant (see webhookFulfillment.test.js).
+const offlineValidateTarget = async (raw) => validateUrl(raw);
+
+function startApp(dbPath, fetcher, webhookDeliverer, options = {}) {
+  const app = createApp({ dbPath, fetcher, webhookDeliverer, validateTarget: offlineValidateTarget, ...options });
   const server = app.listen(0);
   const port = server.address().port;
   return { server, base: `http://127.0.0.1:${port}` };
@@ -130,7 +134,7 @@ let strictStub;
 before(() => {
   apiDbPath = tmpDb();
   stub = stubDeliverer();
-  api = startApp(apiDbPath, fakeFetcher(SLOP_HTML), stub);
+  api = startApp(apiDbPath, fakeFetcher(SLOP_HTML), stub, { maxScansPerDay: 100 }); // shared app scans 5x; default 3/IP/day would 429
   strictStub = stubDeliverer();
   strictApi = startApp(tmpDb(), neverFetcher, strictStub);
 });

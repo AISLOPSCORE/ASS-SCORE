@@ -4,6 +4,7 @@ import { validateUrl, resolveAndCheck, SsrfError, InvalidUrlError } from '../fet
 import { normalizeOrder } from '../orderNormalizer.js';
 import { validateEmail } from '../email.js';
 import { runScan, SCAN_BUDGET_MS } from '../scan.js';
+import { clientIp } from '../clientIp.js';
 
 /**
  * POST /api/v1/webhook — paid-order fulfillment.
@@ -81,7 +82,7 @@ export function webhookRouter({
         return res.status(400).json({ error: { code: 'invalid_email', message: mail.message } });
       }
 
-      const ip = req.ip ?? 'unknown';
+      const ip = clientIp(req); // shared derivation: X-Forwarded-For (trust proxy) / socket
       const createdAt = now();
       const day = createdAt.slice(0, 10); // UTC day bucket for the rate cap
       const eventKey = norm.eventId ? `${norm.provider}:${norm.eventId}` : randomUUID();

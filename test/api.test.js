@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/app.js';
+import { validateUrl } from '../src/fetch/ssrf.js';
 
 const tmpDb = () => path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'aislop-test-')), 'test.db');
 
@@ -18,8 +19,13 @@ const fakeFetcher = (html) => ({
   fetchHtml: async (raw) => ({ status: 200, url: new URL(raw).href, body: html }),
 });
 
+// Route-level SSRF guard, DNS-skipping variant (same convention as
+// webhookFulfillment.test.js): the fake fetchers own all network behavior, so
+// the guard must reject blocked shapes without resolving hostnames.
+const offlineValidateTarget = async (raw) => validateUrl(raw);
+
 function startApp(dbPath, fetcher) {
-  const app = createApp({ dbPath, fetcher });
+  const app = createApp({ dbPath, fetcher, validateTarget: offlineValidateTarget });
   const server = app.listen(0);
   const port = server.address().port;
   return { server, base: `http://127.0.0.1:${port}` };

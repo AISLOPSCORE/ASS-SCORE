@@ -95,8 +95,18 @@ function fixtureFetcher() {
   };
 }
 
+// Route-level SSRF guard for the fixture apps: the fixture fetcher itself
+// enforces host restrictions (only 127.0.0.1), so the guard only needs the
+// protocol check — and must NOT resolve hostnames (tests stay offline) or
+// refuse the loopback fixture targets the production guard would block.
+const fixtureTarget = async (raw) => {
+  const u = new URL(String(raw).trim());
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new SsrfError('Only http(s) URLs allowed');
+  return u;
+};
+
 function startApp(dbPath, fetcher, scanBudgetMs) {
-  const app = createApp({ dbPath, fetcher, scanBudgetMs });
+  const app = createApp({ dbPath, fetcher, scanBudgetMs, validateTarget: fixtureTarget });
   const server = app.listen(0);
   const port = server.address().port;
   return { server, base: `http://127.0.0.1:${port}` };

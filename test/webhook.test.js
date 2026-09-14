@@ -6,6 +6,7 @@ import path from 'node:path';
 import http from 'node:http';
 import { createApp } from '../src/app.js';
 import { validateWebhookUrl, createWebhookDeliverer } from '../src/webhook.js';
+import { validateUrl } from '../src/fetch/ssrf.js';
 
 const tmpDb = () => path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'aislop-webhook-')), 'test.db');
 
@@ -20,8 +21,11 @@ const neverFetcher = {
   fetchHtml: async () => { throw new Error('fetcher must not be called for invalid webhookUrl'); },
 };
 
+// Route-level SSRF guard, DNS-skipping variant (see webhookFulfillment.test.js).
+const offlineValidateTarget = async (raw) => validateUrl(raw);
+
 function startApp(dbPath, fetcher, webhookDeliverer) {
-  const app = createApp({ dbPath, fetcher, webhookDeliverer });
+  const app = createApp({ dbPath, fetcher, webhookDeliverer, validateTarget: offlineValidateTarget });
   const server = app.listen(0);
   const port = server.address().port;
   return { server, base: `http://127.0.0.1:${port}` };

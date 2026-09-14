@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/app.js';
+import { validateUrl } from '../src/fetch/ssrf.js';
 import {
   validateEmail,
   buildReportEmail,
@@ -44,8 +45,11 @@ function stubSender({ behavior = 'record' } = {}) {
   return send;
 }
 
+// Route-level SSRF guard, DNS-skipping variant (see webhookFulfillment.test.js).
+const offlineValidateTarget = async (raw) => validateUrl(raw);
+
 function startApp(dbPath, fetcher, emailSender) {
-  const app = createApp({ dbPath, fetcher, emailSender });
+  const app = createApp({ dbPath, fetcher, emailSender, validateTarget: offlineValidateTarget });
   const server = app.listen(0);
   const port = server.address().port;
   return { server, base: `http://127.0.0.1:${port}` };

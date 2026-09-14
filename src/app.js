@@ -1,10 +1,19 @@
 import express from 'express';
 import { openDb } from './db.js';
 import { Fetcher } from './fetch/client.js';
+import { validateUrl, resolveAndCheck } from './fetch/ssrf.js';
 import { scanRouter } from './routes/scan.js';
 import { scansRouter } from './routes/scans.js';
 import { webhookRouter } from './routes/webhook.js';
 import { createEmailSender } from './email.js';
+
+/** The full SSRF guard both routes run before their rate caps (validateUrl +
+ *  resolveAndCheck — the Fetcher applies the same checks on every hop). */
+const defaultCheckTarget = async (raw) => {
+  const url = validateUrl(raw);
+  await resolveAndCheck(url);
+  return url;
+};
 
 /**
  * Build the Express app. Options are injectable for tests:
@@ -22,23 +31,46 @@ import { createEmailSender } from './email.js';
  *   now             — ISO timestamp provider (default new Date().toISOString())
  *   maxWebhooksPerDay — per-IP daily cap on POST /api/v1/webhook (default env
  *                     MAX_WEBHOOKS_PER_DAY or 10; 0 disables the cap)
- *   validateTarget  — SSRF guard for webhook order targets (default: the same
- *                     validateUrl + resolveAndCheck the Fetcher runs)
+ *   maxScansPerDay  — per-IP daily cap on POST /api/v1/scan (default env
+ *                     MAX_SCANS_PER_DAY or 3; 0 disables the cap)
+ *   validateTarget  — SSRF guard for scan/webhook targets (default: the same
+ *                     validateUrl + resolveAndCheck the Fetcher runs; tests
+ *                     inject a DNS-skipping guard)
+ *
+ * NOTE on client IPs: the app trusts ONE proxy hop (the platform edge, e.g.
+ * Railway's LB) and Express then derives the client IP from the last
+ * X-Forwarded-For entry, falling back to the socket address when no proxy
+ * header is present. Both rate-limit ledgers key on that derivation via
+ * src/clientIp.js; without trust proxy, Express ignores X-Forwarded-For and
+ * every request would look like the LB's IP, collapsing the per-IP caps.
  */
-export function createApp({ dbPath = './data/ass-score.db', fetcher, webhookDeliverer, emailSender, scanBudgetMs, publicBaseUrl = process.env.PUBLIC_BASE_URL || 'https://ass-score.com', now, maxWebhooksPerDay, validateTarget } = {}) {
+export function createApp({ dbPath = './data/ass-score.db', fetcher, webhookDeliverer, emailSender, scanBudgetMs, publicBaseUrl = process.env.PUBLIC_BASE_URL || 'https://ass-score.com', now, maxWebhooksPerDay, maxScansPerDay, validateTarget } = {}) {
   const db = openDb(dbPath);
   const fetcherImpl = fetcher ?? new Fetcher();
   const emailSenderImpl = emailSender ?? createEmailSender({ publicBaseUrl });
   const nowImpl = now ?? (() => new Date().toISOString());
-  const rawMax = maxWebhooksPerDay ?? process.env.MAX_WEBHOOKS_PER_DAY;
-  const webhookCap = Number.isFinite(Number(rawMax)) ? Math.max(0, Number(rawMax)) : 10;
+  const rawMaxWebhooks = maxWebhooksPerDay ?? process.env.MAX_WEBHOOKS_PER_DAY;
+  const webhookCap = Number.isFinite(Number(rawMaxWebhooks)) ? Math.max(0, Number(rawMaxWebhooks)) : 10;
+  const rawMaxScans = maxScansPerDay ?? process.env.MAX_SCANS_PER_DAY;
+  const scanCap = Number.isFinite(Number(rawMaxScans)) ? Math.max(0, Number(rawMaxScans)) : 3;
+  const checkTarget = validateTarget ?? defaultCheckTarget;
 
   const app = express();
   app.disable('x-powered-by');
+  app.set('trust proxy', 1); // platform edge in front; req.ip = real client (XFF / socket)
   app.use(express.json({ limit: '64kb' }));
 
   app.get('/health', (_req, res) => res.json({ ok: true, service: 'ass-score' }));
-  app.use(scanRouter({ db, fetcher: fetcherImpl, webhookDeliverer, emailSender: emailSenderImpl, scanBudgetMs, now: nowImpl }));
+  app.use(scanRouter({
+    db,
+    fetcher: fetcherImpl,
+    webhookDeliverer,
+    emailSender: emailSenderImpl,
+    scanBudgetMs,
+    now: nowImpl,
+    maxScansPerDay: scanCap,
+    validateTarget: checkTarget,
+  }));
   app.use(webhookRouter({
     db,
     fetcher: fetcherImpl,
@@ -46,7 +78,7 @@ export function createApp({ dbPath = './data/ass-score.db', fetcher, webhookDeli
     scanBudgetMs,
     now: nowImpl,
     maxWebhooksPerDay: webhookCap,
-    validateTarget,
+    validateTarget: checkTarget,
   }));
   app.use(scansRouter({ db, publicBaseUrl }));
 

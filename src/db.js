@@ -71,6 +71,33 @@ export function openDb(dbPath) {
     CREATE INDEX IF NOT EXISTS idx_webhook_events_day_ip ON webhook_events (day, ip);
   `);
 
+  // Scan rate-limit ledger (accepted POST /api/v1/scan requests).
+  // One row per ACCEPTED scan (URL passed the SSRF guard + shape validation,
+  // scan was actually run). Kept in its own table — deliberately NOT the
+  // webhook_events table — so the scan and webhook daily caps share no counts:
+  //   event_key – randomUUID (fresh key per accepted request)
+  //   ip, day   – rate-limit bucket: per-IP per-UTC-day accepted-scan count
+  //   scan_id   – the scan row created for this request (filled on completion)
+  //   status    – 'accepted' | 'completed' | 'failed'
+  //   created_at– ledger timestamp (from the route's injectable clock)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS scan_events (
+      event_key  TEXT PRIMARY KEY,
+      ip         TEXT NOT NULL,
+      day        TEXT NOT NULL,
+      scan_id    TEXT,
+      status     TEXT NOT NULL DEFAULT 'accepted',
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_scan_events_day_ip ON scan_events (day, ip);
+  `);
+
+  const insertScanEventStmt = db.prepare(
+    'INSERT OR IGNORE INTO scan_events (event_key, ip, day, scan_id, status, created_at) VALUES (?, ?, ?, ?, ?, ?)'
+  );
+  const markScanEventStmt = db.prepare('UPDATE scan_events SET status = ?, scan_id = ? WHERE event_key = ?');
+  const countScanEventsStmt = db.prepare('SELECT COUNT(*) AS n FROM scan_events WHERE day = ? AND ip = ?');
+
   const insertWebhookEventStmt = db.prepare(
     'INSERT OR IGNORE INTO webhook_events (event_key, provider, event_id, ip, day, scan_id, status, business_name, payload, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
   );
@@ -145,6 +172,28 @@ export function openDb(dbPath) {
     /** Accepted webhook-event count for a (UTC day, IP) bucket — the per-IP daily cap. */
     countWebhookEvents(day, ip) {
       return countWebhookEventsStmt.get(day, ip)?.n ?? 0;
+    },
+
+    // --- Scan rate-limit ledger (independent of the webhook ledger) ----------
+    /**
+     * Record an accepted POST /api/v1/scan request (rate-limit ledger).
+     * Called AFTER the SSRF guard + shape validations and BEFORE runScan, with
+     * no await between the count check and this insert (single-process
+     * synchronous = race-free, same as the webhook ledger).
+     * @returns {boolean} true when a new row was inserted (always true here:
+     *   the event key is a fresh randomUUID per accepted request).
+     */
+    insertScanEvent({ eventKey, ip, day, scanId = null, status = 'accepted', createdAt }) {
+      const info = insertScanEventStmt.run(eventKey, ip, day, scanId, status, createdAt);
+      return info.changes > 0;
+    },
+    /** Accepted-scan count for a (UTC day, IP) bucket — the per-IP daily cap. */
+    countScanEvents(day, ip) {
+      return countScanEventsStmt.get(day, ip)?.n ?? 0;
+    },
+    /** Update the ledger row once the scan completes ('completed' w/ scan id) or fails ('failed'). */
+    markScanEvent(eventKey, { status, scanId = null }) {
+      markScanEventStmt.run(status, scanId, eventKey);
     },
     close() {
       db.close();

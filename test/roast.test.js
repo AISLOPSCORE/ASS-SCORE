@@ -6,6 +6,7 @@ import path from 'node:path';
 import sharp from 'sharp';
 import { createApp } from '../src/app.js';
 import { openDb } from '../src/db.js';
+import { validateUrl } from '../src/fetch/ssrf.js';
 import {
   ROAST_POOLS,
   ROAST_POOL_KEYS,
@@ -31,8 +32,11 @@ const fakeFetcher = (html) => ({
   fetchHtml: async (raw) => ({ status: 200, url: new URL(raw).href, body: html }),
 });
 
+// Route-level SSRF guard, DNS-skipping variant (see webhookFulfillment.test.js).
+const offlineValidateTarget = async (raw) => validateUrl(raw);
+
 function startApp(dbPath, options = {}) {
-  const app = createApp({ dbPath, fetcher: fakeFetcher(SLOP_HTML), ...options });
+  const app = createApp({ dbPath, fetcher: fakeFetcher(SLOP_HTML), validateTarget: offlineValidateTarget, ...options });
   const server = app.listen(0);
   const port = server.address().port;
   return { server, base: `http://127.0.0.1:${port}` };

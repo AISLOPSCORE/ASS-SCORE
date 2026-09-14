@@ -105,6 +105,21 @@ Multi-page scans add four top-level fields (all webhook-delivered too):
 | Fetch failure | `502` | timeout (>10s), network error, body > 2 MB, too many redirects (>3) |
 | Parse failure | `422` | HTML could not be parsed or contained no extractable text |
 | Bad JSON | `400` | malformed request body |
+| Per-IP daily cap exceeded | `429` | `error.code "rate_limited"` + `resetAt` (next UTC midnight) — see [Rate limiting](#rate-limiting) |
+
+**Rate limiting.** `POST /api/v1/scan` has a per-IP daily cap on **accepted
+scans** — a request only counts once its URL passed the SSRF guard and every
+shape validation; all `400`s (malformed URL, blocked target, bad
+`webhookUrl`/`branding`/`email`) are free. Over the cap the API returns
+`429 { error: { code: "rate_limited", message: "Daily scan limit reached for
+this IP (N scans per day). New scans unlock at UTC midnight.",
+resetAt: "<next UTC midnight ISO>" } }`. The count lives in the SQLite
+`scan_events` ledger (per IP per UTC day), is configured with
+`MAX_SCANS_PER_DAY` (default `3`, `0` disables), and is **independent** of the
+webhook cap — see [Rate limiting](#rate-limiting) for details. The client IP is
+`X-Forwarded-For` (the app trusts one proxy hop) with socket fallback; note
+that any proxy in front of the app must overwrite/sanitize `X-Forwarded-For`
+for the cap to be meaningful.
 
 ### Webhook delivery
 
@@ -168,7 +183,7 @@ Response contract:
 | Malformed / unknown provider payload | `400` | `error.code "invalid_payload"` with a reason |
 | SSRF-blocked / invalid target URL | `400` | `error.code "blocked"` (same guard as `/scan`) |
 | Malformed client email | `400` | `error.code "invalid_email"` (missing email is allowed — order still scans, email skipped) |
-| Per-IP daily cap exceeded | `429` | `error.code "rate_limited"` (see `MAX_WEBHOOKS_PER_DAY`) |
+| Per-IP daily cap exceeded | `429` | `error.code "rate_limited"` (see [Rate limiting](#rate-limiting)) |
 | Genuine internal error | `500` | `error.code "internal_error"` |
 
 **Internal order shape.** All three providers normalize to
@@ -208,10 +223,23 @@ returns `200 already_processed` (with the original `scanId` once completed)
 and **never creates a second scan**. Events without an id are processed
 normally (rate limit still applies) but cannot be deduplicated.
 
-**Rate limiting (webhooks only).** Per-IP daily cap on accepted webhooks —
-`MAX_WEBHOOKS_PER_DAY` (default `10`, `0` disables), counted in the same
-SQLite ledger per UTC day per IP. Over the cap → `429`. This is independent of
-any future rate limiting on `POST /api/v1/scan`.
+### Rate limiting
+
+Both endpoints carry per-IP per-UTC-day caps backed by
+SQLite ledgers; they count **accepted** requests only (every `400` validation
+failure is free) and are fully **independent** — the `webhook_events` and
+`scan_events` tables never share counts, so a paid order webhook never eats a
+free scan slot and vice versa:
+
+| Endpoint | Env var | Default | Ledger | Over cap → |
+| --- | --- | --- | --- | --- |
+| `POST /api/v1/webhook` | `MAX_WEBHOOKS_PER_DAY` | `10` | `webhook_events` | `429 rate_limited` |
+| `POST /api/v1/scan` | `MAX_SCANS_PER_DAY` | `3` | `scan_events` | `429 rate_limited` (+ `resetAt`) |
+
+`0` disables either cap. Scans triggered by accepted order webhooks run
+through `runScan` directly and are **not** debited from `MAX_SCANS_PER_DAY`.
+The client IP comes from `X-Forwarded-For` (one trusted proxy hop) with the
+socket address as fallback — see `src/clientIp.js`.
 
 **Delivery.** After the scan completes, the report link is emailed to the
 client's address with the existing soft-fail sender (see
