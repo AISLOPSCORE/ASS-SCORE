@@ -21,9 +21,11 @@ const defaultCheckTarget = async (raw) => {
  *   fetcher         — object with fetchHtml(rawUrl) (default: SSRF-protected Fetcher)
  *   webhookDeliverer — async (scan, webhookUrl) => result (default: best-effort
  *                     POST with retries; tests inject a stub)
- *   emailSender     — async (scan, to) => result (default: Nodemailer via
- *                     SMTP_* env vars, or a no-op that logs "email not
- *                     configured" when SMTP_HOST is absent; tests inject a stub)
+ *   emailSender     — async (scan, to) => result (default: created by the
+ *                     createEmailSender factory — Resend API when
+ *                     RESEND_API_KEY is set, else Nodemailer via SMTP_* env
+ *                     vars, else a no-op that logs "email not configured";
+ *                     tests inject a stub)
  *   scanBudgetMs    — per-scan time budget covering target fetch + discovery
  *                     + additional fetches (default SCAN_BUDGET_MS; tests lower it)
  *   publicBaseUrl   — public origin used for share links and result pages

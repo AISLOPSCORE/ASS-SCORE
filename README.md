@@ -305,7 +305,29 @@ The email body is built by `src/email.js`: an "A.S.S. Score" brand header, the
 score, the scanned URL, the one-line verdict, a link to the public report
 (`{PUBLIC_BASE_URL}/scan/{id}`), and the mandated disclaimer, in plain text +
 a simple HTML body. Sender name is **A.S.S. Score**
-(`A.S.S. Score <no-reply@ass-score.com>`, overridable via `SMTP_FROM`).
+(`A.S.S. Score <no-reply@ass-score.com>`, overridable via `SMTP_FROM`, or
+`RESEND_FROM` on the Resend transport).
+
+**Transport precedence (the `createEmailSender` factory in `src/email.js`):**
+
+| # | When | Transport |
+| --- | --- | --- |
+| 1 | `RESEND_API_KEY` set | **Resend API** — `POST https://api.resend.com/emails` with `Authorization: Bearer <RESEND_API_KEY>` and JSON body `{ from, to, subject, html }` (from = `RESEND_FROM` ?? `SMTP_FROM` ?? `A.S.S. Score <onboarding@resend.dev>`). Uses Node's global fetch — no SDK, no new dependencies. |
+| 2 | `SMTP_HOST` set | **Nodemailer over SMTP** (existing behavior, unchanged) |
+| 3 | neither | **No-op** — logs `email not configured`, returns `{ ok: false, configured: false }` |
+
+The Resend transport has the same soft-fail contract as SMTP: it never throws
+into the request path, transient failures (HTTP 5xx / network errors) are
+retried up to `maxAttempts` (default 3) with backoff 1 s / 3 s / 9 s, and HTTP
+4xx responses are **not** retried (a client-side rejection would never succeed
+on retry — same convention as the webhook deliverer). All failures and the
+final give-up are logged; a 4xx or persistent failure returns
+`{ ok: false, configured: true, attempts, error }`.
+
+> **From-domain must be verified with Resend before production sends.** While
+> `RESEND_API_KEY` is set but neither `RESEND_FROM` nor `SMTP_FROM` is, the
+> sandbox default `A.S.S. Score <onboarding@resend.dev>` is used and a warning
+> is logged telling you to verify a real sending domain and set `RESEND_FROM`.
 
 **Subject decision.** The owner spec asks to spam-test subject lines and keep a
 fallback ready. Real spam-testing needs a live SMTP provider, so the shipped
@@ -315,27 +337,30 @@ branded variant `"Your A.S.S. Score is ready 🔴"` exists and is selectable via
 `EMAIL_SUBJECT` (or the `emailSubject` app option) — swap it in once the team
 inbox can A/B test against real delivery.
 
-**Required env vars at deploy (to turn email ON):**
+**Required env vars at deploy (to turn email ON — Resend preferred):**
 
 | Env | Meaning | Default |
 | --- | --- | --- |
-| `SMTP_HOST` | SMTP server (e.g. `smtp.postmarkapp.com`) | **unset → email is a no-op** |
+| `RESEND_API_KEY` | Resend API key — makes Resend the transport | **unset → falls through to SMTP / no-op** |
+| `RESEND_FROM` | sender address for Resend (must be a verified domain) | `SMTP_FROM`, else `A.S.S. Score <onboarding@resend.dev>` (logs a warning) |
+| `SMTP_HOST` | SMTP server (e.g. `smtp.postmarkapp.com`) | **unset → email is a no-op** (unless Resend is used) |
 | `SMTP_PORT` | SMTP port | `587` (or `465` when `SMTP_SECURE=true`) |
 | `SMTP_SECURE` | `"true"` for implicit TLS on 465 | `false` |
 | `SMTP_USER` | auth username | — |
 | `SMTP_PASS` | auth password | — |
-| `SMTP_FROM` | sender address | `A.S.S. Score <no-reply@ass-score.com>` |
+| `SMTP_FROM` | SMTP sender address / Resend from-fallback | `A.S.S. Score <no-reply@ass-score.com>` |
 | `EMAIL_SUBJECT` | subject line variant | `Your website audit is ready` |
 | `PUBLIC_BASE_URL` | report-link base | `https://ass-score.com` |
 
-**No credentials → nothing breaks.** When `SMTP_HOST` is missing or empty, the
-default sender is a no-op that logs `[email] email not configured (set
-SMTP_HOST/...)` and returns `{ ok: false, configured: false }` — the scan still
-succeeds with `200`. The transport (Nodemailer over SMTP, no TLS up until
-credentials exist) is injectable: the `emailSender` app option is an
+**No credentials → nothing breaks.** When neither `RESEND_API_KEY` nor
+`SMTP_HOST` is present, the default sender is a no-op that logs `[email] email
+not configured (set RESEND_API_KEY, or SMTP_HOST/...)` and returns
+`{ ok: false, configured: false }` — the scan still succeeds with `200`. The
+transport is injectable: the `emailSender` app option is an
 `async (scan, to) => result` function, so tests (and future swaps to other
 providers) stub or script the transport. No real email is ever sent unless
-`SMTP_*` credentials are present in the environment.
+`RESEND_API_KEY` (preferred) or `SMTP_*` credentials are present in the
+environment.
 
 ### `GET /api/v1/scans/:id`
 

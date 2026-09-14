@@ -7,11 +7,15 @@
  * and the send function never rejects.
  *
  * Transport is injectable (the `emailSender` app option; tests use stubs).
- * The default transport is Nodemailer configured from SMTP_* env vars. When
- * SMTP_HOST is NOT set, the default sender is a no-op that logs
- * "email not configured" and returns { ok: false, configured: false } — the
- * scan still succeeds. This guarantees nothing breaks before credentials
- * exist. SMTP_* is the ONLY thing the deploy needs to turn on real email.
+ * The default transport is chosen by env in this precedence order:
+ *   1. Resend API — when `RESEND_API_KEY` is set, POST the report to
+ *      https://api.resend.com/emails via global fetch (from-address =
+ *      `RESEND_FROM` ?? `SMTP_FROM` ?? 'A.S.S. Score <onboarding@resend.dev>').
+ *   2. Nodemailer over SMTP — when `SMTP_HOST` is set (unchanged behavior).
+ *   3. No-op — when neither is set: logs "email not configured" and returns
+ *      { ok: false, configured: false } — the scan still succeeds. This
+ *      guarantees nothing breaks before credentials exist. The deploy needs
+ *      only `RESEND_API_KEY` (preferred) or `SMTP_*` to turn on real email.
  *
  * SUBJECT DECISION (owner spec: test subject-line variants, keep a fallback).
  * We cannot spam-test without a live SMTP provider, so the default subject is
@@ -32,6 +36,10 @@ export const DEFAULT_SUBJECT = 'Your website audit is ready';
 export const ASS_SCORE_SUBJECT = 'Your A.S.S. Score is ready 🔴';
 
 const DEFAULT_FROM = 'A.S.S. Score <no-reply@ass-score.com>';
+/** Resend's sandbox from-address — real sending requires a verified domain. */
+export const RESEND_DEFAULT_FROM = 'A.S.S. Score <onboarding@resend.dev>';
+/** Resend API endpoint — consumed with Node's global fetch (no SDK). */
+export const RESEND_API_URL = 'https://api.resend.com/emails';
 const MAX_EMAIL_LEN = 254;
 const EMAIL_RE = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
 
@@ -129,50 +137,176 @@ export function buildReportEmail({ scan, to, publicBaseUrl, subject = DEFAULT_SU
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
- * Build the email sender (function injectable into the app).
+ * Build a Resend API email sender (global fetch — no SDK dependency).
+ *
+ * POSTs the report to https://api.resend.com/emails with
+ * `Authorization: Bearer <apiKey>` and JSON body `{ from, to, subject, html }`.
+ * Same soft-fail contract as the SMTP sender: never rejects, retries
+ * transient failures (5xx / network) up to maxAttempts with the same backoff,
+ * and gives up immediately on 4xx (a client-side rejection retrying would
+ * never succeed — webhook-deliverer convention).
+ *
+ * @param {object} opts
+ * @param {string} opts.apiKey            Resend API key (REQUIRED)
+ * @param {string} [opts.from]            sender ("Name <email@verified-domain>")
+ * @param {string} [opts.subject]         subject line (default env EMAIL_SUBJECT
+ *                                        or DEFAULT_SUBJECT)
+ * @param {string} [opts.publicBaseUrl]   report-link base
+ * @param {object} [opts.logger]          logger with .log/.error (default console)
+ * @param {number} [opts.maxAttempts=3]   total attempts
+ * @param {number[]} [opts.backoffMs]     delay before attempts 2, 3, ...
+ * @param {Function} [opts.fetchImpl]     fetch to use (default globalThis.fetch)
+ * @returns {(scan: object, to: string) => Promise<{ok: boolean, configured: boolean,
+ *           attempts?: number, error?: Error}>} — never rejects
+ */
+export function createResendSender({
+  apiKey,
+  from = RESEND_DEFAULT_FROM,
+  subject = process.env.EMAIL_SUBJECT || DEFAULT_SUBJECT,
+  publicBaseUrl = process.env.PUBLIC_BASE_URL || 'https://ass-score.com',
+  logger = console,
+  maxAttempts = 3,
+  backoffMs = [1_000, 3_000, 9_000],
+  fetchImpl = globalThis.fetch,
+} = {}) {
+  const key = String(apiKey || '').trim();
+  if (!key) {
+    // Programming error — the factory guards this; never reachable in prod.
+    throw new Error('createResendSender requires a non-empty apiKey');
+  }
+  return async function sendScanEmailViaResend(scan, to) {
+    if (!scan || typeof scan.id !== 'string') {
+      logger.error(`[email] send to ${to} aborted: payload is not a scan result`);
+      return { ok: false, configured: true, attempts: 0, error: new Error('missing scan payload') };
+    }
+    let lastError = null;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      if (attempt > 1) {
+        const delay = backoffMs[attempt - 2] ?? backoffMs[backoffMs.length - 1] ?? 0;
+        if (delay > 0) await sleep(delay);
+      }
+      try {
+        const mail = buildReportEmail({ scan, to, publicBaseUrl, subject, from });
+        const response = await fetchImpl(RESEND_API_URL, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${key}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            from: mail.from,
+            to: mail.to,
+            subject: mail.subject,
+            html: mail.html,
+          }),
+        });
+        const status = Number(response?.status);
+        if (status >= 200 && status < 300) {
+          return { ok: true, configured: true, attempts: attempt };
+        }
+        if (status >= 400 && status < 500) {
+          // Client error — permanent rejection; retrying cannot change it.
+          const err = new Error(`Resend rejected the email with HTTP ${status} (4xx is not retried)`);
+          logger.error(
+            `[email] delivery to ${to} for scan ${scan.id} rejected by Resend: HTTP ${status} (attempt ${attempt}/${maxAttempts})`
+          );
+          return { ok: false, configured: true, attempts: attempt, error: err };
+        }
+        // 5xx (or unknown) — transient; fall through to the retry loop.
+        throw new Error(`Resend returned HTTP ${status}`);
+      } catch (err) {
+        lastError = err;
+        logger.error(
+          `[email] delivery to ${to} for scan ${scan.id} failed: ${err?.message ?? err} (attempt ${attempt}/${maxAttempts})`
+        );
+      }
+    }
+    return { ok: false, configured: true, attempts: maxAttempts, error: lastError };
+  };
+}
+
+/**
+ * Build the email sender (function injectable into the app). Transport factory
+ * with explicit precedence:
+ *
+ *   1. Resend API — env `RESEND_API_KEY` set → POST to api.resend.com via
+ *      global fetch (from = RESEND_FROM ?? SMTP_FROM ?? RESEND_DEFAULT_FROM).
+ *   2. SMTP        — env `SMTP_HOST` set → Nodemailer (unchanged behavior).
+ *   3. no-op       — otherwise; logs "email not configured", skips delivery.
  *
  * @param {object} [opts]
  * @param {string} [opts.subject]           subject line (default env EMAIL_SUBJECT
  *                                          or DEFAULT_SUBJECT)
  * @param {string} [opts.publicBaseUrl]     report-link base
- * @param {string} [opts.from]              sender (default env SMTP_FROM or
- *                                          'A.S.S. Score <no-reply@ass-score.com>')
- * @param {object} [opts.env]               env to read SMTP_* from (default process.env)
+ * @param {string} [opts.from]              sender override (default per transport:
+ *                                          Resend → RESEND_FROM ?? SMTP_FROM ?? RESEND_DEFAULT_FROM;
+ *                                          SMTP → SMTP_FROM ?? DEFAULT_FROM)
+ * @param {object} [opts.env]               env to read RESEND_* and SMTP_* vars from (default process.env)
  * @param {object} [opts.logger]            logger with .log/.error (default console)
  * @param {number} [opts.maxAttempts=3]     total attempts
  * @param {number[]} [opts.backoffMs]       delay before attempts 2, 3, ...
+ * @param {object} [opts.transport]         injected Nodemailer transporter (SMTP path only)
+ * @param {Function} [opts.fetchImpl]       injected fetch (Resend path only; default globalThis.fetch)
  * @returns {(scan: object, to: string) => Promise<{ok: boolean, configured: boolean,
  *           attempts?: number, error?: Error}>}
  *
- * Never rejects. Without SMTP_HOST the returned sender is a no-op that logs
- * "email not configured" and returns { ok: false, configured: false }.
+ * Never rejects. Without any credentials the returned sender is a no-op that
+ * logs "email not configured" and returns { ok: false, configured: false }.
  */
 export function createEmailSender({
   subject = process.env.EMAIL_SUBJECT || DEFAULT_SUBJECT,
   publicBaseUrl = process.env.PUBLIC_BASE_URL || 'https://ass-score.com',
-  from = process.env.SMTP_FROM || DEFAULT_FROM,
+  from,
   env = process.env,
   logger = console,
   maxAttempts = 3,
   backoffMs = [1_000, 3_000, 9_000],
-  transport = null, // tests inject a fake transporter; default = Nodemailer
+  transport = null, // tests inject a fake transporter; default = Nodemailer (SMTP path)
+  fetchImpl = globalThis.fetch, // tests inject a fake fetch (Resend path)
 } = {}) {
+  const resendApiKey = (env.RESEND_API_KEY || '').trim();
+
+  // 1) Resend takes precedence over SMTP whenever a key is present.
+  if (resendApiKey) {
+    const resendFrom = from ?? env.RESEND_FROM ?? env.SMTP_FROM ?? RESEND_DEFAULT_FROM;
+    if (!env.RESEND_FROM && !env.SMTP_FROM) {
+      // No explicit from-domain — flag it so the lead configures a real one.
+      const warn = typeof logger.warn === 'function' ? logger.warn.bind(logger) : logger.log.bind(logger);
+      warn(
+        `[email] RESEND_API_KEY set but no from-address configured — using default "${RESEND_DEFAULT_FROM}". ` +
+          'Verify a real sending domain with Resend and set RESEND_FROM before production sends.'
+      );
+    }
+    return createResendSender({
+      apiKey: env.RESEND_API_KEY,
+      from: resendFrom,
+      subject,
+      publicBaseUrl,
+      logger,
+      maxAttempts,
+      backoffMs,
+      fetchImpl,
+    });
+  }
+
   const smtpHost = (env.SMTP_HOST || '').trim();
 
   if (!smtpHost) {
     // No credentials yet -> harmless no-op; the scan still succeeds.
     return async function sendScanEmailNoop(scan) {
       logger.log(
-        `[email] email not configured (set SMTP_HOST/SMTP_PORT/SMTP_USER/SMTP_PASS/SMTP_FROM); skipping delivery for scan ${scan?.id ?? '?'}`
+        `[email] email not configured (set RESEND_API_KEY, or SMTP_HOST/SMTP_PORT/SMTP_USER/SMTP_PASS/SMTP_FROM); skipping delivery for scan ${scan?.id ?? '?'}`
       );
       return { ok: false, configured: false };
     };
   }
 
+  // 2) SMTP via Nodemailer — behavior unchanged.
   const port = Number(env.SMTP_PORT) || (String(env.SMTP_SECURE) === 'true' ? 465 : 587);
   const secure = String(env.SMTP_SECURE) === 'true' || port === 465;
   const user = env.SMTP_USER || '';
   const pass = env.SMTP_PASS || '';
+  const smtpFrom = from ?? env.SMTP_FROM ?? DEFAULT_FROM;
   const transporter = transport ?? nodemailer.createTransport({
     host: smtpHost,
     port,
@@ -195,7 +329,7 @@ export function createEmailSender({
         if (delay > 0) await sleep(delay);
       }
       try {
-        const mail = buildReportEmail({ scan, to, publicBaseUrl, subject, from });
+        const mail = buildReportEmail({ scan, to, publicBaseUrl, subject, from: smtpFrom });
         await transporter.sendMail(mail);
         return { ok: true, configured: true, attempts: attempt };
       } catch (err) {
