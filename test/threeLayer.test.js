@@ -413,7 +413,13 @@ test('E2E: slop fixture -> JSON breakdown carries insights per category; persist
   const escapedRoast = firstInsight.roast.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
   assert.ok(html.includes(escapedRoast), 'a specific roast appears in the report (escaped)');
   const rows = (html.match(/<tr>/g) ?? []).length;
-  assert.equal(rows, 1 + Object.keys(json.breakdown).length, 'no extra table rows (layers live inside the findings cell)');
+  assert.equal(rows, 0, 'legacy evidence table gone (narrative report structure)');
+  // Customer-facing category names all present in the breakdown.
+  for (const name of ['COPY', 'MESSAGING', 'ORIGINALITY', 'STRUCTURE', 'REPETITION', 'DESIGN', 'IMAGERY']) {
+    assert.ok(html.includes(name), `report shows the ${name} category`);
+  }
+  assert.ok(html.includes('Show the receipts:'), 'findings carry a labeled receipts block');
+  assert.ok(html.includes('The Actual Findings') && html.includes('The Verdict'), 'narrative sections present');
   assert.ok(html.includes('This tool identifies writing and design patterns commonly associated with generic or templated content.'), 'mandated disclaimer intact');
 
   // Webhook/email payload surface is the same public object (delivered bytes-exact).

@@ -545,9 +545,9 @@ test('integration: multi-page scan flags duplication, runs fingerprints, reports
     ),
     'report carries the mandated disclaimer'
   );
-  assert.ok(html.includes('🔁 Duplicate language across pages'), 'crossPage renders under its branded emoji label');
-  assert.match(html, /Worst Page/);
-  assert.match(html, /Templated Content/);
+  assert.ok(html.includes('REPETITION'), 'crossPage renders under its customer name REPETITION');
+  assert.match(html, /Page That Needs The Most Work/);
+  assert.match(html, /Duplicated page pairs \(receipts\):/);
   assert.match(html, /similar/);
 
   // determinism: two consecutive runs produce identical scores + pairs

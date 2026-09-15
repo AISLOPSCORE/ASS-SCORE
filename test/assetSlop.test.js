@@ -264,22 +264,24 @@ test('POST scan: breakdown has the assets key with score+findings; persisted byt
   assert.deepEqual(get1.breakdown, json.breakdown);
 });
 
-test('GET HTML report: renders the "Stock/placeholder imagery" row with its findings (no layout breakage)', async () => {
+test('GET HTML report: renders the IMAGERY category with its findings (no layout breakage)', async () => {
   const created = await (await fetch(`${api.base}/api/v1/scan`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ url: 'https://example.com/' }),
   })).json();
   const html = await (await fetch(`${api.base}/api/v1/scans/${created.id}`, { headers: { accept: 'text/html' } })).text();
-  assert.ok(html.includes('🖼️ Stock/placeholder imagery'), 'assets row renders under its emoji label');
-  assert.ok(html.includes('Stock/placeholder imagery'), 'plain label present');
-  assert.match(html, /<td[^>]*>50<\/td>/, 'assets score cell rendered');
-  assert.ok(html.includes('2 of 4 images from stock/placeholder CDNs'), 'stock finding rendered');
-  assert.ok(html.includes('generic alt'), 'alt finding rendered');
+  // The assets category renders under its customer-facing name IMAGERY,
+  // with its sub-score and the NEEDS ATTENTION classification (score 50).
+  assert.ok(html.includes('IMAGERY'), 'assets row renders under its customer name IMAGERY');
+  assert.match(html, /<strong>IMAGERY<\/strong> — 50\/100 <em>\(NEEDS ATTENTION\)<\/em>/, 'IMAGERY row shows score + classification');
+  assert.ok(html.includes('2 of 4 images from stock/placeholder CDNs'), 'stock finding rendered as a receipt');
+  assert.ok(html.includes('generic alt'), 'alt finding rendered as a receipt');
+  assert.ok(html.includes('Nothing meaningful to roast here.'), 'clean category line rendered (single-page scan leaves REPETITION skipped)');
+  assert.ok(html.includes('Single page scanned — this page IS the site.'), 'single-page worst-page line rendered');
   // The mandated disclaimer and score line still present (report intact).
   assert.ok(html.includes('This tool identifies writing and design patterns commonly associated with generic or templated content.'));
   assert.match(html, /A\.S\.S\. Score: \d+ \/ 100/);
-  // table structure intact: one row per breakdown key (7) + header
-  const rows = (html.match(/<tr>/g) ?? []).length;
-  assert.equal(rows, 1 + Object.keys(created.breakdown).length, `7 breakdown rows + header (got ${rows})`);
+  // New narrative structure: no legacy evidence table.
+  assert.equal((html.match(/<tr>/g) ?? []).length, 0, 'legacy evidence table gone');
 });

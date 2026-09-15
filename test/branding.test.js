@@ -209,9 +209,10 @@ test('branded scan -> HTML report renders agency name, logo, accent, footer; A.S
   assert.ok(html.includes('color:#33AA66'), 'accent color applied via inline style');
   assert.ok(html.includes('<p class="footer">Audit prepared by Acme Agency</p>'), 'footerText rendered');
 
-  // ALWAYS-keep invariants: metric label, emoji category labels, disclaimer.
+  // ALWAYS-keep invariants: metric label, customer category names, disclaimer.
   assert.ok(html.includes('A.S.S. Score: '), 'metric label present');
-  assert.ok(html.includes('🤖 AI-like copy'), 'emoji category labels present');
+  assert.ok(html.includes('MESSAGING'), 'customer category names present');
+  assert.ok(html.includes('Your Breakdown'), 'breakdown section present');
   assert.ok(html.includes(DISCLAIMER), 'mandated disclaimer present verbatim');
   assert.ok(html.includes('<title>A.S.S. Score report</title>'), 'title keeps the metric name');
 });

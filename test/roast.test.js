@@ -232,10 +232,10 @@ test('POST scan -> roast in JSON, stored in SQLite, identical across repeated GE
   assert.equal(get1.slopScore, created.slopScore); // existing fields untouched
 });
 
-test('GET HTML report: Slop Roast section, emoji-tagged, escape-safe when stored value is hostile', async () => {
+test('GET HTML report: roast lives in The Verdict, emoji-tagged, escape-safe when stored value is hostile', async () => {
   const created = await (await post(api.base, { url: 'https://example.com/' })).json();
   const html = await (await fetch(`${api.base}/api/v1/scans/${created.id}`, { headers: { accept: 'text/html' } })).text();
-  assert.match(html, /<h2>Slop Roast<\/h2>/, 'report has a Slop Roast section');
+  assert.match(html, /<h2>The Verdict<\/h2>/, 'report has a The Verdict section (the narrative IA replaces the old Slop Roast section)');
   // The HTML renderer (esc() in scans.js) escapes & < > " but leaves
   // apostrophes LITERAL — browsers show a real ' to the user, which is the
   // correct surface. Assert the renderer-escaped form so the test stays

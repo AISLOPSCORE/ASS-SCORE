@@ -133,14 +133,19 @@ test('GET /api/v1/scans/:id returns the scan and renders HTML on request', async
   const html = await resHtml.text();
   assert.match(html, /<!doctype html/i);
   // Branding: the user-facing report names the product A.S.S. Score, renders
-  // emoji-tagged category labels, and carries the mandated disclaimer verbatim.
+  // the customer-facing category names, and carries the mandated disclaimer
+  // verbatim.
   assert.match(html, /A\.S\.S\. Score: /);
   // The report headline shows the score (higher = worse) and the verdict
   // grade label.
   assert.ok(html.includes(`A.S.S. Score: ${created.score} / 100`), `headline shows public score ${created.score}`);
   assert.ok(html.includes(created.verdict), 'report shows the verdict grade label');
-  assert.ok(html.includes('🤖 AI-like copy'), 'report shows branded emoji category labels');
-  assert.ok(html.includes('🔁 Duplicate language across pages'), 'report shows crossPage under its branded label');
+  for (const name of ['COPY', 'MESSAGING', 'ORIGINALITY', 'STRUCTURE', 'REPETITION', 'DESIGN', 'IMAGERY']) {
+    assert.ok(html.includes(name), `report shows the ${name} category`);
+  }
+  assert.ok(html.includes('The Verdict') && html.includes('The Big Picture') && html.includes('Your Breakdown'), 'narrative sections present');
+  assert.ok(html.includes('The Actual Findings'), 'findings section present');
+  assert.ok(html.includes('What To Fix First') && html.includes('Final Verdict'), 'fix + verdict sections present');
   assert.ok(
     html.includes(
       'This tool identifies writing and design patterns commonly associated with generic or templated content. It does not detect AI authorship and is not proof that any content was AI-generated.'

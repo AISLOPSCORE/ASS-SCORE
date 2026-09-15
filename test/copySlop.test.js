@@ -275,16 +275,20 @@ test('E2E: hedge-y fixture -> JSON breakdown shows hedge findings under boilerpl
   }
 });
 
-test('E2E: hedge-y fixture -> HTML report renders the hedge + specifics rows under the right category', async () => {
+test('E2E: hedge-y fixture -> HTML report renders the hedge + specifics findings under the right category', async () => {
   const created = await (await postScan(hedgeApi.base, 'https://acme.example/')).json();
   const html = await (await fetch(`${hedgeApi.base}/api/v1/scans/${created.id}`, { headers: { accept: 'text/html' } })).text();
-  assert.ok(html.includes('🥱 Generic marketing language'), 'boilerplate row under its emoji label');
+  assert.ok(html.includes('MESSAGING'), 'boilerplate renders under its customer name MESSAGING');
   assert.ok(html.includes('hedge phrase'), 'hedge finding rendered in HTML');
   assert.ok(html.includes('hedge evidence: &quot;We aim to empower your journey.&quot;'), 'quoted evidence rendered (HTML-escaped)');
   assert.ok(html.includes('concrete specifics:'), 'specifics gap finding rendered');
+  assert.ok(html.includes('Show the receipts:'), 'findings carry a labeled receipts block');
   assert.ok(html.includes('This tool identifies writing and design patterns commonly associated with generic or templated content.'), 'mandated disclaimer intact');
-  const rows = (html.match(/<tr>/g) ?? []).length;
-  assert.equal(rows, 1 + Object.keys(created.breakdown).length, 'breakdown rows + header');
+  // New narrative structure: no legacy evidence table; all 7 customer names present.
+  assert.equal((html.match(/<tr>/g) ?? []).length, 0, 'legacy evidence table gone');
+  for (const name of ['COPY', 'MESSAGING', 'ORIGINALITY', 'STRUCTURE', 'REPETITION', 'DESIGN', 'IMAGERY']) {
+    assert.ok(html.includes(name), `report shows the ${name} category`);
+  }
 });
 
 test('E2E: specifics-rich fixture -> zero gap finding in JSON; clean-copy page unaffected', async () => {
