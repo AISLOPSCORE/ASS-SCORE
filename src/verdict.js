@@ -12,23 +12,27 @@
  * does NOT invert: the public score equals the stored score, and bands are
  * defined directly on that scale.
  *
- * Bands (locked table, `max` inclusive; array is ascending-max so the tiles
- * cover 0–100 with no gaps and no overlaps):
+ * Bands (locked table — OWNER-UNIFIED 6-BAND SYSTEM, ratified 2026-09-15;
+ * `max` inclusive; array is ascending-max so the tiles cover 0–100 with no
+ * gaps and no overlaps):
  *   90-100  catastrophically ass   (CATASTROPHICALLY ASS, alias "certified slop")  red #f87171
- *   75-89   extremely ass          (EXTREMELY ASS)                                orange #fb923c
- *   55-74   very ass               (VERY ASS)                                     yellow #facc15
- *   35-54   mildly generic         (MILDLY GENERIC)                               lime #a3e635
- *   0-34    cleanest               (CLEANEST)                                     green #4ade80
+ *   75-89   extremely ass          (EXTREMELY ASS)                                deep orange #f97316
+ *   50-74   very ass               (VERY ASS)                                     orange #fb923c
+ *   25-49   getting assy           (GETTING ASSY)                                 yellow #facc15
+ *   10-24   clean                  (CLEAN)                                        lime #a3e635
+ *   0-9     cleanest               (CLEANEST)                                     green #4ade80
+ * The old 5-band table (MILDLY GENERIC 35-54) is superseded and gone.
  *
  * `color` is the display accent per band: red for the high (bad) bands, green
  * for the low (good) bands — so a dial that fills with the score turns
  * red as it approaches 100. `min` is derived (previous band's max + 1).
  */
 export const VERDICT_BANDS = [
-  { max: 34, label: 'Cleanest', shortLabel: 'CLEANEST', color: '#4ade80' },
-  { max: 54, label: 'Mildly generic', shortLabel: 'MILDLY GENERIC', color: '#a3e635' },
-  { max: 74, label: 'Very ass', shortLabel: 'VERY ASS', color: '#facc15' },
-  { max: 89, label: 'Extremely ass', shortLabel: 'EXTREMELY ASS', color: '#fb923c' },
+  { max: 9, label: 'Cleanest', shortLabel: 'CLEANEST', color: '#4ade80' },
+  { max: 24, label: 'Clean', shortLabel: 'CLEAN', color: '#a3e635' },
+  { max: 49, label: 'Getting assy', shortLabel: 'GETTING ASSY', color: '#facc15' },
+  { max: 74, label: 'Very ass', shortLabel: 'VERY ASS', color: '#fb923c' },
+  { max: 89, label: 'Extremely ass', shortLabel: 'EXTREMELY ASS', color: '#f97316' },
   { max: 100, label: 'Catastrophically ass', shortLabel: 'CATASTROPHICALLY ASS', alias: 'certified slop', color: '#f87171' },
 ];
 /** Normalize any input to a valid 0-100 integer (defined for NaN/Infinity too). */

@@ -335,7 +335,7 @@ test('roast stays deterministic for hand-inserted scans (pre-roast rows)', async
     assert.equal(get1.roast, selectRoast({ id: 'pre-roast-scan-0001', slopScore: 31, breakdown: b }),
       'derived roast matches the scan-time function');
     assert.equal(get1.score, 31, 'stored 31 -> public 31 (same direction, no inversion)');
-    assert.equal(get1.verdict, 'CLEANEST');
+    assert.equal(get1.verdict, 'GETTING ASSY');
     assert.equal(get1.url, 'https://legacy.example/', 'existing fields intact');
   } finally {
     app.server.close();

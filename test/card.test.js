@@ -50,11 +50,12 @@ const post = (base, body) =>
 test('verdict bands: HIGHER = WORSE scale with exact boundary labels', () => {
   const cases = [
     [0, 'Cleanest', 'CLEANEST'],
-    [19, 'Cleanest', 'CLEANEST'],
-    [34, 'Cleanest', 'CLEANEST'],
-    [35, 'Mildly generic', 'MILDLY GENERIC'],
-    [54, 'Mildly generic', 'MILDLY GENERIC'],
-    [55, 'Very ass', 'VERY ASS'],
+    [9, 'Cleanest', 'CLEANEST'],
+    [10, 'Clean', 'CLEAN'],
+    [24, 'Clean', 'CLEAN'],
+    [25, 'Getting assy', 'GETTING ASSY'],
+    [49, 'Getting assy', 'GETTING ASSY'],
+    [50, 'Very ass', 'VERY ASS'],
     [74, 'Very ass', 'VERY ASS'],
     [75, 'Extremely ass', 'EXTREMELY ASS'],
     [89, 'Extremely ass', 'EXTREMELY ASS'],
@@ -79,12 +80,14 @@ test('verdict bands: HIGHER = WORSE scale with exact boundary labels', () => {
 });
 
 test('scoreColor: green for low/good bands -> red for high/bad, band-changing at boundaries', () => {
-  assert.equal(scoreColor(10), '#4ade80', 'low (clean/good) -> green');
-  assert.equal(scoreColor(25), '#4ade80');
-  assert.equal(scoreColor(60), '#facc15', 'mid -> amber (VERY ASS)');
+  assert.equal(scoreColor(5), '#4ade80', 'low (cleanest/good) -> green');
+  assert.equal(scoreColor(10), '#a3e635', 'clean -> lime');
+  assert.equal(scoreColor(25), '#facc15', 'getting assy -> yellow');
+  assert.equal(scoreColor(60), '#fb923c', 'mid -> orange (VERY ASS)');
   assert.equal(scoreColor(90), '#f87171', 'high (bad) -> red');
   assert.equal(scoreColor(100), scoreColor(90));
-  assert.notEqual(scoreColor(34), scoreColor(35), 'color flips at the band boundary');
+  assert.notEqual(scoreColor(24), scoreColor(25), 'color flips at the band boundary');
+  assert.notEqual(scoreColor(74), scoreColor(75), 'color flips at the band boundary');
   assert.match(scoreColor(73), /^#[0-9a-f]{6}$/i);
 });
 
@@ -200,9 +203,9 @@ test('POST scan -> GET /share: pre-filled text + public result URL (public score
 
 test('POST scan -> GET /card: pixel check — the rendered PNG shows the score in its band color', async () => {
   // The card fixture scores internal 75 (slop-heavy) -> PUBLIC 75, which is
-  // in the orange "extremely ass" band (75-89). If the route passed an
-  // inverted score (100 - 75 = 25 -> green "cleanest" band), the number +
-  // verdict would render in a green band color instead.
+  // in the deep-orange "extremely ass" band (75-89, #f97316). If the route
+  // passed an inverted score (100 - 75 = 25 -> yellow "getting assy" band),
+  // the number + verdict would render in a yellow band color instead.
   const created = await (await post(api.base, { url: 'https://example.com/' })).json();
   assert.equal(created.score, 75, 'fixture scores 75 (higher = worse)');
   assert.equal(created.verdict, 'EXTREMELY ASS');
@@ -214,9 +217,10 @@ test('POST scan -> GET /card: pixel check — the rendered PNG shows the score i
   assert.equal(info.width, CARD_WIDTH);
   assert.equal(info.height, CARD_HEIGHT);
 
-  // Count pixels inside the score-number region that match the orange band
-  // color #fb923c (tolerance ±10/channel) — the big digits + verdict text + bar fill.
-  const target = [0xfb, 0x92, 0x3c];
+  // Count pixels inside the score-number region that match the deep-orange
+  // band color #f97316 (tolerance ±10/channel) — the big digits + verdict
+  // text + bar fill.
+  const target = [0xf9, 0x73, 0x16];
   let orangePixels = 0;
   for (let y = 250; y < 480; y += 1) {
     for (let x = 64; x < 1000; x += 1) {
@@ -230,7 +234,7 @@ test('POST scan -> GET /card: pixel check — the rendered PNG shows the score i
       }
     }
   }
-  assert.ok(orangePixels > 500, `expected the orange band color in the score region, got ${orangePixels} px`);
+  assert.ok(orangePixels > 500, `expected the deep-orange band color in the score region, got ${orangePixels} px`);
 });
 
 test('publicBaseUrl option overrides the share-link base', async () => {

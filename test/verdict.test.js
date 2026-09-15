@@ -5,16 +5,18 @@ import { publicScore, toPublicScan } from '../src/serialize.js';
 
 // ---------------------------------------------------------------------------
 // Verdict bands — the single source of truth. Boundaries are INCLUSIVE on max:
-//   0-34 cleanest | 35-54 mildly generic | 55-74 very ass | 75-89 extremely
-//   ass | 90-100 catastrophically ass  (HIGHER = WORSE)
+//   0-9 cleanest | 10-24 clean | 25-49 getting assy | 50-74 very ass | 75-89
+//   extremely ass | 90-100 catastrophically ass  (HIGHER = WORSE)
 // ---------------------------------------------------------------------------
-test('verdictBand: exact lock-in boundaries (0→cleanest, 35→mildly; 55→very; 75→extremely; 90→catastrophic)', () => {
+test('verdictBand: exact lock-in boundaries (0→cleanest; 10→clean; 25→getting assy; 50→very; 75→extremely; 90→catastrophic)', () => {
   const cases = [
     [0, 'CLEANEST', 'Cleanest'],
-    [34, 'CLEANEST', 'Cleanest'],
-    [35, 'MILDLY GENERIC', 'Mildly generic'],
-    [54, 'MILDLY GENERIC', 'Mildly generic'],
-    [55, 'VERY ASS', 'Very ass'],
+    [9, 'CLEANEST', 'Cleanest'],
+    [10, 'CLEAN', 'Clean'],
+    [24, 'CLEAN', 'Clean'],
+    [25, 'GETTING ASSY', 'Getting assy'],
+    [49, 'GETTING ASSY', 'Getting assy'],
+    [50, 'VERY ASS', 'Very ass'],
     [74, 'VERY ASS', 'Very ass'],
     [75, 'EXTREMELY ASS', 'Extremely ass'],
     [89, 'EXTREMELY ASS', 'Extremely ass'],
@@ -33,27 +35,29 @@ test('verdictBand: every integer 0-100 lands in exactly one band (no gaps, no ov
     const band = verdictBand(s);
     assert.ok(s >= band.min && s <= band.max, `score ${s} inside [${band.min},${band.max}]`);
     assert.ok(
-      [0, 35, 55, 75, 90].some((edge) => band.min === edge),
+      [0, 10, 25, 50, 75, 90].some((edge) => band.min === edge),
       `band min ${band.min} is a locked boundary edge`
     );
   }
   // Bands tile the full 0-100 range with the locked edges and no duplicates.
   const mins = VERDICT_BANDS.map((b, i) => (i === 0 ? 0 : VERDICT_BANDS[i - 1].max + 1));
-  assert.deepEqual(mins, [0, 35, 55, 75, 90]);
-  assert.deepEqual(VERDICT_BANDS.map((b) => b.max), [34, 54, 74, 89, 100]);
-  assert.equal(VERDICT_BANDS[4].alias, 'certified slop', 'catastrophic band keeps its alias');
-  assert.equal(VERDICT_BANDS[4].shortLabel, 'CATASTROPHICALLY ASS', 'catastrophic is the TOP band (90-100)');
-  assert.equal(VERDICT_BANDS[0].shortLabel, 'CLEANEST', 'cleanest is the BOTTOM band (0-34)');
+  assert.deepEqual(mins, [0, 10, 25, 50, 75, 90]);
+  assert.deepEqual(VERDICT_BANDS.map((b) => b.max), [9, 24, 49, 74, 89, 100]);
+  assert.equal(VERDICT_BANDS[5].alias, 'certified slop', 'catastrophic band keeps its alias');
+  assert.equal(VERDICT_BANDS[5].shortLabel, 'CATASTROPHICALLY ASS', 'catastrophic is the TOP band (90-100)');
+  assert.equal(VERDICT_BANDS[0].shortLabel, 'CLEANEST', 'cleanest is the BOTTOM band (0-9)');
 });
 
 test('verdictBand: color direction green (low/good) -> red (high/bad)', () => {
-  assert.equal(scoreColor(10), '#4ade80', 'low (clean) -> green');
-  assert.equal(scoreColor(40), '#a3e635', 'mildly -> lime');
-  assert.equal(scoreColor(60), '#facc15', 'very ass -> amber');
-  assert.equal(scoreColor(80), '#fb923c', 'extremely -> orange');
+  assert.equal(scoreColor(5), '#4ade80', 'low (cleanest) -> green');
+  assert.equal(scoreColor(15), '#a3e635', 'clean -> lime');
+  assert.equal(scoreColor(40), '#facc15', 'getting assy -> yellow');
+  assert.equal(scoreColor(60), '#fb923c', 'very ass -> orange');
+  assert.equal(scoreColor(80), '#f97316', 'extremely -> deep orange');
   assert.equal(scoreColor(95), '#f87171', 'high (catastrophic) -> red');
-  assert.notEqual(scoreColor(34), scoreColor(35), 'band color changes at the boundary');
-  assert.notEqual(scoreColor(89), scoreColor(90), 'band color changes at the boundary');
+  assert.notEqual(scoreColor(24), scoreColor(25), 'band color changes at the 24/25 boundary');
+  assert.notEqual(scoreColor(49), scoreColor(50), 'band color changes at the 49/50 boundary');
+  assert.notEqual(scoreColor(89), scoreColor(90), 'band color changes at the 89/90 boundary');
   for (const b of VERDICT_BANDS) assert.match(b.color, /^#[0-9a-f]{6}$/i, `${b.shortLabel} color hex`);
 });
 
@@ -109,8 +113,8 @@ test('toPublicScan: runScan payload shape (slopScore) -> public scan', () => {
     roast: 'A roast line.',
     createdAt: '2026-09-08T00:00:00.000Z',
   });
-  assert.equal(pub.score, 42, 'hit the 35-54 MILDLY GENERIC band');
-  assert.equal(pub.verdict, 'MILDLY GENERIC');
+  assert.equal(pub.score, 42, 'hit the 25-49 GETTING ASSY band');
+  assert.equal(pub.verdict, 'GETTING ASSY');
   assert.ok(!('slopScore' in pub), 'internal field name is replaced');
   assert.equal(pub.breakdown.filler.score, 50, '50 stays 50 (no inversion)');
   assert.deepEqual(pub.breakdown.filler.findings, ['filler finding'], 'findings untouched');
@@ -135,7 +139,7 @@ test('toPublicScan: stored-row shape (score column) -> same public scan (pre-fli
     worstPage: { url: 'https://example.com/blog', score: 71, findings: ['x'] },
   });
   assert.equal(pub.score, 30, 'pre-flip stored 30 reads as public 30 (no inversion)');
-  assert.equal(pub.verdict, 'CLEANEST');
+  assert.equal(pub.verdict, 'GETTING ASSY');
   assert.equal(pub.breakdown.filler.score, 30);
   assert.equal(pub.worstPage.score, 71, 'worstPage.score stays in the same direction (higher = worse)');
   assert.equal(pub.created_at, '2026-08-01T00:00:00.000Z', 'row fields pass through');

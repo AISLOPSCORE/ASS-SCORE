@@ -179,7 +179,7 @@ test('pre-flip stored rows read correctly with NO migration: stored 30 -> public
   assert.equal(res.status, 200);
   const json = await res.json();
   assert.equal(json.score, 30, 'stored 30 reads as public 30 (same direction, no inversion)');
-  assert.equal(json.verdict, 'CLEANEST', '30 falls in the 0-34 cleanest band');
+  assert.equal(json.verdict, 'GETTING ASSY', '30 falls in the 25-49 getting-assy band');
   assert.equal(json.breakdown.filler.score, 30, 'per-category scores read straight from the row');
   assert.equal(json.breakdown.boilerplate.score, 50);
   assert.equal(json.breakdown.crossPage.score, null, 'skipped module passes through');
@@ -189,7 +189,7 @@ test('pre-flip stored rows read correctly with NO migration: stored 30 -> public
   // HTML report on the old row: headline + verdict label.
   const html = await (await fetch(`${api.base}/api/v1/scans/${oldId}`, { headers: { accept: 'text/html' } })).text();
   assert.ok(html.includes('A.S.S. Score: 30 / 100'), 'old row headline shows the score');
-  assert.ok(html.includes('CLEANEST'), 'old row report shows the verdict label');
+  assert.ok(html.includes('GETTING ASSY'), 'old row report shows the verdict label');
 });
 
 test('GET /api/v1/scans/:id missing -> 404', async () => {

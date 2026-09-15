@@ -94,7 +94,7 @@ Multi-page scans add four top-level fields (all webhook-delivered too):
 
 ```json
 {
-  "id": "...", "url": "https://site.example/", "score": 48, "verdict": "MILDLY GENERIC", "breakdown": { "...": "..." },
+  "id": "...", "url": "https://site.example/", "score": 48, "verdict": "GETTING ASSY", "breakdown": { "...": "..." },
   "pages": ["https://site.example/", "https://site.example/about", "https://site.example/blog"],
   "worstPage": { "url": "https://site.example/blog", "score": 71, "findings": ["...up to 6 top findings..."] },
   "partial": false,
@@ -466,14 +466,15 @@ curl -s http://localhost:4000/api/v1/scans/<id>/card -o card.png
 
 **Verdict bands** (single source of truth: `src/verdict.js`, consumed by the
 JSON response, the HTML report and the share card — higher = worse, green =
-low/good, red = high/bad):
+low/good, red = high/bad; owner-unified 6-band system, ratified 2026-09-15):
 | Score | Verdict | Accent |
 | --- | --- | --- |
 | 90-100 | CATASTROPHICALLY ASS / certified slop | red |
-| 75-89 | EXTREMELY ASS | orange |
-| 55-74 | VERY ASS | yellow |
-| 35-54 | MILDLY GENERIC | lime |
-| 0-34 | CLEANEST / most original | green |
+| 75-89 | EXTREMELY ASS | deep orange |
+| 50-74 | VERY ASS | orange |
+| 25-49 | GETTING ASSY | yellow |
+| 10-24 | CLEAN | lime |
+| 0-9 | CLEANEST / most original | green |
 
 ### `GET /api/v1/scans/:id/share`
 

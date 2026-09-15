@@ -229,7 +229,7 @@ function renderHtmlReport(scan) {
         return `
       <tr>
         <td>${esc(CATEGORY_LABELS[key] ?? key)}</td>
-        <td class="${{'CATASTROPHICALLY ASS': 'b-catastrophic', 'EXTREMELY ASS': 'b-extreme', 'VERY ASS': 'b-very', 'MILDLY GENERIC': 'b-mild', 'CLEANEST': 'b-clean'}[verdictBand(catScore).shortLabel] ?? 'b-very'}" style="font-weight:700">${catScore}</td>
+        <td class="${{'CATASTROPHICALLY ASS': 'b-catastrophic', 'EXTREMELY ASS': 'b-extreme', 'VERY ASS': 'b-very', 'GETTING ASSY': 'b-mild', 'CLEAN': 'b-clean', 'CLEANEST': 'b-cleanest'}[verdictBand(catScore).shortLabel] ?? 'b-very'}" style="font-weight:700">${catScore}</td>
         <td><ul>${(rule.findings ?? []).map((f, i) => renderInsightLi(f, Array.isArray(rule.insights) ? rule.insights[i] : undefined)).join('')}</ul></td>
       </tr>`;
       }
@@ -293,7 +293,7 @@ function renderHtmlReport(scan) {
   // shared verdict module (src/verdict.js).
   const pubScore = publicScore(scan.score);
   const publicVerdict = verdictBand(pubScore);
-  const verdictClass = { 'CATASTROPHICALLY ASS': 'b-catastrophic', 'EXTREMELY ASS': 'b-extreme', 'VERY ASS': 'b-very', 'MILDLY GENERIC': 'b-mild', 'CLEANEST': 'b-clean' }[publicVerdict.shortLabel] ?? 'b-very';
+  const verdictClass = { 'CATASTROPHICALLY ASS': 'b-catastrophic', 'EXTREMELY ASS': 'b-extreme', 'VERY ASS': 'b-very', 'GETTING ASSY': 'b-mild', 'CLEAN': 'b-clean', 'CLEANEST': 'b-cleanest' }[publicVerdict.shortLabel] ?? 'b-very';
   const verdictLine = `<p class="verdict ${verdictClass}">${verdictLabel(pubScore)}</p>`;
 
   return `<!doctype html>
@@ -307,8 +307,8 @@ function renderHtmlReport(scan) {
     .powered { color: #64748b; font-size: .85rem; margin-top: -.25rem; }
     .score { font-size: 2.6rem; font-weight: 700; }
     .verdict { font-size: 1.15rem; font-weight: 700; margin: .25rem 0 .75rem; }
-    .b-catastrophic { color: #f87171; } .b-extreme { color: #fb923c; } .b-very { color: #facc15; }
-    .b-mild { color: #a3e635; } .b-clean { color: #4ade80; }
+    .b-catastrophic { color: #f87171; } .b-extreme { color: #f97316; } .b-very { color: #fb923c; }
+    .b-mild { color: #facc15; } .b-clean { color: #a3e635; } .b-cleanest { color: #4ade80; }
     .roast { font-size: 1.15rem; font-weight: 600; margin: .75rem 0 .25rem; }
     .footer { color: #64748b; font-size: .9rem; border-top: 1px solid #e2e8f0; padding-top: .75rem; margin-top: 1.5rem; }
     table { border-collapse: collapse; width: 100%; margin-top: 1rem; }

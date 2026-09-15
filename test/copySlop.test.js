@@ -294,9 +294,9 @@ test('E2E: specifics-rich fixture -> zero gap finding in JSON; clean-copy page u
     assert.equal(res.status, 200);
     const json = await res.json();
     // Public contract (higher = worse): specifics-rich fixture scores 10
-    // -> the cleanest band (0-34).
+    // -> the clean band (10-24).
     assert.equal(json.score, 10, 'specifics fixture scores 10');
-    assert.equal(json.verdict, 'CLEANEST');
+    assert.equal(json.verdict, 'CLEAN');
     const id = json.breakdown.infoDensity;
     assert.ok(!id.findings.some((f) => f.startsWith('concrete specifics:')), 'no gap finding for specific copy');
     assert.ok(json.breakdown.boilerplate.findings.every((f) => !f.includes('hedge phrase')), 'no hedge findings on a specific, hedge-free page');
