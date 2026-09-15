@@ -28,12 +28,12 @@
  * red as it approaches 100. `min` is derived (previous band's max + 1).
  */
 export const VERDICT_BANDS = [
-  { max: 9, label: 'Cleanest', shortLabel: 'CLEANEST', color: '#4ade80' },
-  { max: 24, label: 'Clean', shortLabel: 'CLEAN', color: '#a3e635' },
-  { max: 49, label: 'Getting assy', shortLabel: 'GETTING ASSY', color: '#facc15' },
-  { max: 74, label: 'Very ass', shortLabel: 'VERY ASS', color: '#fb923c' },
-  { max: 89, label: 'Extremely ass', shortLabel: 'EXTREMELY ASS', color: '#f97316' },
-  { max: 100, label: 'Catastrophically ass', shortLabel: 'CATASTROPHICALLY ASS', alias: 'certified slop', color: '#f87171' },
+  { max: 9, label: 'Cleanest', shortLabel: 'CLEANEST', color: '#4ade80', line1: 'GOOD JOB.', line2: '(RARE THESE DAYS)', treat: 'celebrate' },
+  { max: 24, label: 'Clean', shortLabel: 'CLEAN', color: '#a3e635', line1: 'NOT BAD.', line2: '(BARELY ANY ASS HERE.)', treat: 'positive' },
+  { max: 49, label: 'Getting assy', shortLabel: 'GETTING ASSY', color: '#facc15', line1: 'HMM.', line2: "(IT'S STARTING TO SMELL.)", treat: 'mixed' },
+  { max: 74, label: 'Very ass', shortLabel: 'VERY ASS', color: '#fb923c', line1: 'WE NEED TO TALK.', line2: '(SERIOUSLY.)', treat: 'warn' },
+  { max: 89, label: 'Extremely ass', shortLabel: 'EXTREMELY ASS', color: '#f97316', line1: 'YIKES.', line2: '(GET THE FIRE EXTINGUISHER.)', treat: 'chaos' },
+  { max: 100, label: 'Catastrophically ass', shortLabel: 'CATASTROPHICALLY ASS', alias: 'certified slop', color: '#f87171', line1: 'YIKES.', line2: 'THIS IS BAD.', treat: 'alarm' },
 ];
 /** Normalize any input to a valid 0-100 integer (defined for NaN/Infinity too). */
 export function clampScore(score) {

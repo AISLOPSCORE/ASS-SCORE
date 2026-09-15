@@ -105,8 +105,6 @@ export function scansRouter({ db, publicBaseUrl }) {
       const png = await renderCardPng(buildCardSvg({
         score: publicScore(scan.score), // public score = stored slop direction (higher = worse, 0 = clean)
         url: scan.url,
-        agencyName: scan.branding?.agencyName, // white-label: small agency line only
-        roast: roastFor(scan),
       }));
       res.set('Content-Type', 'image/png');
       res.set('Cache-Control', 'public, max-age=60');

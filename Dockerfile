@@ -22,8 +22,10 @@ RUN npm ci --omit=dev
 FROM node:20-alpine
 # font-dejavu is a RUNTIME dependency: the shareable result card rasterizes
 # SVG text with sharp, and Alpine ships no fonts by default (SVG text would
-# render blank without it).
-RUN apk add --no-cache font-dejavu
+# render blank without it). fontconfig provides fc-cache, used below to
+# register the committed brand fonts (Anton/Caveat/Inter) that the card
+# needs — sharp/librsvg resolves fonts via fontconfig, not @font-face.
+RUN apk add --no-cache font-dejavu fontconfig
 WORKDIR /app
 ENV NODE_ENV=production
 # Railway (and other PaaS) inject PORT at runtime; the app binds
@@ -36,6 +38,13 @@ ENV HOST=0.0.0.0
 COPY --from=builder /app/package.json /app/package-lock.json ./
 COPY --from=builder /app/node_modules ./node_modules
 COPY src ./src
+# Register the committed brand fonts with fontconfig so the share card renders
+# Anton/Caveat/Inter (the image runs as root, and the cache is built for root,
+# so the runtime process finds them). Without this the card would fall back to
+# DejaVu for every glyph.
+RUN mkdir -p /usr/share/fonts/assscore \
+    && cp /app/src/assets/fonts/*.ttf /usr/share/fonts/assscore/ \
+    && fc-cache -f
 # data/ holds the SQLite DB (default DB_PATH ./data/ass-score.db). On Railway
 # the disk is ephemeral — attach a volume and set DB_PATH to the mount for
 # persistence. NOTE: we run as ROOT (no USER node) for a deliberate reason —

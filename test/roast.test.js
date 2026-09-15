@@ -270,38 +270,17 @@ test('GET HTML report: Slop Roast section, emoji-tagged, escape-safe when stored
   }
 });
 
-test('card PNG: regenerates with the roast line and renders without overflow', async () => {
+test('card PNG: brand poster regenerates WITHOUT the roast (owner re-spec)', async () => {
   const created = await (await post(api.base, { url: 'https://example.com/' })).json();
 
-  // SVG carries the roast; over-long roasts are elided so they cannot overflow.
+  // The 1600x900 brand poster carries NO report content — the Slop Roast is
+  // not rendered on the card (owner re-spec 2026-09-15). buildCardSvg ignores
+  // the roast arg, and the roast text must never reach the poster.
   const svg = buildCardSvg({ score: created.slopScore, url: created.url, roast: created.roast });
-  const long = 'this roast is deliberately way too long to fit on one line of the card at 1200 pixels wide so it gets elided cleanly and surely';
-  const svgLong = buildCardSvg({ score: 73, url: 'https://example.com/', roast: long });
-  // The SVG source carries the ENTITY-ESCAPED roast (escapeXml: ' -> &apos;,
-  // & -> &amp;, etc. — sharp resolves the entities back to glyphs when it
-  // rasterizes, so the user still sees the literal apostrophe). Assert the
-  // escaped form so the test is deterministic for every pool line; pool copy
-  // legitimately contains apostrophes (e.g. "It's basically the same site").
-  assert.ok(svg.includes(escapeXml(created.roast.slice(0, 80))),
-    'roast appears in the card SVG, entity-escaped (&apos; etc.)');
-  assert.match(svgLong, /…<\/text>/, 'over-long roast elided so it cannot overflow');
-  assert.ok(!svgLong.includes(' ' + long.slice(90)), 'elided tail removed');
-  assert.ok(svg.includes('x="64" y="514"'), 'roast sits under the verdict line');
+  assert.ok(!svg.includes(escapeXml(created.roast.slice(0, 40))), 'roast text not on the poster');
+  assert.ok(!svg.includes('x="64" y="514"'), 'old roast line position gone');
 
-  // Apostrophes rasterize fine: a roast line with a literal ' survives the
-  // SVG-escape -> sharp pipeline as a real glyph on the PNG.
-  const punSvg = buildCardSvg({ score: 64, url: 'https://example.com/', roast: "It's basically the same site, twice." });
-  assert.ok(punSvg.includes('&apos;'), 'apostrophe is entity-escaped in the SVG source');
-  assert.ok(!punSvg.includes("It's"), 'raw apostrophe never reaches the SVG source');
-  const punPng = await renderCardPng(punSvg);
-  const punMeta = await sharp(punPng).metadata();
-  assert.equal(punMeta.width, CARD_WIDTH, 'apostrophe card renders at card width');
-  assert.equal(punMeta.height, CARD_HEIGHT, 'apostrophe card renders at card height');
-  const plainPng = await renderCardPng(buildCardSvg({ score: 64, url: 'https://example.com/', roast: 'Its basically the same site, twice.' }));
-  assert.ok(!punPng.equals(plainPng),
-    'the &apos;-escaped line rasterized — it visibly differs from the no-apostrophe line');
-
-  // HTTP render: valid 1200x630 PNG, byte-deterministic with the roast.
+  // The poster renders a valid 1600x900 PNG, byte-deterministic per scan.
   const png = Buffer.from(await (await fetch(`${api.base}/api/v1/scans/${created.id}/card`)).arrayBuffer());
   assert.deepEqual([...png.subarray(0, 8)], [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
   const meta = await sharp(png).metadata();
@@ -310,7 +289,7 @@ test('card PNG: regenerates with the roast line and renders without overflow', a
   const again = Buffer.from(await (await fetch(`${api.base}/api/v1/scans/${created.id}/card`)).arrayBuffer());
   assert.ok(png.equals(again), 'card bytes deterministic per scan');
   // Save a copy for the team to review.
-  fs.writeFileSync('/home/team/shared/ass-score-card-with-roast.png', png);
+  fs.writeFileSync('/home/team/shared/ass-score-card-no-roast.png', png);
 });
 
 test('roast stays deterministic for hand-inserted scans (pre-roast rows)', async () => {

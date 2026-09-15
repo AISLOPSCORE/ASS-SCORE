@@ -6,6 +6,7 @@ import path from 'node:path';
 import Database from 'better-sqlite3';
 import { createApp } from '../src/app.js';
 import { validateBranding, isHttpUrl } from '../src/branding.js';
+import sharp from 'sharp';
 import { buildCardSvg, renderCardPng } from '../src/card.js';
 import { validateUrl } from '../src/fetch/ssrf.js';
 
@@ -256,25 +257,21 @@ test('hostile branding values are HTML-escaped in the report (no markup injectio
 
 // ----------------------------------------------------------------------- card
 
-test('card: agencyName renders a small escaped agency line; absent -> byte-identical default card', () => {
+test('card: agency branding is NEVER rendered (owner hard-drop); card stays deterministic', () => {
+  // The 1600x900 poster is a standalone brand artifact — agency/whitelabel names are a HARD
+  // DROP (owner re-spec 2026-09-15). Passing agencyName is tolerated but ignored; the
+  // rendered SVG never contains it.
   const base = { score: 30, url: 'https://example.com/' };
   const plain = buildCardSvg(base);
   const branded = buildCardSvg({ ...base, agencyName: 'Acme Agency' });
   const hostile = buildCardSvg({ ...base, agencyName: '<svg onload=alert(1)>' });
-
-  assert.ok(branded.includes('>Acme Agency</text>'), 'agency line rendered on the branded card');
-  assert.ok(branded.includes('y="92"'), 'agency line sits under the brand row (y=92)');
-  assert.ok(!plain.includes('>Acme Agency</text>'), 'no agency line on the default card');
-  assert.equal(plain, buildCardSvg(base), 'default card remains deterministic');
-  // Escaping on the card too: hostile agency name cannot inject SVG markup.
-  assert.ok(hostile.includes('&lt;svg onload=alert(1)&gt;'), 'agency name escaped in SVG');
-  assert.ok(!hostile.includes('<svg onload='), 'no raw SVG injection');
-  // A very long agency name is elided so it still fits one line.
-  const long = buildCardSvg({ ...base, agencyName: 'Agency ' + 'x'.repeat(200) });
-  assert.ok(long.includes('…'), 'long agency names are elided');
+  assert.equal(plain, branded, 'agencyName does not change the card (ignored)');
+  assert.ok(!plain.includes('Acme'), 'agency name not rendered on the poster');
+  assert.ok(!hostile.includes('<svg onload='), 'no raw SVG injection from agency input');
+  assert.equal(plain, buildCardSvg(base), 'card remains deterministic');
 });
 
-test('card: branded scan -> GET /card returns a real PNG (1200x630) and rasterizes the agency line', async () => {
+test('card: branded scan -> GET /card returns a real 1600x900 PNG (agency ignored)', async () => {
   const created = await (await post(api.base, { url: 'https://example.com/', branding: AGENCY })).json();
   const res = await fetch(`${api.base}/api/v1/scans/${created.id}/card`);
   assert.equal(res.status, 200);
@@ -282,8 +279,12 @@ test('card: branded scan -> GET /card returns a real PNG (1200x630) and rasteriz
   const png = Buffer.from(await res.arrayBuffer());
   assert.deepEqual([...png.subarray(0, 8)], [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], 'PNG magic');
   assert.ok(png.length > 20_000, 'card is a real rendered image');
-  // The same SVG renders to PNG without crashing (sharp rasterizes agency line).
+  const meta = await sharp(png).metadata();
+  assert.equal(meta.width, 1600);
+  assert.equal(meta.height, 900);
+  // The poster rasterizes fine even with agency input present (ignored).
   const svg = buildCardSvg({ score: created.score, url: created.url, agencyName: AGENCY.agencyName });
+  assert.ok(!svg.includes('Acme'), 'agency name never reaches the poster SVG');
   const out = await renderCardPng(svg);
   assert.ok(Buffer.isBuffer(out) && out.length > 20_000);
 });
