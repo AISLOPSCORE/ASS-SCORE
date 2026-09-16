@@ -28,6 +28,7 @@
 
 import { DISCLAIMER } from './card.js';
 import { verdictFor } from './verdict.js';
+import { createReportToken, reportSecret, buildReportUrl } from './paywall.js';
 import nodemailer from 'nodemailer';
 
 /** Conservative default primary — deliverability-safe, no emoji/brand tokens. */
@@ -81,15 +82,22 @@ function esc(v) {
  * escaped; the A.S.S. Score brand header, the verdict, and the mandated
  * disclaimer are present in BOTH bodies.
  *
- * @param {{ scan: object, to: string, publicBaseUrl: string, subject?: string, from?: string }}
+ * PAYWALL: `reportUrl` is the link in the email. The paid path (default, used
+ * by the order-fulfillment webhook) passes the token'd full-report URL built
+ * by the senders; the free path (POST /api/v1/scan with an optional email)
+ * passes the free result-page URL. When omitted, falls back to the legacy
+ * public-by-id link (kept for direct callers).
+ *
+ * @param {{ scan: object, to: string, publicBaseUrl: string, subject?: string,
+ *           from?: string, reportUrl?: string }}
  * @returns {{ from: string, to: string, subject: string, text: string, html: string }}
  */
-export function buildReportEmail({ scan, to, publicBaseUrl, subject = DEFAULT_SUBJECT, from = DEFAULT_FROM }) {
+export function buildReportEmail({ scan, to, publicBaseUrl, subject = DEFAULT_SUBJECT, from = DEFAULT_FROM, reportUrl }) {
   // The scan payload is the PUBLIC scan shape (`score` 0-100, higher = worse,
   // with a `verdict`); legacy payloads may carry `slopScore` (same direction)
   // — accept both, prefer the public `score`.
   const score = Number(scan.score ?? scan.slopScore);
-  const reportUrl = `${String(publicBaseUrl).replace(/\/+$/, '')}/scan/${scan.id}`;
+  const link = reportUrl ?? `${String(publicBaseUrl).replace(/\/+$/, '')}/scan/${scan.id}`;
 
   const text = [
     'A.S.S. Score — your website audit',
@@ -98,7 +106,7 @@ export function buildReportEmail({ scan, to, publicBaseUrl, subject = DEFAULT_SU
     `A.S.S. Score: ${score} / 100`,
     `Verdict: ${verdictFor(score)}`,
     '',
-    `Full report: ${reportUrl}`,
+    `Full report: ${link}`,
     '',
     '————',
     '',
@@ -122,7 +130,7 @@ export function buildReportEmail({ scan, to, publicBaseUrl, subject = DEFAULT_SU
           <p style="margin:0 0 6px;font-size:13px;color:#64748b">A.S.S. Score</p>
           <p style="margin:0 0 4px;font-size:40px;font-weight:800;color:#f59e0b">${score} <span style="font-size:18px;color:#94a3b8">/ 100</span></p>
           <p style="margin:0 0 24px;font-size:16px;color:#334155">${esc(verdictFor(score))}</p>
-          <p style="margin:0 0 8px"><a href="${esc(reportUrl)}" style="display:inline-block;background:#0f172a;color:#f8fafc;text-decoration:none;padding:12px 22px;border-radius:8px;font-weight:600">View full report</a></p>
+          <p style="margin:0 0 8px"><a href="${esc(link)}" style="display:inline-block;background:#0f172a;color:#f8fafc;text-decoration:none;padding:12px 22px;border-radius:8px;font-weight:600">View full report</a></p>
           <p style="margin:24px 0 0;font-size:12px;line-height:1.5;color:#64748b">${esc(DISCLAIMER)}</p>
         </td></tr>
       </table>
@@ -164,6 +172,8 @@ export function createResendSender({
   from = RESEND_DEFAULT_FROM,
   subject = process.env.EMAIL_SUBJECT || DEFAULT_SUBJECT,
   publicBaseUrl = process.env.PUBLIC_BASE_URL || 'https://ass-score.com',
+  reportBaseUrl,
+  reportTokenSecret,
   logger = console,
   maxAttempts = 3,
   backoffMs = [1_000, 3_000, 9_000],
@@ -174,7 +184,9 @@ export function createResendSender({
     // Programming error — the factory guards this; never reachable in prod.
     throw new Error('createResendSender requires a non-empty apiKey');
   }
-  return async function sendScanEmailViaResend(scan, to) {
+  const secret = reportTokenSecret ?? reportSecret(process.env, logger);
+  const linkBase = reportBaseUrl ?? publicBaseUrl;
+  return async function sendScanEmailViaResend(scan, to, opts = {}) {
     if (!scan || typeof scan.id !== 'string') {
       logger.error(`[email] send to ${to} aborted: payload is not a scan result`);
       return { ok: false, configured: true, attempts: 0, error: new Error('missing scan payload') };
@@ -186,7 +198,12 @@ export function createResendSender({
         if (delay > 0) await sleep(delay);
       }
       try {
-        const mail = buildReportEmail({ scan, to, publicBaseUrl, subject, from });
+        // PAYWALL: paid (default) -> token'd full-report link; free -> the
+        // free result page. The token is HMAC'd to this scan id + secret.
+        const reportUrl = opts.free
+          ? `${String(publicBaseUrl).replace(/\/+$/, '')}/api/v1/scans/${scan.id}`
+          : buildReportUrl(linkBase, scan.id, createReportToken(secret, scan.id));
+        const mail = buildReportEmail({ scan, to, publicBaseUrl, subject, from, reportUrl });
         const response = await fetchImpl(RESEND_API_URL, {
           method: 'POST',
           headers: {
@@ -256,6 +273,8 @@ export function createResendSender({
 export function createEmailSender({
   subject = process.env.EMAIL_SUBJECT || DEFAULT_SUBJECT,
   publicBaseUrl = process.env.PUBLIC_BASE_URL || 'https://ass-score.com',
+  reportBaseUrl,
+  reportTokenSecret,
   from,
   env = process.env,
   logger = console,
@@ -282,6 +301,8 @@ export function createEmailSender({
       from: resendFrom,
       subject,
       publicBaseUrl,
+      reportBaseUrl,
+      reportTokenSecret,
       logger,
       maxAttempts,
       backoffMs,
@@ -300,13 +321,14 @@ export function createEmailSender({
       return { ok: false, configured: false };
     };
   }
-
-  // 2) SMTP via Nodemailer — behavior unchanged.
+  // 2) SMTP via Nodemailer — behavior unchanged apart from the paywall link.
   const port = Number(env.SMTP_PORT) || (String(env.SMTP_SECURE) === 'true' ? 465 : 587);
   const secure = String(env.SMTP_SECURE) === 'true' || port === 465;
   const user = env.SMTP_USER || '';
   const pass = env.SMTP_PASS || '';
   const smtpFrom = from ?? env.SMTP_FROM ?? DEFAULT_FROM;
+  const secret = reportTokenSecret ?? reportSecret(env, logger);
+  const linkBase = reportBaseUrl ?? publicBaseUrl;
   const transporter = transport ?? nodemailer.createTransport({
     host: smtpHost,
     port,
@@ -317,7 +339,7 @@ export function createEmailSender({
     socketTimeout: 10_000,
   });
 
-  return async function sendScanEmail(scan, to) {
+  return async function sendScanEmail(scan, to, opts = {}) {
     if (!scan || typeof scan.id !== 'string') {
       logger.error(`[email] send to ${to} aborted: payload is not a scan result`);
       return { ok: false, configured: true, attempts: 0, error: new Error('missing scan payload') };
@@ -329,7 +351,12 @@ export function createEmailSender({
         if (delay > 0) await sleep(delay);
       }
       try {
-        const mail = buildReportEmail({ scan, to, publicBaseUrl, subject, from: smtpFrom });
+        // PAYWALL: paid (default) -> token'd full-report link; free -> the
+        // free result page. The token is HMAC'd to this scan id + secret.
+        const reportUrl = opts.free
+          ? `${String(publicBaseUrl).replace(/\/+$/, '')}/api/v1/scans/${scan.id}`
+          : buildReportUrl(linkBase, scan.id, createReportToken(secret, scan.id));
+        const mail = buildReportEmail({ scan, to, publicBaseUrl, subject, from: smtpFrom, reportUrl });
         await transporter.sendMail(mail);
         return { ok: true, configured: true, attempts: attempt };
       } catch (err) {

@@ -6,6 +6,7 @@ import path from 'node:path';
 import { createApp } from '../src/app.js';
 import { openDb } from '../src/db.js';
 import { validateUrl } from '../src/fetch/ssrf.js';
+import { createReportToken } from '../src/paywall.js';
 import { analyzeAssets, STOCK_IMAGE_HOSTS } from '../src/rules/assets.js';
 import {
   computeSlopScore,
@@ -212,10 +213,14 @@ const fakeFetcher = () => ({
 });
 
 function startApp(dbPath) {
-  const app = createApp({ dbPath, fetcher: fakeFetcher(), validateTarget: offlineValidateTarget });
+  const app = createApp({ dbPath, fetcher: fakeFetcher(), validateTarget: offlineValidateTarget, reportTokenSecret: 'asset-test-secret' });
   const server = app.listen(0);
   return { server, base: `http://127.0.0.1:${server.address().port}` };
 }
+
+/** Fetch the token'd full report HTML for a scan id. */
+const paidHtml = (base, id) =>
+  fetch(`${base}/api/v1/scans/${id}?token=${createReportToken('asset-test-secret', id)}`, { headers: { accept: 'text/html' } }).then((r) => r.text());
 
 let api;
 let dbPath;
@@ -229,7 +234,7 @@ after(() => {
   api.server.close();
 });
 
-test('POST scan: breakdown has the assets key with score+findings; persisted bytes-exact; GET matches', async () => {
+test('POST scan: breakdown has the assets key with a numeric score; findings persist in DB + paid report, GET matches', async () => {
   const res = await fetch(`${api.base}/api/v1/scan`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -238,41 +243,54 @@ test('POST scan: breakdown has the assets key with score+findings; persisted byt
   assert.equal(res.status, 200);
   const json = await res.json();
 
-  // assets breakdown key present and well-formed
+  // assets breakdown key present and well-formed (FREE contract: number only).
   assert.ok(json.breakdown.assets, 'breakdown.assets key present in POST response');
   assert.ok(Number.isInteger(json.breakdown.assets.score) && json.breakdown.assets.score >= 0 && json.breakdown.assets.score <= 100);
-  assert.ok(Array.isArray(json.breakdown.assets.findings));
   // This fixture: 2/4 stock CDN (0.5*0.5=0.25), 2/4 bad alts (0.25*0.5=0.125),
   // 2/4 placeholder filenames (0.25*0.5=0.125) -> 0.50 total -> score 50.
   assert.equal(json.breakdown.assets.score, 50, JSON.stringify(json.breakdown.assets));
-  assert.match(json.breakdown.assets.findings[0], /^2 of 4 images from stock\/placeholder CDNs/);
-  assert.ok(json.breakdown.assets.findings.some((f) => f.includes('generic alt "image"')));
-  assert.ok(json.breakdown.assets.findings.some((f) => f.includes('generic filename "logo"')));
+  assert.ok(!('findings' in json.breakdown.assets), 'assets findings are PAID content — not on the free payload');
+  assert.ok(!('insights' in json.breakdown.assets), 'assets insights are PAID content — not on the free payload');
 
   assert.ok(Number.isInteger(json.score) && json.score >= 0 && json.score <= 100, 'overall public score in 0-100');
   assert.equal(typeof json.verdict, 'string', 'verdict grade label present');
 
-  // persisted identically (slop direction at rest == public direction)
+  // persisted identically (slop direction at rest == public direction) — the
+  // findings LIVE in the DB row (paid content), untouched by the gate.
   const row = new (await import('better-sqlite3')).default(dbPath)
     .prepare('SELECT breakdown FROM scans WHERE id = ?').get(json.id);
   const stored = JSON.parse(row.breakdown);
   assert.equal(stored.assets.score, json.breakdown.assets.score, 'assets score equal at rest (no inversion)');
-  assert.deepEqual(stored.assets.findings, json.breakdown.assets.findings, 'assets findings stored bytes-exact');
+  assert.ok(Array.isArray(stored.assets.findings) && stored.assets.findings.length > 0, 'assets findings stored in the DB');
+  assert.match(stored.assets.findings[0], /^2 of 4 images from stock\/placeholder CDNs/);
+  assert.ok(stored.assets.findings.some((f) => f.includes('generic alt "image"')));
+  assert.ok(stored.assets.findings.some((f) => f.includes('generic filename "logo"')));
 
-  // GET JSON returns the same assets breakdown
+  // GET JSON returns the same FREE breakdown (numeric, gated identically).
   const get1 = await (await fetch(`${api.base}/api/v1/scans/${json.id}`, { headers: { accept: 'application/json' } })).json();
   assert.deepEqual(get1.breakdown, json.breakdown);
+
+  // The actual asset findings surface ONLY inside the token'd paid report.
+  const paid = await paidHtml(api.base, json.id);
+  assert.ok(paid.includes('2 of 4 images from stock/placeholder CDNs'), 'stock finding rendered in the paid report');
+  assert.ok(paid.includes('generic alt'), 'alt finding rendered in the paid report');
 });
 
-test('GET HTML report: renders the IMAGERY category with its findings (no layout breakage)', async () => {
+test('GET HTML: free page shows the IMAGERY number; paid report renders findings + classification (no layout breakage)', async () => {
   const created = await (await fetch(`${api.base}/api/v1/scan`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ url: 'https://example.com/' }),
   })).json();
-  const html = await (await fetch(`${api.base}/api/v1/scans/${created.id}`, { headers: { accept: 'text/html' } })).text();
-  // The assets category renders under its customer-facing name IMAGERY,
-  // with its sub-score and the NEEDS ATTENTION classification (score 50).
+  // Free teaser page: the IMAGERY category renders as its NUMBER (50/100).
+  const freeHtml = await (await fetch(`${api.base}/api/v1/scans/${created.id}`, { headers: { accept: 'text/html' } })).text();
+  assert.ok(freeHtml.includes('IMAGERY'), 'assets row renders under its customer name IMAGERY on the free page');
+  assert.match(freeHtml, /<strong>IMAGERY<\/strong> — 50\/100/, 'free page shows the IMAGERY number');
+  assert.ok(!freeHtml.includes('NEEDS ATTENTION'), 'classification is paid-report content, not on the free page');
+
+  // Paid report: sub-score + NEEDS ATTENTION classification (score 50) +
+  // verbatim receipts.
+  const html = await paidHtml(api.base, created.id);
   assert.ok(html.includes('IMAGERY'), 'assets row renders under its customer name IMAGERY');
   assert.match(html, /<strong>IMAGERY<\/strong> — 50\/100 <em>\(NEEDS ATTENTION\)<\/em>/, 'IMAGERY row shows score + classification');
   assert.ok(html.includes('2 of 4 images from stock/placeholder CDNs'), 'stock finding rendered as a receipt');

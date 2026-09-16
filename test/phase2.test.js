@@ -14,6 +14,7 @@ import { analyzeFingerprints, FINGERPRINTS, CONFIDENCE_WEIGHT } from '../src/rul
 import { parseSitemap, normalizeCandidate, discoverPages, MAX_ADDITIONAL_PAGES, MAX_TOTAL_PAGES } from '../src/rules/discover.js';
 import { computeSlopScore, RULE_WEIGHTS, FULL_RULE_WEIGHTS } from '../src/scorer.js';
 import { runRules } from '../src/rules/index.js';
+import { createReportToken } from '../src/paywall.js';
 
 const tmpDb = () => path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'aislop-p2-')), 'test.db');
 
@@ -106,11 +107,15 @@ const fixtureTarget = async (raw) => {
 };
 
 function startApp(dbPath, fetcher, scanBudgetMs) {
-  const app = createApp({ dbPath, fetcher, scanBudgetMs, validateTarget: fixtureTarget });
+  const app = createApp({ dbPath, fetcher, scanBudgetMs, validateTarget: fixtureTarget, reportTokenSecret: 'phase2-test-secret' });
   const server = app.listen(0);
   const port = server.address().port;
   return { server, base: `http://127.0.0.1:${port}` };
 }
+
+/** Fetch the token'd full report HTML for a scan id (paid content). */
+const paidHtml = (base, id) =>
+  fetch(`${base}/api/v1/scans/${id}?token=${createReportToken('phase2-test-secret', id)}`, { headers: { accept: 'text/html' } }).then((r) => r.text());
 
 function postScan(base, url, extra = {}) {
   return fetch(`${base}/api/v1/scan`, {
@@ -504,59 +509,57 @@ test('crossPage: flags near-identical main content >= 0.80 and scores from max s
 // Integration: multi-page fixture scan
 // ---------------------------------------------------------------------------
 
-test('integration: multi-page scan flags duplication, runs fingerprints, reports worstPage + Templated Content, deterministic', async () => {
+test('integration: multi-page scan flags duplication + fingerprints; paid report shows worstPage + duplicated pairs, deterministic', async () => {
   const api = startApp(tmpDb(), fixtureFetcher(), undefined);
 
   const res = await postScan(api.base, `${multiBase}/`);
   assert.equal(res.status, 200);
   const json = await res.json();
 
-  // full breakdown shape
+  // full breakdown shape (FREE contract: numeric entries only)
   for (const rule of ['filler', 'boilerplate', 'infoDensity', 'repetitive', 'crossPage', 'fingerprints']) {
     assert.ok(rule in json.breakdown, `breakdown.${rule}`);
   }
-  // crossPage: flagged near-identical pair (home ~ about, main content).
-  // Higher = worse: the flagged pair means slop > 0, so the sub-score reads
-  // > 0 (higher = more duplication, good).
+  for (const entry of Object.values(json.breakdown)) {
+    assert.ok(!('findings' in entry) && !('insights' in entry), 'free breakdown carries numbers only');
+  }
+  // crossPage sub-score rides the free payload (higher = worse).
   assert.ok(json.breakdown.crossPage.score > 0, `crossPage.score ${json.breakdown.crossPage.score}`);
-  const flagged = json.breakdown.crossPage.pairs.filter((p) => p.similarity >= DUPLICATION_THRESHOLD);
-  assert.ok(flagged.length >= 1, JSON.stringify(json.breakdown.crossPage.pairs));
-  const hit = flagged.find((p) => p.pageA.endsWith('/') && p.pageB.includes('/about'));
-  assert.ok(hit, 'target page ~ /about flagged');
-  assert.ok(hit.similarity >= 0.8, `similarity ${hit.similarity}`);
-  // fingerprints evidence on the target page (v0.dev asset detected -> score
-  // > 0, higher = more slop)
-  assert.ok(json.breakdown.fingerprints.score > 0);
-  assert.ok(json.breakdown.fingerprints.findings.some((f) => f.includes('v0.dev')));
-  // multi-page metadata
-  assert.ok(Array.isArray(json.pages) && json.pages.length === 3, JSON.stringify(json.pages));
-  assert.equal(json.partial, undefined);
-  assert.ok(json.worstPage && typeof json.worstPage.score === 'number' && json.worstPage.score >= 0 && json.worstPage.score <= 100);
-  assert.ok(json.worstPage.url.endsWith('/') || json.worstPage.url.includes('/about'));
+  assert.ok(!('pages' in json) && !('worstPage' in json), 'pages/worstPage are paid-side analysis — not on the free payload');
 
-  // persisted + HTML report sections
+  // The duplication pairs + worstPage + fingerprint receipts live in the
+  // token'd paid report (this is the paid content).
+  const paid = await paidHtml(api.base, json.id);
+  assert.ok(paid.includes('REPETITION'), 'crossPage renders under its customer name REPETITION');
+  assert.match(paid, /Page That Needs The Most Work/);
+  assert.match(paid, /Duplicated page pairs \(receipts\):/);
+  assert.match(paid, /similar/);
+  assert.ok(paid.includes('v0.dev'), 'fingerprint evidence (v0.dev) renders in the paid report');
+
+  // persisted + paid HTML report sections
   const resHtml = await fetch(`${api.base}/api/v1/scans/${json.id}`, { headers: { accept: 'text/html' } });
   assert.equal(resHtml.status, 200);
-  const html = await resHtml.text();
-  assert.match(html, /A\.S\.S\. Score: /);
+  const freeHtml = await resHtml.text();
+  assert.match(freeHtml, /A\.S\.S\. Score: /);
   assert.ok(
-    html.includes(
+    freeHtml.includes(
       'This tool identifies writing and design patterns commonly associated with generic or templated content. It does not detect AI authorship and is not proof that any content was AI-generated.'
     ),
-    'report carries the mandated disclaimer'
+    'free page carries the mandated disclaimer'
   );
-  assert.ok(html.includes('REPETITION'), 'crossPage renders under its customer name REPETITION');
-  assert.match(html, /Page That Needs The Most Work/);
-  assert.match(html, /Duplicated page pairs \(receipts\):/);
-  assert.match(html, /similar/);
+  assert.ok(!freeHtml.includes('Duplicated page pairs'), 'duplication receipts never render on the free page');
 
-  // determinism: two consecutive runs produce identical scores + pairs
+  // determinism: two consecutive runs produce identical scores + breakdown;
+  // teasers are seeded per id (may differ across rescans — that is intended).
   const res2 = await postScan(api.base, `${multiBase}/`);
   const json2 = await res2.json();
   assert.equal(json2.score, json.score);
-  assert.deepEqual(json2.breakdown.crossPage.pairs, json.breakdown.crossPage.pairs);
+  assert.deepEqual(json2.breakdown, json.breakdown);
   assert.equal(json2.breakdown.fingerprints.score, json.breakdown.fingerprints.score);
-  assert.deepEqual(json2.worstPage, json.worstPage);
+
+  // The PAID report for a given scan id is byte-identical across fetches.
+  const paidAgain = await paidHtml(api.base, json.id);
+  assert.equal(paidAgain, paid, 'paid report is byte-identical for the same scan id');
 
   api.server.close();
 });
@@ -594,10 +597,19 @@ test('integration: budget expiry yields partial results without hanging', async 
   assert.ok(elapsed < 5000, `must not hang (elapsed ${elapsed}ms)`);
   assert.equal(json.partial, true);
   assert.ok(json.note.includes('/slow'), `note: ${json.note}`);
-  assert.ok(json.pages.length >= 2, 'fast page completed, slow page dropped');
-  assert.ok(!json.pages.some((u) => u.includes('/slow')), 'stalled page never returned');
   assert.equal(json.breakdown.crossPage.score, 0, '2 completed pages -> crossPage ran without flagged pairs (0 = clean)');
-  assert.ok(json.breakdown.crossPage.pairs.length === 1);
+  // FREE contract: the completed-page list + pairs are paid-side analysis.
+  assert.ok(!('pages' in json), 'pages list is not on the free payload');
+  assert.ok(!('findings' in json.breakdown.crossPage), 'crossPage findings are not on the free payload');
+
+  // Paid report: the completed pages show as LINKS in the pages-scanned line,
+  // the stalled /slow page is never linked (the partial note may mention it in
+  // prose — the methodology explains which page failed, which is correct).
+  const paid = await paidHtml(api.base, json.id);
+  const anchorUrls = [...paid.matchAll(/href="([^"]+)"/g)].map((m) => m[1]);
+  assert.ok(anchorUrls.some((u) => u.endsWith('/fast')), 'completed page is linked in the paid report');
+  assert.ok(!anchorUrls.some((u) => u.includes('/slow')), 'stalled page is never linked in the paid report');
+  assert.match(paid, /Page That Needs The Most Work/, 'for the multi-page partial scan');
 
   api.server.close();
 });

@@ -9,6 +9,7 @@ import { validateBranding, isHttpUrl } from '../src/branding.js';
 import sharp from 'sharp';
 import { buildCardSvg, renderCardPng } from '../src/card.js';
 import { validateUrl } from '../src/fetch/ssrf.js';
+import { createReportToken } from '../src/paywall.js';
 
 const tmpDb = () => path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'aislop-brand-')), 'test.db');
 
@@ -36,8 +37,12 @@ function stubDeliverer() {
 // Route-level SSRF guard, DNS-skipping variant (see webhookFulfillment.test.js).
 const offlineValidateTarget = async (raw) => validateUrl(raw);
 
+// Fixed paywall secret so tests can mint report tokens. Branding is PAID
+// content: the agency chrome renders ONLY on the token'd full report.
+const TOKEN_SECRET = 'branding-test-secret';
+
 function startApp(dbPath, fetcher, webhookDeliverer, options = {}) {
-  const app = createApp({ dbPath, fetcher, webhookDeliverer, validateTarget: offlineValidateTarget, ...options });
+  const app = createApp({ dbPath, fetcher, webhookDeliverer, validateTarget: offlineValidateTarget, reportTokenSecret: TOKEN_SECRET, ...options });
   const server = app.listen(0);
   const port = server.address().port;
   return { server, base: `http://127.0.0.1:${port}` };
@@ -52,6 +57,10 @@ const post = (base, body) =>
 
 const getHtml = (base, id) =>
   fetch(`${base}/api/v1/scans/${id}`, { headers: { accept: 'text/html' } }).then((r) => r.text());
+
+/** Fetch the token'd full report HTML (the only surface branding renders on). */
+const getPaidHtml = (base, id) =>
+  fetch(`${base}/api/v1/scans/${id}?token=${createReportToken(TOKEN_SECRET, id)}`, { headers: { accept: 'text/html' } }).then((r) => r.text());
 
 const DISCLAIMER =
   'This tool identifies writing and design patterns commonly associated with generic or templated content. It does not detect AI authorship and is not proof that any content was AI-generated.';
@@ -175,32 +184,39 @@ const AGENCY = {
   footerText: 'Audit prepared by Acme Agency',
 };
 
-test('POST /api/v1/scan: valid branding -> 200, response + sqlite + GET JSON + webhook all carry it', async () => {
+test('POST /api/v1/scan: valid branding -> 200, NOT leaked on the free payload, stored in sqlite, rendered by the paid report', async () => {
   const res = await post(api.base, { url: 'https://example.com/', branding: AGENCY, webhookUrl: 'https://hooks.example.com/x' });
   assert.equal(res.status, 200);
   const json = await res.json();
-  assert.deepEqual(json.branding, AGENCY, 'response carries the normalized branding');
+  // PAYWALL: branding is PAID content (agency config for the full report) —
+  // the free response and the free webhook payload never carry it.
+  assert.ok(!('branding' in json), 'branding is stripped from the free response payload');
 
-  // Persisted in SQLite (branding TEXT/JSON column).
+  // Persisted in SQLite (branding TEXT/JSON column) — survives the gate.
   const row = new Database(apiDbPath).prepare('SELECT branding FROM scans WHERE id = ?').get(json.id);
   assert.ok(row, 'row should exist in sqlite');
   assert.deepEqual(JSON.parse(row.branding), AGENCY);
 
-  // GET /api/v1/scans/:id JSON re-exposes stored branding.
+  // GET /api/v1/scans/:id JSON (free) also strips branding.
   const got = await (await fetch(`${api.base}/api/v1/scans/${json.id}`, { headers: { accept: 'application/json' } })).json();
-  assert.deepEqual(got.branding, AGENCY, 'stored scan JSON exposes branding');
+  assert.ok(!('branding' in got), 'stored scan JSON does not leak branding to the free tier');
 
-  // Webhook payload is the exact response object (bytes-exact) — branding rides along.
+  // Webhook payload is the exact gated free response object (bytes-exact).
   assert.equal(stub.calls.length, 1);
   const { payload, webhookUrl } = stub.calls[0];
   assert.equal(webhookUrl, 'https://hooks.example.com/x');
   assert.deepEqual(payload, json);
-  assert.deepEqual(payload.branding, AGENCY, 'webhook payload carries branding');
+  assert.ok(!('branding' in payload), 'webhook payload carries the gated free object (no branding)');
+
+  // The paid report (token route) DOES render the stored branding.
+  const paid = await getPaidHtml(api.base, json.id);
+  assert.ok(paid.includes('Acme Agency'), 'paid report renders the agency name');
+  assert.ok(paid.includes('Audit prepared by Acme Agency'), 'paid report renders the agency footer');
 });
 
-test('branded scan -> HTML report renders agency name, logo, accent, footer; A.S.S. Score + disclaimer intact', async () => {
+test('branded scan -> HTML report (token) renders agency name, logo, accent, footer; A.S.S. Score + disclaimer intact', async () => {
   const created = await (await post(api.base, { url: 'https://example.com/', branding: AGENCY })).json();
-  const html = await getHtml(api.base, created.id);
+  const html = await getPaidHtml(api.base, created.id);
 
   // White-label chrome:
   assert.match(html, /<h1[^>]*>Acme Agency<\/h1>/, 'agency name in the header');
@@ -215,12 +231,16 @@ test('branded scan -> HTML report renders agency name, logo, accent, footer; A.S
   assert.ok(html.includes('Your Breakdown'), 'breakdown section present');
   assert.ok(html.includes(DISCLAIMER), 'mandated disclaimer present verbatim');
   assert.ok(html.includes('<title>A.S.S. Score report</title>'), 'title keeps the metric name');
+
+  // The FREE page never shows the agency chrome.
+  const free = await getHtml(api.base, created.id);
+  assert.ok(!free.includes('Acme Agency'), 'free teaser page carries no agency branding');
 });
 
 test('missing branding -> 200 and the default report is unchanged (no white-label chrome)', async () => {
   const created = await (await post(api.base, { url: 'https://example.com/' })).json();
   assert.equal('branding' in created, false, 'no branding key on a plain scan response');
-  const html = await getHtml(api.base, created.id);
+  const html = await getPaidHtml(api.base, created.id);
 
   assert.match(html, /<h1>A\.S\.S\. Score report<\/h1>/, 'default header');
   assert.ok(!html.includes('powered by'), 'no powered-by line');
@@ -240,10 +260,11 @@ const HOSTILE = {
   footerText: '</p><script>window.pwned=1</script>',
 };
 
-test('hostile branding values are HTML-escaped in the report (no markup injection)', async () => {
+test('hostile branding values are HTML-escaped in the paid report (no markup injection)', async () => {
   const created = await (await post(api.base, { url: 'https://example.com/', branding: HOSTILE })).json();
-  assert.equal(created.branding.logoUrl, 'https://evil.example/a?b=%22%3E%3Cscript%3E/', 'logo URL normalized (quotes/angle brackets percent-encoded)');
-  const html = await getHtml(api.base, created.id);
+  // PAYWALL: branding never rides the free payload (not even normalized).
+  assert.ok(!('branding' in created), 'hostile branding is not echoed on the free payload');
+  const html = await getPaidHtml(api.base, created.id);
 
   assert.ok(html.includes('&quot;&gt;&lt;img src=x onerror=alert(1)&gt;'), 'agency name escaped in the h1');
   assert.ok(!html.includes('"><'), 'no raw quote-bracket sequence (no attribute/value breakout)');

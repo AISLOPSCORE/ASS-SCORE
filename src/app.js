@@ -6,6 +6,7 @@ import { scanRouter } from './routes/scan.js';
 import { scansRouter } from './routes/scans.js';
 import { webhookRouter } from './routes/webhook.js';
 import { createEmailSender } from './email.js';
+import { reportSecret } from './paywall.js';
 import { createCors } from './cors.js';
 
 /** The full SSRF guard both routes run before their rate caps (validateUrl +
@@ -42,6 +43,14 @@ const defaultCheckTarget = async (raw) => {
  *   validateTarget  — SSRF guard for scan/webhook targets (default: the same
  *                     validateUrl + resolveAndCheck the Fetcher runs; tests
  *                     inject a DNS-skipping guard)
+ *   reportTokenSecret — HMAC secret for full-report access tokens (default
+ *                     env REPORT_TOKEN_SECRET; when neither is set a random
+ *                     per-boot secret is used — emailed links die on restart,
+ *                     a warning is logged)
+ *   reportBaseUrl   — public origin embedded in emailed full-report links
+ *                     (default publicBaseUrl; env REPORT_BASE_URL when unset —
+ *                     use the backend origin if the domain does not proxy
+ *                     /api/v1/report to the service)
  *
  * NOTE on client IPs: the app trusts ONE proxy hop (the platform edge, e.g.
  * Railway's LB) and Express then derives the client IP from the last
@@ -50,10 +59,14 @@ const defaultCheckTarget = async (raw) => {
  * src/clientIp.js; without trust proxy, Express ignores X-Forwarded-For and
  * every request would look like the LB's IP, collapsing the per-IP caps.
  */
-export function createApp({ dbPath = './data/ass-score.db', fetcher, webhookDeliverer, emailSender, scanBudgetMs, publicBaseUrl = process.env.PUBLIC_BASE_URL || 'https://ass-score.com', now, maxWebhooksPerDay, maxScansPerDay, validateTarget, allowedOrigins } = {}) {
+export function createApp({ dbPath = './data/ass-score.db', fetcher, webhookDeliverer, emailSender, scanBudgetMs, publicBaseUrl = process.env.PUBLIC_BASE_URL || 'https://ass-score.com', now, maxWebhooksPerDay, maxScansPerDay, validateTarget, allowedOrigins, reportTokenSecret, reportBaseUrl } = {}) {
   const db = openDb(dbPath);
   const fetcherImpl = fetcher ?? new Fetcher();
-  const emailSenderImpl = emailSender ?? createEmailSender({ publicBaseUrl });
+  // PAYWALL secret: env REPORT_TOKEN_SECRET, or random per-boot (fail closed —
+  // tokens die on restart; reportSecret logs the warning).
+  const secret = reportTokenSecret ?? reportSecret(process.env);
+  const reportLinkBase = reportBaseUrl ?? process.env.REPORT_BASE_URL ?? publicBaseUrl;
+  const emailSenderImpl = emailSender ?? createEmailSender({ publicBaseUrl, reportTokenSecret: secret, reportBaseUrl: reportLinkBase });
   const nowImpl = now ?? (() => new Date().toISOString());
   const rawMaxWebhooks = maxWebhooksPerDay ?? process.env.MAX_WEBHOOKS_PER_DAY;
   const webhookCap = Number.isFinite(Number(rawMaxWebhooks)) ? Math.max(0, Number(rawMaxWebhooks)) : 10;
@@ -87,7 +100,7 @@ export function createApp({ dbPath = './data/ass-score.db', fetcher, webhookDeli
     maxWebhooksPerDay: webhookCap,
     validateTarget: checkTarget,
   }));
-  app.use(scansRouter({ db, publicBaseUrl }));
+  app.use(scansRouter({ db, publicBaseUrl, reportTokenSecret: secret, reportBaseUrl: reportLinkBase }));
 
   app.use((_req, res) => {
     res.status(404).json({ error: { code: 'not_found', message: 'Route not found' } });

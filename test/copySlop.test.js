@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/app.js';
 import { validateUrl } from '../src/fetch/ssrf.js';
+import { createReportToken } from '../src/paywall.js';
 import { extractText } from '../src/text.js';
 import { runRules } from '../src/rules/index.js';
 import { boilerplateRegexes } from '../src/rules/boilerplate.js';
@@ -201,7 +202,7 @@ const fakeFetcher = (html) => ({
 });
 
 function startApp(dbPath, html) {
-  const app = createApp({ dbPath, fetcher: fakeFetcher(html), validateTarget: offlineValidateTarget });
+  const app = createApp({ dbPath, fetcher: fakeFetcher(html), validateTarget: offlineValidateTarget, reportTokenSecret: 'copyslop-test-secret' });
   const server = app.listen(0);
   return { server, base: `http://127.0.0.1:${server.address().port}` };
 }
@@ -212,6 +213,10 @@ const postScan = (base, url) =>
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ url }),
   });
+
+/** Fetch the token'd full report HTML for a scan id. */
+const paidHtml = (base, id) =>
+  fetch(`${base}/api/v1/scans/${id}?token=${createReportToken('copyslop-test-secret', id)}`, { headers: { accept: 'text/html' } }).then((r) => r.text());
 
 let hedgeApi;
 let hedgeDb;
@@ -225,7 +230,7 @@ after(() => {
   hedgeApi.server.close();
 });
 
-test('E2E: hedge-y fixture -> JSON breakdown shows hedge findings under boilerplate + specifics gap under infoDensity', async () => {
+test('E2E: hedge-y fixture -> free JSON carries scores + teasers; findings persist in DB + paid report', async () => {
   const res = await postScan(hedgeApi.base, 'https://acme.example/');
   assert.equal(res.status, 200);
   const json = await res.json();
@@ -234,29 +239,33 @@ test('E2E: hedge-y fixture -> JSON breakdown shows hedge findings under boilerpl
   assert.equal(json.score, 75, 'hedge fixture scores 75');
   assert.equal(json.verdict, 'EXTREMELY ASS');
 
+  // FREE contract: category NUMBERS only — the hedge findings are PAID.
   const bp = json.breakdown.boilerplate;
-  assert.ok(bp.findings.some((f) => /× hedge phrase/.test(f)), 'hedge label findings');
-  assert.ok(bp.findings.some((f) => f.startsWith('hedge evidence: "We aim to empower your journey."')), 'exact quoted evidence');
-  assert.ok(bp.findings.some((f) => f.includes("In today's fast-paced world")), 'cliché opener quoted');
-
+  assert.equal(bp.score, 100, 'boilerplate sub-score rides the free payload');
+  assert.ok(!('findings' in bp), 'boilerplate findings are not on the free payload');
+  assert.ok(!('insights' in bp), 'boilerplate insights are not on the free payload');
   const id = json.breakdown.infoDensity;
-  assert.ok(id.findings.some((f) => f.startsWith('concrete specifics:')), 'specifics gap finding present');
-  assert.match(id.findings.find((f) => f.startsWith('concrete specifics:')), /0 found|only \d+/);
+  assert.equal(id.score, 100);
+  assert.ok(!('findings' in id), 'infoDensity findings are not on the free payload');
+  // Teaser samples carry the three-layer structure (from the seeded pool).
+  assert.ok(Array.isArray(json.teasers) && json.teasers.length >= 1 && json.teasers.length <= 2);
+  for (const t of json.teasers) {
+    assert.ok(t.roast.length > 0 && t.why.length > 0 && t.fix.length > 0 && t.evidence.length > 0, 'three layers present');
+  }
 
-  // Persisted unchanged: the DB stores the slop scores, which ARE the public
-  // scores (same direction, no inversion) — findings untouched.
+  // Persisted unchanged: the DB stores the slop scores (same direction) and
+  // the FULL findings (paid content) — untouched by the gate.
   const row = new (await import('better-sqlite3')).default(hedgeDb)
     .prepare('SELECT breakdown FROM scans WHERE id = ?').get(json.id);
   const stored = JSON.parse(row.breakdown);
   assert.equal(stored.boilerplate.score, bp.score, 'stored boilerplate == public');
-  assert.deepEqual(stored.boilerplate.findings, bp.findings, 'findings stored bytes-exact');
-  assert.equal(stored.infoDensity.score, id.score);
+  assert.ok(stored.boilerplate.findings.some((f) => /× hedge phrase/.test(f)), 'hedge label findings in the DB');
+  assert.ok(stored.boilerplate.findings.some((f) => f.startsWith('hedge evidence: "We aim to empower your journey."')), 'exact quoted evidence in the DB');
+  assert.ok(stored.infoDensity.findings.some((f) => f.startsWith('concrete specifics:')), 'specifics gap finding in the DB');
 
-  // Determinism across rescans: same public score, same findings, same
-  // evidence. Insights are seeded per scan id, so a FRESH rescan may pick
-  // different (still deterministic) roast/why/fix variants — that is the
-  // free-teaser freshness property, not nondeterminism: the same scan id
-  // always yields identical insights (see test/threeLayer.test.js).
+  // Determinism across rescans: same public score, same numeric breakdown.
+  // Teasers are seeded PER SCAN id — a fresh rescan may pick different (still
+  // deterministic) samples; that is the free-teaser freshness property.
   const res2 = await postScan(hedgeApi.base, 'https://acme.example/');
   const json2 = await res2.json();
   assert.equal(json2.score, json.score);
@@ -264,20 +273,18 @@ test('E2E: hedge-y fixture -> JSON breakdown shows hedge findings under boilerpl
     const a = json.breakdown[key];
     const b = json2.breakdown[key];
     assert.equal(b.score, a.score, `${key} score identical across rescans`);
-    assert.deepEqual(b.findings, a.findings, `${key} findings identical across rescans`);
-    assert.ok(Array.isArray(b.insights), `${key} carries insights`);
-    assert.equal(b.insights.length, Math.min(a.findings.length, 6), `${key} insights capped at 6`);
-    if (b.insights.length > 0) {
-      assert.equal(b.insights[0].evidence, b.findings[0], `${key} insight evidence mirrors the finding`);
-      assert.ok(b.insights[0].roast.length > 0 && b.insights[0].why.length > 0 && b.insights[0].fix.length > 0,
-        `${key} insight carries all three layers`);
-    }
+    assert.ok(!('findings' in b) && !('insights' in b), `${key} free entry stays numeric`);
   }
+
+  // The hedge + specifics findings surface ONLY in the paid report.
+  const paid = await paidHtml(hedgeApi.base, json.id);
+  assert.ok(paid.includes('hedge phrase'), 'hedge finding rendered in the paid report');
+  assert.ok(paid.includes('concrete specifics:'), 'specifics gap finding rendered in the paid report');
 });
 
-test('E2E: hedge-y fixture -> HTML report renders the hedge + specifics findings under the right category', async () => {
+test('E2E: hedge-y fixture -> HTML report (token) renders the hedge + specifics findings under the right category', async () => {
   const created = await (await postScan(hedgeApi.base, 'https://acme.example/')).json();
-  const html = await (await fetch(`${hedgeApi.base}/api/v1/scans/${created.id}`, { headers: { accept: 'text/html' } })).text();
+  const html = await paidHtml(hedgeApi.base, created.id);
   assert.ok(html.includes('MESSAGING'), 'boilerplate renders under its customer name MESSAGING');
   assert.ok(html.includes('hedge phrase'), 'hedge finding rendered in HTML');
   assert.ok(html.includes('hedge evidence: &quot;We aim to empower your journey.&quot;'), 'quoted evidence rendered (HTML-escaped)');
@@ -291,8 +298,9 @@ test('E2E: hedge-y fixture -> HTML report renders the hedge + specifics findings
   }
 });
 
-test('E2E: specifics-rich fixture -> zero gap finding in JSON; clean-copy page unaffected', async () => {
-  const api = startApp(tmpDb(), SPECIFIC_PAGE);
+test('E2E: specifics-rich fixture -> no gap finding anywhere; clean-copy page unaffected', async () => {
+  const dbPath = tmpDb();
+  const api = startApp(dbPath, SPECIFIC_PAGE);
   try {
     const res = await postScan(api.base, 'https://acme.example/');
     assert.equal(res.status, 200);
@@ -301,11 +309,25 @@ test('E2E: specifics-rich fixture -> zero gap finding in JSON; clean-copy page u
     // -> the clean band (10-24).
     assert.equal(json.score, 10, 'specifics fixture scores 10');
     assert.equal(json.verdict, 'CLEAN');
-    const id = json.breakdown.infoDensity;
-    assert.ok(!id.findings.some((f) => f.startsWith('concrete specifics:')), 'no gap finding for specific copy');
-    assert.ok(json.breakdown.boilerplate.findings.every((f) => !f.includes('hedge phrase')), 'no hedge findings on a specific, hedge-free page');
+    // FREE payload: numeric only — no findings, so no gap finding by construction.
+    for (const entry of Object.values(json.breakdown)) {
+      assert.ok(!('findings' in entry) && !('insights' in entry), 'free breakdown numeric only');
+    }
 
-    // GET JSON carries the same breakdown.
+    // Correctness check at rest: the DB row has NO 'concrete specifics:' gap
+    // finding and NO hedge findings for this page.
+    const row = new (await import('better-sqlite3')).default(dbPath)
+      .prepare('SELECT breakdown FROM scans WHERE id = ?').get(json.id);
+    const stored = JSON.parse(row.breakdown);
+    assert.ok(!stored.infoDensity.findings.some((f) => f.startsWith('concrete specifics:')), 'no gap finding for specific copy');
+    assert.ok(stored.boilerplate.findings.every((f) => !f.includes('hedge phrase')), 'no hedge findings on a specific, hedge-free page');
+
+    // The paid report confirms: no gap finding, no hedge receipts.
+    const paid = await paidHtml(api.base, json.id);
+    assert.ok(!paid.includes('concrete specifics: 0 found'), 'no gap finding in the paid report');
+    assert.ok(!paid.includes('hedge phrase'), 'no hedge findings in the paid report');
+
+    // GET JSON carries the same free breakdown.
     const got = await (await fetch(`${api.base}/api/v1/scans/${json.id}`, { headers: { accept: 'application/json' } })).json();
     assert.deepEqual(got.breakdown, json.breakdown);
   } finally {

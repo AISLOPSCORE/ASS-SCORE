@@ -17,6 +17,10 @@ import {
   hashScanId,
 } from '../src/threeLayer.js';
 import { hashScanId as roastHashScanId } from '../src/roast.js';
+import { createReportToken } from '../src/paywall.js';
+
+/** Shared report-token secret for the integration app instances in this file. */
+const TL_SECRET = 'three-layer-test-secret';
 
 /**
  * Three-layer findings tests (spec §5): every finding gains { roast, why, fix,
@@ -341,8 +345,8 @@ const fakeFetcher = (html) => ({
 
 const offlineValidateTarget = async (raw) => validateUrl(raw);
 
-function startApp(dbPath) {
-  const app = createApp({ dbPath, fetcher: fakeFetcher(SLOP_PAGE), validateTarget: offlineValidateTarget, maxScansPerDay: 0 });
+function startApp(dbPath, options = {}) {
+  const app = createApp({ dbPath, fetcher: fakeFetcher(SLOP_PAGE), validateTarget: offlineValidateTarget, maxScansPerDay: 0, ...options });
   const server = app.listen(0);
   return { server, base: `http://127.0.0.1:${server.address().port}` };
 }
@@ -352,14 +356,14 @@ let dbPath;
 
 before(() => {
   dbPath = tmpDb();
-  api = startApp(dbPath);
+  api = startApp(dbPath, { reportTokenSecret: TL_SECRET });
 });
 
 after(() => {
   api.server.close();
 });
 
-test('E2E: slop fixture -> JSON breakdown carries insights per category; persisted; GET bytes-stable; HTML renders the layers', async () => {
+test('E2E: slop fixture -> free JSON carries teasers + numeric scores only; insights persist; GET bytes-stable; token HTML renders the layers', async () => {
   const res = await fetch(`${api.base}/api/v1/scan`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -368,11 +372,30 @@ test('E2E: slop fixture -> JSON breakdown carries insights per category; persist
   assert.equal(res.status, 200);
   const json = await res.json();
 
-  // Every category with findings carries a capped insights array; evidence
-  // mirrors findings; all three layers present.
-  let insightTotal = 0;
+  // PAYWALL contract: the free JSON breakdown is category NUMBERS only — the
+  // per-category insights/findings are the paid content and never leave this
+  // payload. The teaser samples (1-2, top-level) carry the three-layer format.
   for (const [key, rule] of Object.entries(json.breakdown)) {
-    assert.ok(Array.isArray(rule.insights), `${key} has insights`);
+    assert.ok('score' in rule, `${key} has a numeric score`);
+    assert.ok(!('insights' in rule) && !('findings' in rule) && !('hits' in rule),
+      `${key} has no paid arrays on the free payload`);
+  }
+  assert.ok(Array.isArray(json.teasers) && json.teasers.length >= 1 && json.teasers.length <= 2, '1-2 teasers');
+  for (const t of json.teasers) {
+    assert.ok(t.roast.length > 0 && t.why.length > 0 && t.fix.length > 0 && t.evidence.length > 0,
+      'teaser layers non-empty');
+  }
+
+  // Persisted in the stored JSON column (rides inside the breakdown): the DB
+  // keeps the FULL insights untouched by the gate — every category with
+  // findings carries a capped insights array; evidence mirrors findings; all
+  // three layers present.
+  const row = new (await import('better-sqlite3')).default(dbPath)
+    .prepare('SELECT breakdown FROM scans WHERE id = ?').get(json.id);
+  const stored = JSON.parse(row.breakdown);
+  let insightTotal = 0;
+  for (const [key, rule] of Object.entries(stored)) {
+    if (!Array.isArray(rule.insights)) continue;
     const expected = Math.min((rule.findings ?? []).length, MAX_INSIGHTS_PER_CATEGORY);
     assert.equal(rule.insights.length, expected, `${key} insights length`);
     rule.insights.forEach((x, i) => {
@@ -383,34 +406,30 @@ test('E2E: slop fixture -> JSON breakdown carries insights per category; persist
   }
   assert.ok(insightTotal >= 10, `slop fixture produces a rich insight set (got ${insightTotal})`);
 
-  // The roast cites real evidence for a phrase-bearing finding.
-  const fillerPhrase = json.breakdown.filler.findings.find((f) => f.includes('cutting-edge')) ?? '';
+  // The roast cites real evidence for a phrase-bearing finding (stored side).
+  const fillerPhrase = stored.filler.findings.find((f) => f.includes('cutting-edge')) ?? '';
   assert.ok(fillerPhrase, 'fixture has a filler phrase finding');
-  const idx = json.breakdown.filler.findings.indexOf(fillerPhrase);
-  assert.ok(json.breakdown.filler.insights[idx].roast.includes('cutting-edge'),
-    `filler insight cites the phrase ("${json.breakdown.filler.insights[idx].roast}")`);
+  const idx = stored.filler.findings.indexOf(fillerPhrase);
+  assert.ok(stored.filler.insights[idx].roast.includes('cutting-edge'),
+    `filler insight cites the phrase ("${stored.filler.insights[idx].roast}")`);
 
-  // Persisted in the stored JSON column (rides inside the breakdown).
-  const row = new (await import('better-sqlite3')).default(dbPath)
-    .prepare('SELECT breakdown FROM scans WHERE id = ?').get(json.id);
-  const stored = JSON.parse(row.breakdown);
-  assert.deepEqual(stored.filler.insights, json.breakdown.filler.insights, 'insights stored bytes-exact');
-
-  // GET JSON: stable across repeats (same stored bytes).
+  // GET JSON: stable across repeats (same stored bytes, same gated shape).
   const get1 = await (await fetch(`${api.base}/api/v1/scans/${json.id}`, { headers: { accept: 'application/json' } })).json();
   const get2 = await (await fetch(`${api.base}/api/v1/scans/${json.id}`, { headers: { accept: 'application/json' } })).json();
-  assert.deepEqual(get1.breakdown, json.breakdown, 'GET matches POST breakdown');
+  assert.deepEqual(get1.breakdown, json.breakdown, 'GET matches POST breakdown (free numbers)');
   assert.deepEqual(get2.breakdown, get1.breakdown, 'repeated GET identical');
+  assert.deepEqual(get2.teasers, get1.teasers, 'teasers stable across repeated GETs');
 
-  // HTML report renders the three layers under each category.
-  const html = await (await fetch(`${api.base}/api/v1/scans/${json.id}`, { headers: { accept: 'text/html' } })).text();
+  // PAID report (valid token): renders the three layers under each category.
+  const token = createReportToken(TL_SECRET, json.id);
+  const html = await (await fetch(`${api.base}/api/v1/scans/${json.id}?token=${encodeURIComponent(token)}`, { headers: { accept: 'text/html' } })).text();
   assert.match(html, /<p class="ins-roast">/, 'roast layer rendered (italic/accent)');
   assert.match(html, /<span class="ins-why">/, 'why layer rendered');
   assert.match(html, /<span class="ins-fix">/, 'fix layer rendered');
   assert.ok(html.includes('Why it matters:') && html.includes('How to fix it:'), 'layer labels present');
   assert.ok((html.match(/<li><strong>/g) ?? []).length >= 10, 'evidence lines rendered bold');
-  const firstInsight = get1.breakdown.filler.insights[0];
-  const escapedRoast = firstInsight.roast.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
+  const firstStoredInsight = stored.filler.insights[0];
+  const escapedRoast = firstStoredInsight.roast.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
   assert.ok(html.includes(escapedRoast), 'a specific roast appears in the report (escaped)');
   const rows = (html.match(/<tr>/g) ?? []).length;
   assert.equal(rows, 0, 'legacy evidence table gone (narrative report structure)');
@@ -422,11 +441,12 @@ test('E2E: slop fixture -> JSON breakdown carries insights per category; persist
   assert.ok(html.includes('The Actual Findings') && html.includes('The Verdict'), 'narrative sections present');
   assert.ok(html.includes('This tool identifies writing and design patterns commonly associated with generic or templated content.'), 'mandated disclaimer intact');
 
-  // Webhook/email payload surface is the same public object (delivered bytes-exact).
-  assert.equal(typeof json.breakdown.assets.insights, 'object', 'assets insights present');
+  // Webhook/email payload surface is the same gated object; the stored
+  // breakdown keeps the full paid insights bytes-exact.
+  assert.equal(typeof stored.assets.insights, 'object', 'assets insights persist in storage');
 
   // Save a sample for the team/owner tone check.
-  const sample = { scannedAt: new Date().toISOString(), fixture: 'slop-heavy multi-page fixture', id: json.id, url: json.url, score: json.score, verdict: json.verdict, roast: json.roast, breakdown: json.breakdown };
+  const sample = { scannedAt: new Date().toISOString(), fixture: 'slop-heavy multi-page fixture', id: json.id, url: json.url, score: json.score, verdict: json.verdict, roast: json.roast, teasers: json.teasers, breakdown: json.breakdown, storedInsights: stored };
   fs.writeFileSync('/home/team/shared/three-layer-e2e-sample.json', JSON.stringify(sample, null, 2));
 });
 
@@ -445,17 +465,34 @@ test('E2E: legacy row without insights gets deterministic derivation (additive c
     roast: 'A stored roast.',
   });
   db.close();
-  const app = startApp(dbPath2);
+  const app = startApp(dbPath2, { reportTokenSecret: TL_SECRET });
   try {
+    // FREE payload: category numbers only, deterministic across reads — the
+    // derived insights are paid content and never appear here.
     const get1 = await (await fetch(`${app.base}/api/v1/scans/legacy-3layer-scan`, { headers: { accept: 'application/json' } })).json();
     const get2 = await (await fetch(`${app.base}/api/v1/scans/legacy-3layer-scan`, { headers: { accept: 'application/json' } })).json();
-    assert.deepEqual(get1.breakdown, get2.breakdown, 'derived insights deterministic across reads');
-    assert.ok(Array.isArray(get1.breakdown.filler.insights) && get1.breakdown.filler.insights.length === 2, 'legacy filler insights derived');
-    assert.ok(get1.breakdown.filler.insights[0].roast.includes('game-changer'), 'legacy roast cites the stored phrase');
-    assert.deepEqual(get1.breakdown.filler.findings, ['2× "game-changer"', '3× "seamless"'], 'findings untouched');
+    assert.deepEqual(get1.breakdown, get2.breakdown, 'free breakdown deterministic across reads');
+    assert.equal(get1.breakdown.filler.score, 40, 'filler sub-score rides the free payload');
+    assert.ok(!('insights' in get1.breakdown.filler) && !('findings' in get1.breakdown.filler),
+      'derived insights/findings are not on the free payload');
     assert.equal(get1.breakdown.crossPage.score, null, 'skipped module passes through');
+    assert.equal(get1.breakdown.crossPage.note, 'insufficient pages for cross-page analysis', 'skip note passes through');
     assert.equal(get1.score, 55, 'stored 55 -> public 55 (same direction, no inversion)');
     assert.equal(get1.roast, 'A stored roast.', 'stored roast kept');
+
+    // The TOKEN'D report derives the insights deterministically (additive
+    // contract): the paid report renders the derived three layers with the
+    // stored receipts, citeable to the stored phrases — twice, byte-identical.
+    const token = createReportToken(TL_SECRET, 'legacy-3layer-scan');
+    const url = `${app.base}/api/v1/scans/legacy-3layer-scan?token=${encodeURIComponent(token)}`;
+    const html = await (await fetch(url, { headers: { accept: 'text/html' } })).text();
+    const html2 = await (await fetch(url, { headers: { accept: 'text/html' } })).text();
+    assert.equal(html2, html, 'legacy derivation byte-identical across reads');
+    assert.ok(html.includes('game-changer'), 'derived roast cites the stored phrase');
+    assert.ok((html.match(/<p class="ins-roast">/g) ?? []).length >= 2, 'derived insights render their roast layers');
+    assert.ok(html.includes('2× &quot;game-changer&quot;') && html.includes('3× &quot;seamless&quot;'),
+      'stored receipts untouched (renderer-escaped)');
+    assert.ok(html.includes('Why it matters:') && html.includes('How to fix it:'), 'why/fix layers derived for legacy rows');
   } finally {
     app.server.close();
   }

@@ -5,6 +5,7 @@ import { validateBranding } from '../branding.js';
 import { validateEmail } from '../email.js';
 import { runScan, SCAN_BUDGET_MS } from '../scan.js';
 import { toPublicScan } from '../serialize.js';
+import { buildFreePayload } from '../paywall.js';
 import { validateUrl, resolveAndCheck, SsrfError, InvalidUrlError } from '../fetch/ssrf.js';
 import { clientIp } from '../clientIp.js';
 
@@ -29,14 +30,17 @@ import { clientIp } from '../clientIp.js';
  * the scan id on success, 'failed' on scan failure — never double-counted by
  * the best-effort webhook/email delivery paths.
  *
- * Response shape: PUBLIC scan JSON — id, url, score (0-100, higher = worse,
- * 0 = clean, 100 = maximum ass), verdict (grade label), breakdown
- * (per-category scores in the same direction), createdAt — plus `pages`,
- * `partial`, `note`, `worstPage` when multi-page, plus `branding` when
- * white-label branding was supplied and `roast` (Slop Roast) on every scan.
+ * Response shape (PAYWALL — free tier): PUBLIC scan JSON — id, url, score
+ * (0-100, higher = worse, 0 = clean, 100 = maximum ass), verdict (grade
+ * label), breakdown (per-category scores as NUMBERS, in the same direction),
+ * createdAt, `roast` on every scan, plus `teasers` (1-2 three-layer findings —
+ * randomized per scan via the scan-id seed), the mandated `disclaimer`, and
+ * `partial`/`note` when the scan was partial. The FULL findings/insights are
+ * the paid content: delivered only by the token'd report link emailed after
+ * the $12 checkout (see src/paywall.js + src/routes/scans.js).
  * Engine scores and the DB row are already in the public direction (higher =
  * more slop); the serialization boundary (see src/serialize.js) only relabels
- * and the webhook payload + email are the exact public response object.
+ * and the webhook payload + email carry the same gated public object.
  */
 export function scanRouter({
   db,
@@ -152,6 +156,11 @@ export function scanRouter({
       // worse), the verdict label, and per-category scores in the same
       // direction. The DB row needs no migration — engine == public.
       const pub = toPublicScan(payload);
+      // PAYWALL: the free tier response is the gated payload — score, verdict,
+      // roast, category NUMBERS, 1-2 teasers, disclaimer. The full findings
+      // (paid content) stay in the DB and in the token'd report only. The
+      // webhook callback gets the same gated payload (identical semantics).
+      const freePub = buildFreePayload(pub);
       const id = payload.id;
       db.markScanEvent(eventKey, { status: 'completed', scanId: id });
 
@@ -159,7 +168,7 @@ export function scanRouter({
         // Best-effort, non-blocking: defer delivery out of the request path.
         setImmediate(async () => {
           try {
-            await deliver(pub, webhook.url);
+            await deliver(freePub, webhook.url);
           } catch (err) {
             console.error(`[webhook] delivery to ${webhook.url} for scan ${id} crashed:`, err?.message ?? err);
           }
@@ -169,17 +178,19 @@ export function scanRouter({
       if (mail.email && emailSender) {
         // Best-effort, non-blocking: same semantics as webhooks. The sender
         // never rejects (missing SMTP config logs a no-op), so the response
-        // below is never affected.
+        // below is never affected. FREE tier: the email carries the free
+        // result-page link — never the paid content — and the sender sees the
+        // EXACT same gated payload the response returns (no full findings).
         setImmediate(async () => {
           try {
-            await emailSender(pub, mail.email);
+            await emailSender(freePub, mail.email, { free: true });
           } catch (err) {
             console.error(`[email] delivery to ${mail.email} for scan ${id} crashed:`, err?.message ?? err);
           }
         });
       }
 
-      res.status(200).json(pub);
+      res.status(200).json(freePub);
     } catch (err) {
       next(err); // centralized error handler; never leaks stack traces
     }

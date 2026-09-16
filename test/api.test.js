@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/app.js';
 import { validateUrl } from '../src/fetch/ssrf.js';
+import { createReportToken, DISCLAIMER } from '../src/paywall.js';
 
 const tmpDb = () => path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'aislop-test-')), 'test.db');
 
@@ -24,8 +25,11 @@ const fakeFetcher = (html) => ({
 // the guard must reject blocked shapes without resolving hostnames.
 const offlineValidateTarget = async (raw) => validateUrl(raw);
 
+// Fixed paywall secret so tests can mint report tokens (createReportToken).
+const TOKEN_SECRET = 'api-test-secret';
+
 function startApp(dbPath, fetcher) {
-  const app = createApp({ dbPath, fetcher, validateTarget: offlineValidateTarget });
+  const app = createApp({ dbPath, fetcher, validateTarget: offlineValidateTarget, reportTokenSecret: TOKEN_SECRET });
   const server = app.listen(0);
   const port = server.address().port;
   return { server, base: `http://127.0.0.1:${port}` };
@@ -53,7 +57,7 @@ const post = (base, body, headers = {}) =>
     body: typeof body === 'string' ? body : JSON.stringify(body),
   });
 
-test('POST /api/v1/scan: valid URL -> 200 with id, score (0-100 higher=worse), verdict, breakdown', async () => {
+test('POST /api/v1/scan: valid URL -> 200 with id, score (0-100 higher=worse), verdict, breakdown — FREE payload contract', async () => {
   const res = await post(api.base, { url: 'https://example.com/' });
   assert.equal(res.status, 200);
   const json = await res.json();
@@ -63,13 +67,30 @@ test('POST /api/v1/scan: valid URL -> 200 with id, score (0-100 higher=worse), v
   assert.ok(!('slopScore' in json), 'internal field name is not exposed');
   assert.equal(typeof json.verdict, 'string', 'grade label present');
   assert.ok(typeof json.createdAt === 'string');
-  for (const rule of ['filler', 'boilerplate', 'infoDensity', 'repetitive']) {
+  assert.equal(typeof json.roast, 'string', 'roast line always present');
+  assert.equal(json.disclaimer, DISCLAIMER, 'mandated disclaimer rides the free payload');
+  for (const rule of ['filler', 'boilerplate', 'infoDensity', 'repetitive', 'crossPage', 'fingerprints', 'assets']) {
     assert.ok(rule in json.breakdown, `breakdown.${rule}`);
-    assert.ok(Number.isInteger(json.breakdown[rule].score));
-    assert.ok(Array.isArray(json.breakdown[rule].findings));
+    const entry = json.breakdown[rule];
+    // FREE contract: per-category NUMBERS (+note for skipped modules) ONLY —
+    // the findings/insights arrays are the PAID content and never leave here.
+    assert.ok('score' in entry, `breakdown.${rule}.score present`);
+    assert.ok(!('findings' in entry), `breakdown.${rule}.findings stripped from free payload`);
+    assert.ok(!('insights' in entry), `breakdown.${rule}.insights stripped from free payload`);
+  }
+  assert.equal(typeof json.breakdown.crossPage.note, 'string', 'skipped-module note passes through');
+  // teasers: 1-2 findings in full three-layer format, seeded per scan id.
+  assert.ok(Array.isArray(json.teasers) && json.teasers.length >= 1 && json.teasers.length <= 2, `1-2 teasers, got ${json.teasers?.length}`);
+  for (const t of json.teasers) {
+    assert.ok(typeof t.key === 'string' && t.key.length > 0);
+    assert.ok(typeof t.roast === 'string' && t.roast.length > 0, 'teaser roast layer');
+    assert.ok(typeof t.why === 'string' && t.why.length > 0, 'teaser why layer');
+    assert.ok(typeof t.fix === 'string' && t.fix.length > 0, 'teaser fix layer');
+    assert.ok(typeof t.evidence === 'string' && t.evidence.length > 0, 'teaser evidence/receipt');
   }
   // Row persisted: the DB keeps the slop score (higher = worse) which IS the
-  // public direction — the response reads it unchanged (no inversion).
+  // public direction — the response reads it unchanged (no inversion). The
+  // full findings live in the DB row (paid content), not the free response.
   const row = new (await import('better-sqlite3')).default(dbPath)
     .prepare('SELECT id, url, score, breakdown FROM scans WHERE id = ?').get(json.id);
   assert.ok(row, 'row should exist in sqlite');
@@ -78,7 +99,8 @@ test('POST /api/v1/scan: valid URL -> 200 with id, score (0-100 higher=worse), v
   const stored = JSON.parse(row.breakdown);
   for (const rule of ['filler', 'boilerplate', 'infoDensity', 'repetitive']) {
     assert.equal(stored[rule].score, json.breakdown[rule].score, `breakdown.${rule} equal at rest`);
-    assert.deepEqual(stored[rule].findings, json.breakdown[rule].findings, `breakdown.${rule} findings untouched`);
+    assert.ok(Array.isArray(stored[rule].findings) && stored[rule].findings.length > 0,
+      `breakdown.${rule} findings stay in the DB (paid content)`);
   }
 });
 
@@ -117,7 +139,7 @@ test('POST /api/v1/scan: bogus URL string -> 400', async () => {
   }
 });
 
-test('GET /api/v1/scans/:id returns the scan and renders HTML on request', async () => {
+test('GET /api/v1/scans/:id returns the FREE scan (JSON + teaser HTML); token unlocks the full report', async () => {
   const created = await (await post(api.base, { url: 'https://example.com/' })).json();
 
   const resJson = await fetch(`${api.base}/api/v1/scans/${created.id}`, { headers: { accept: 'application/json' } });
@@ -126,31 +148,53 @@ test('GET /api/v1/scans/:id returns the scan and renders HTML on request', async
   assert.equal(json.id, created.id);
   assert.equal(json.score, created.score, 'GET matches POST public score');
   assert.equal(json.verdict, created.verdict, 'GET carries the same grade label');
+  assert.deepEqual(json.teasers, created.teasers, 'teasers stable for the same scan id');
+  // FREE JSON: scores only — no findings/insights/pages/worstPage/branding.
+  for (const entry of Object.values(json.breakdown)) {
+    assert.ok(!('findings' in entry) && !('insights' in entry), 'free JSON breakdown carries numbers only');
+  }
+  assert.ok(!('pages' in json) && !('worstPage' in json), 'paid-side analysis (pages/worstPage) is not on the free payload');
+  assert.ok(!('branding' in json), 'branding is not on the free payload');
 
   const resHtml = await fetch(`${api.base}/api/v1/scans/${created.id}`, { headers: { accept: 'text/html' } });
   assert.equal(resHtml.status, 200);
   assert.match(resHtml.headers.get('content-type'), /text\/html/);
   const html = await resHtml.text();
   assert.match(html, /<!doctype html/i);
-  // Branding: the user-facing report names the product A.S.S. Score, renders
-  // the customer-facing category names, and carries the mandated disclaimer
-  // verbatim.
+  // Branding: the user-facing result page names the product A.S.S. Score,
+  // renders the customer-facing category names, and carries the mandated
+  // disclaimer verbatim.
   assert.match(html, /A\.S\.S\. Score: /);
-  // The report headline shows the score (higher = worse) and the verdict
-  // grade label.
+  // The free page headline shows the score (higher = worse) + verdict label.
   assert.ok(html.includes(`A.S.S. Score: ${created.score} / 100`), `headline shows public score ${created.score}`);
-  assert.ok(html.includes(created.verdict), 'report shows the verdict grade label');
+  assert.ok(html.includes(created.verdict), 'free page shows the verdict grade label');
   for (const name of ['COPY', 'MESSAGING', 'ORIGINALITY', 'STRUCTURE', 'REPETITION', 'DESIGN', 'IMAGERY']) {
-    assert.ok(html.includes(name), `report shows the ${name} category`);
+    assert.ok(html.includes(name), `free page shows the ${name} category`);
   }
-  assert.ok(html.includes('The Verdict') && html.includes('The Big Picture') && html.includes('Your Breakdown'), 'narrative sections present');
-  assert.ok(html.includes('The Actual Findings'), 'findings section present');
-  assert.ok(html.includes('What To Fix First') && html.includes('Final Verdict'), 'fix + verdict sections present');
+  // FREE page shape: teaser samples + $12 CTA — NOT the paid narrative report.
+  assert.ok(html.includes('Free samples'), 'free page shows the teaser samples block');
+  assert.ok(html.includes('Unlock the full report'), 'free page carries the $12 checkout CTA');
+  assert.ok(!html.includes('The Actual Findings'), 'full findings section never renders on the free page');
   assert.ok(
     html.includes(
       'This tool identifies writing and design patterns commonly associated with generic or templated content. It does not detect AI authorship and is not proof that any content was AI-generated.'
     ),
-    'report carries the mandated disclaimer'
+    'free page carries the mandated disclaimer'
+  );
+
+  // PAID HTML (valid token): the full narrative report, every section verbatim.
+  const token = createReportToken(TOKEN_SECRET, created.id);
+  const paidRes = await fetch(`${api.base}/api/v1/scans/${created.id}?token=${token}`, { headers: { accept: 'text/html' } });
+  assert.equal(paidRes.status, 200);
+  const paid = await paidRes.text();
+  assert.ok(paid.includes('The Verdict') && paid.includes('The Big Picture') && paid.includes('Your Breakdown'), 'narrative sections present');
+  assert.ok(paid.includes('The Actual Findings'), 'findings section present');
+  assert.ok(paid.includes('What To Fix First') && paid.includes('Final Verdict'), 'fix + verdict sections present');
+  assert.ok(
+    paid.includes(
+      'This tool identifies writing and design patterns commonly associated with generic or templated content. It does not detect AI authorship and is not proof that any content was AI-generated.'
+    ),
+    'paid report carries the mandated disclaimer'
   );
 });
 
@@ -188,13 +232,20 @@ test('pre-flip stored rows read correctly with NO migration: stored 30 -> public
   assert.equal(json.breakdown.filler.score, 30, 'per-category scores read straight from the row');
   assert.equal(json.breakdown.boilerplate.score, 50);
   assert.equal(json.breakdown.crossPage.score, null, 'skipped module passes through');
-  assert.deepEqual(json.breakdown.filler.findings, ['legacy finding'], 'findings untouched');
+  // FREE contract: the legacy finding stays OUT of the free payload (it is
+  // the paid content) — only the score rides through to free surfaces.
+  assert.ok(!('findings' in json.breakdown.filler), 'legacy findings are not on the free payload');
   assert.ok(typeof json.roast === 'string' && json.roast.length > 0, 'roast derived for legacy rows');
 
-  // HTML report on the old row: headline + verdict label.
+  // HTML on the old row (free page): headline + verdict label.
   const html = await (await fetch(`${api.base}/api/v1/scans/${oldId}`, { headers: { accept: 'text/html' } })).text();
   assert.ok(html.includes('A.S.S. Score: 30 / 100'), 'old row headline shows the score');
   assert.ok(html.includes('GETTING ASSY'), 'old row report shows the verdict label');
+
+  // The legacy finding surfaces ONLY via the token'd full report.
+  const token = createReportToken(TOKEN_SECRET, oldId);
+  const paid = await (await fetch(`${api.base}/api/v1/scans/${oldId}?token=${token}`, { headers: { accept: 'text/html' } })).text();
+  assert.ok(paid.includes('legacy finding'), 'legacy finding renders in the paid report');
 });
 
 test('GET /api/v1/scans/:id missing -> 404', async () => {

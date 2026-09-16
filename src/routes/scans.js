@@ -5,6 +5,8 @@ import { selectRoast, selectRoastInfo } from '../roast.js';
 import { withInsights } from '../threeLayer.js';
 import { toPublicScan, publicScore } from '../serialize.js';
 import { verdictBand, verdictLabel, scoreColor } from '../verdict.js';
+import { CATEGORY_LABELS, CATEGORY_ONE_LINERS } from '../categories.js';
+import { buildFreePayload, verifyReportToken, DISCLAIMER } from '../paywall.js';
 
 /**
  * The stored line when the row has one; for rows written before the roast
@@ -38,60 +40,94 @@ function breakdownFor(scan) {
 
 /**
  * GET /api/v1/scans/:id — fetch a stored scan.
- * Returns JSON by default; renders a simple HTML report when the client
- * prefers text/html (the report view).
+ *
+ * PAYWALL (owner-flagged gap, built 2026-09-16): without a valid report
+ * token this endpoint returns ONLY the free payload — score, verdict, roast,
+ * category scores as numbers, 1–2 teaser findings, disclaimer — as JSON, or
+ * renders the free teaser page when the client prefers text/html. The FULL
+ * report (all findings + receipts) is served only when `?token=` carries a
+ * valid HMAC token for this scan id (the link emailed to the paying buyer).
+ * A supplied-but-invalid token is a 403 — it never degrades to the free page
+ * (that would hand the token probe a non-error).
  *
  * GET /api/v1/scans/:id/card — the shareable result card: a deterministic
- * 1200x630 PNG (A.S.S. Score + scanned URL + one-line verdict + branding +
+ * 1600x900 PNG (A.S.S. Score + scanned URL + band + donkey + branding +
  * disclaimer), composed as SVG and rasterized with sharp (no headless
- * browser). Same scan id -> byte-identical PNG, always.
+ * browser). Same scan id -> byte-identical PNG, always. NO report content —
+ * free-tier-shareable by design.
  *
  * GET /api/v1/scans/:id/share — pre-filled social share text + public result
  * URL (publicBaseUrl, default env PUBLIC_BASE_URL || https://ass-score.com).
+ *
+ * GET /api/v1/report/:id — the token'd full-report page (the URL inside the
+ * buyer email). Same gating as the token'd scans route, plus the free page is
+ * NOT rendered here — without a valid token it is a 403.
  */
-export function scansRouter({ db, publicBaseUrl }) {
+export function scansRouter({ db, publicBaseUrl, reportTokenSecret, reportBaseUrl }) {
   const r = Router();
   const shareBase = publicBaseUrl || process.env.PUBLIC_BASE_URL || 'https://ass-score.com';
+
+  /** True when the request carries the valid HMAC report token for this scan. */
+  const hasValidToken = (req, scanId) =>
+    typeof req.query.token === 'string' &&
+    verifyReportToken(reportTokenSecret, scanId, req.query.token);
+
+  /** 403 for a supplied-but-invalid (or missing-on-report-route) token. */
+  const forbidden = (res, accept) => {
+    const wantsHtml = /text\/html/.test(accept) && !/application\/json/.test(accept);
+    if (wantsHtml) {
+      return res.status(403).type('html').send(
+        `<!doctype html><html lang="en"><head><meta charset="utf-8"/><title>403 — Link invalid</title></head>
+<body style="font-family:system-ui,sans-serif;max-width:640px;margin:3rem auto;padding:0 1rem;color:#1a202c">
+<h1>This report link is invalid.</h1>
+<p>The report link you opened has an invalid or missing access token.</p>
+<p class="disclaimer" style="color:#64748b;font-size:.8rem">${DISCLAIMER}</p>
+</body></html>`
+      );
+    }
+    return res.status(403).json({ error: { code: 'forbidden', message: 'A valid report token is required for the full report' } });
+  };
 
   r.get('/api/v1/scans/:id', (req, res) => {
     const scan = db.getScan(req.params.id);
     if (!scan) {
       return res.status(404).json({ error: { code: 'not_found', message: `No scan found with id "${req.params.id}"` } });
     }
-    // Render the HTML report only when the client explicitly asks for text/html;
-    // JSON is the default for API clients (curl sends */* and gets JSON).
+    // A REPORT TOKEN unlocks the full report (HTML); the buyer's emailed link
+    // lands here or on /api/v1/report/:id. Free (no token) is below.
+    if (hasValidToken(req, scan.id)) {
+      return res.type('html').send(renderHtmlReport({ ...scan, breakdown: breakdownFor(scan) }));
+    }
+    // A supplied token that does NOT verify is a 403 — never the free page.
+    if (typeof req.query.token === 'string' && req.query.token !== '') {
+      return forbidden(res, req.get('accept') || '');
+    }
+
+    // PUBLIC free shape (no token): the stored internal slop score IS the
+    // public score (score 0-100, higher = worse — same direction, no
+    // inversion; verdict added). Pre-flip rows read correctly with NO
+    // migration. Three-layer insights are attached/stored but STRIPPED from
+    // the free payload — only numbers + 1–2 teasers + roast + disclaimer
+    // leave this route (the full findings are the paid content).
+    const pub = toPublicScan({ ...scan, breakdown: breakdownFor(scan), roast: roastFor(scan) });
     const accept = req.get('accept') || '';
     const wantsHtml = /text\/html/.test(accept) && !/application\/json/.test(accept);
     if (wantsHtml) {
+      return res.type('html').send(renderFreeHtmlReport(pub, shareBase));
+    }
+    res.json(buildFreePayload(pub));
+  });
+
+  // --- Token'd full report (the URL inside the buyer email) -----------------
+  r.get('/api/v1/report/:id', (req, res) => {
+    const scan = db.getScan(req.params.id);
+    if (!scan) {
+      return res.status(404).json({ error: { code: 'not_found', message: `No scan found with id "${req.params.id}"` } });
+    }
+    if (hasValidToken(req, scan.id)) {
       return res.type('html').send(renderHtmlReport({ ...scan, breakdown: breakdownFor(scan) }));
     }
-    // PUBLIC shape: the stored internal slop score IS the public score
-    // (score 0-100, higher = worse — same direction, no inversion; verdict
-    // added). Pre-flip rows read correctly with NO migration: the DB column
-    // keeps the slop direction, which is exactly the public direction.
-    // Three-layer insights are guaranteed on the breakdown (stored, or derived
-    // for legacy rows).
-    const pub = toPublicScan({ ...scan, breakdown: breakdownFor(scan) });
-    const json = {
-      id: pub.id,
-      url: pub.url,
-      score: pub.score,
-      verdict: pub.verdict,
-      breakdown: pub.breakdown,
-      roast: roastFor(scan), // stored line, or derived for pre-roast legacy rows
-      createdAt: pub.created_at ?? pub.createdAt,
-    };
-    if (Array.isArray(pub.breakdown?.crossPage?.pages) && pub.breakdown.crossPage.pages.length >= 2) {
-      json.pages = pub.breakdown.crossPage.pages;
-    }
-    if (pub.breakdown?.crossPage?.pairs?.length) {
-      json.pairs = pub.breakdown.crossPage.pairs;
-    }
-    if (typeof pub.partial === 'boolean') json.partial = pub.partial;
-    if (typeof pub.note === 'string') json.note = pub.note;
-    if (pub.worstPage) json.worstPage = pub.worstPage; // worstPage.score stays INTERNAL slop direction (see README)
-    if (pub.branding) json.branding = pub.branding; // white-label branding used
-    res.json(json);
+    return forbidden(res, req.get('accept') || '');
   });
 
   const missing = (res, id) =>
@@ -135,44 +171,6 @@ function esc(v) {
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;');
 }
-
-/**
- * Customer-facing category names — the ONLY display-label table for the
- * breakdown (owner 2026-09-15 "plain names" mapping). The internal JSON API
- * keys (filler/boilerplate/infoDensity/repetitive/crossPage/fingerprints/
- * assets) NEVER change — edit the visible names HERE and nowhere else.
- * Mapping: filler→COPY, boilerplate→MESSAGING, infoDensity→ORIGINALITY,
- * repetitive→STRUCTURE, crossPage→REPETITION, fingerprints→DESIGN,
- * assets→IMAGERY. (Lead's best-semantic derivation; adjust in place if the
- * owner renames after review.)
- */
-const CATEGORY_LABELS = {
-  filler: 'COPY',
-  boilerplate: 'MESSAGING',
-  infoDensity: 'ORIGINALITY',
-  repetitive: 'STRUCTURE',
-  crossPage: 'REPETITION',
-  fingerprints: 'DESIGN',
-  assets: 'IMAGERY',
-};
-
-/** Plain-English one-liner per category (Your Breakdown section). */
-const CATEGORY_ONE_LINERS = {
-  filler: 'How much of your copy is filler phrasing — words that sound confident but say nothing.',
-  boilerplate: 'Generic marketing boilerplate that could describe any business in any industry.',
-  infoDensity: 'Whether your content actually says something specific, or just fills the page.',
-  repetitive: 'How often your page repeats itself — same sentence openings, same sentences, same paragraphs.',
-  crossPage: 'How much of your site is the same text repeated across different pages.',
-  fingerprints: 'Telltale template-built design and code fingerprints (AI-looking patterns, build-tool traces).',
-  assets: 'Stock and placeholder imagery where real, specific visuals would say more.',
-};
-
-/**
- * Mandated user-facing disclaimer. Appears on every HTML report, verbatim —
- * never cut, never reworded (owner law).
- */
-const DISCLAIMER =
-  'This tool identifies writing and design patterns commonly associated with generic or templated content. It does not detect AI authorship and is not proof that any content was AI-generated.';
 
 /**
  * Per-category classification from the sub-score (0-100, higher = worse).
@@ -270,6 +268,74 @@ function renderFinding(categoryLabel, finding, insight, index) {
 }
 
 /**
+ * Render the FREE result page (no token) — the same teaser-level content as
+ * the free JSON: score, verdict, roast, category numbers, 1–2 three-layer
+ * teaser findings, the share-card link, the mandated disclaimer, and the $12
+ * checkout CTA. It NEVER contains the full findings/insights — those are the
+ * paid content, delivered only by email after checkout.
+ *
+ * Deterministic: teasers are seeded by the scan id (same id -> same page).
+ */
+function renderFreeHtmlReport(scan, shareBase = 'https://ass-score.com') {
+  const pub = buildFreePayload(scan);
+  const band = verdictBand(pub.score);
+  const teaserLis = pub.teasers.map((t, i) => {
+    const label = CATEGORY_LABELS[t.key] ?? t.key;
+    const why = t.why ? `<div><span class="ins-why">Why it matters:</span> ${esc(t.why)}</div>` : '';
+    const fix = t.fix ? `<div><span class="ins-fix">How to fix it:</span> ${esc(t.fix)}</div>` : '';
+    return `
+  <div class="free-f">
+    <h3>Free sample ${i + 1} · ${esc(label)}</h3>
+    <p class="ins-roast">${esc(t.roast)}</p>
+    ${why}
+    ${fix}
+    <div><span class="rec-label">Receipt:</span> <em>${esc(short(t.evidence, 140))}</em></div>
+  </div>`;
+  }).join('');
+  const teasersBlock = teaserLis === ''
+    ? '<p>Nothing to roast this scan — the full report will tell you why a clean site still matters.</p>'
+    : teaserLis;
+
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>A.S.S. Score — free result</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 760px; margin: 2rem auto; padding: 0 1rem; color: #1a202c; }
+    h1 { font-size: 1.4rem; } h2 { font-size: 1.1rem; margin-top: 1.8rem; } h3 { font-size: 1rem; margin: 1.1rem 0 .2rem; }
+    .score { font-size: 2.6rem; font-weight: 700; color: ${scoreColor(pub.score)}; }
+    .verdict { font-size: 1.15rem; font-weight: 700; margin: .25rem 0 .75rem; color: ${band.color}; }
+    .roast { font-size: 1.05rem; font-weight: 600; margin: .75rem 0 .25rem; }
+    .ins-roast { font-style: italic; color: #7c3aed; font-weight: 600; margin: .25rem 0 .25rem; font-size: .92rem; }
+    .ins-why, .ins-fix { font-weight: 700; color: #475569; margin-right: .25rem; }
+    .rec-label { font-weight: 700; color: #64748b; font-size: .8rem; }
+    .disclaimer { color: #64748b; font-size: .8rem; border-top: 1px solid #e2e8f0; padding-top: .75rem; margin-top: 1.5rem; }
+    .cta { display: inline-block; background: #0f172a; color: #f8fafc; text-decoration: none; padding: 12px 22px; border-radius: 8px; font-weight: 600; margin: .5rem 0; }
+    ul { margin: .25rem 0 .75rem; padding-left: 1.1rem; }
+  </style>
+</head>
+<body>
+  <h1>A.S.S. Score — free result</h1>
+  <p><a href="${esc(scan.url)}">${esc(scan.url)}</a> · scanned ${esc(pub.createdAt)}</p>
+  <p class="score">A.S.S. Score: ${pub.score} / 100</p>
+  <p class="verdict">${esc(pub.verdict)}</p>
+  <p class="roast">${esc(pub.roast)}</p>
+  <h2>Your numbers (0 = clean · 100 = maximum ass)</h2>
+  <ul>${Object.entries(pub.breakdown).map(([key, rule]) =>
+    `<li><strong>${esc(CATEGORY_LABELS[key] ?? key)}</strong> — ${rule.score === null || rule.score === undefined ? (rule.note ? esc(rule.note) : 'skipped') : `${rule.score}/100`}</li>`).join('')}</ul>
+  <h2>Free samples</h2>
+  ${teasersBlock}
+  <p><a href="${esc(`${shareBase.replace(/\/+$/, '')}/api/v1/scans/${pub.id}/card`)}">Download your share card</a></p>
+  <p><a class="cta" href="https://buy.stripe.com/cNi00j7zs1P49ju5B9abK00" target="_blank" rel="noreferrer">Unlock the full report — $12</a></p>
+  <p>The full report — every finding with receipts, the fix list, the page that needs the most work — is emailed to you after checkout.</p>
+  <p class="disclaimer">${DISCLAIMER}</p>
+  <p>Score id: <code>${esc(pub.id)}</code> · deterministic rule-based analysis, no AI models.</p>
+</body>
+</html>`;
+}
+
+/**
  * Render the HTML report — the customer-facing Full Report (owner content/IA
  * rebuild 2026-09-15). Section order: THE VERDICT → THE BIG PICTURE → YOUR
  * BREAKDOWN → THE ACTUAL FINDINGS → PAGE THAT NEEDS THE MOST WORK → WHAT TO
@@ -280,7 +346,8 @@ function renderFinding(categoryLabel, finding, insight, index) {
  * the roast line inside THE VERDICT; "Worst Page" became PAGE THAT NEEDS THE
  * MOST WORK; "Templated Content" pairs became REPETITION receipts.
  *
- * Everything is deterministic: same scan id -> byte-identical HTML.
+ * Everything is deterministic: same scan id -> byte-identical HTML. This is
+ * the PAID report — reachable ONLY via the token'd routes (see scansRouter).
  *
  * White-label branding (optional, stored with the scan):
  *   - agencyName  -> the report header shows the agency name; the metric

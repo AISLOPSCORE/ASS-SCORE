@@ -18,8 +18,12 @@ import {
   CLEAN_SCORE_THRESHOLD,
 } from '../src/roast.js';
 import { buildCardSvg, renderCardPng, escapeXml, CARD_WIDTH, CARD_HEIGHT } from '../src/card.js';
+import { createReportToken } from '../src/paywall.js';
 
 const tmpDb = () => path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'aislop-roast-')), 'test.db');
+
+/** Shared report-token secret for the integration app instances in this file. */
+const ROAST_TOKEN_SECRET = 'roast-test-secret';
 
 // A sloppy page (filler-heavy, low information density) for integration tests.
 const SLOP_HTML = `<!doctype html><html><head><title>Test</title></head><body>
@@ -204,7 +208,7 @@ let dbPath;
 
 before(() => {
   dbPath = tmpDb();
-  api = startApp(dbPath);
+  api = startApp(dbPath, { reportTokenSecret: ROAST_TOKEN_SECRET });
 });
 
 after(() => {
@@ -234,8 +238,6 @@ test('POST scan -> roast in JSON, stored in SQLite, identical across repeated GE
 
 test('GET HTML report: roast lives in The Verdict, emoji-tagged, escape-safe when stored value is hostile', async () => {
   const created = await (await post(api.base, { url: 'https://example.com/' })).json();
-  const html = await (await fetch(`${api.base}/api/v1/scans/${created.id}`, { headers: { accept: 'text/html' } })).text();
-  assert.match(html, /<h2>The Verdict<\/h2>/, 'report has a The Verdict section (the narrative IA replaces the old Slop Roast section)');
   // The HTML renderer (esc() in scans.js) escapes & < > " but leaves
   // apostrophes LITERAL — browsers show a real ' to the user, which is the
   // correct surface. Assert the renderer-escaped form so the test stays
@@ -246,7 +248,16 @@ test('GET HTML report: roast lives in The Verdict, emoji-tagged, escape-safe whe
     .replaceAll('<', '&lt;')
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;');
-  assert.ok(html.includes(rendererEscaped), 'report shows the roast line in its renderer-escaped form (apostrophes literal)');
+
+  // FREE page (no token): the roast line is on the free surface, escaped.
+  const freeHtml = await (await fetch(`${api.base}/api/v1/scans/${created.id}`, { headers: { accept: 'text/html' } })).text();
+  assert.ok(freeHtml.includes(rendererEscaped), 'free page shows the roast line in its renderer-escaped form (apostrophes literal)');
+
+  // PAID report (valid token): the roast lives inside The Verdict, emoji-tagged.
+  const token = createReportToken(ROAST_TOKEN_SECRET, created.id);
+  const html = await (await fetch(`${api.base}/api/v1/scans/${created.id}?token=${encodeURIComponent(token)}`, { headers: { accept: 'text/html' } })).text();
+  assert.match(html, /<h2>The Verdict<\/h2>/, 'report has a The Verdict section (the narrative IA replaces the old Slop Roast section)');
+  assert.ok(html.includes(rendererEscaped), 'paid report shows the roast line in its renderer-escaped form (apostrophes literal)');
   const emoji = /<p class="roast">(\p{Extended_Pictographic})/u.exec(html);
   assert.ok(emoji, 'roast is emoji-tagged like other findings');
 
@@ -260,11 +271,15 @@ test('GET HTML report: roast lives in The Verdict, emoji-tagged, escape-safe whe
     roast: '<script>alert(1)</script> & "quoted"',
   });
   db.close();
-  const app2 = startApp(dbPath2);
+  const app2 = startApp(dbPath2, { reportTokenSecret: ROAST_TOKEN_SECRET });
   try {
     const html2 = await (await fetch(`${app2.base}/api/v1/scans/hostile-roast-scan`, { headers: { accept: 'text/html' } })).text();
     assert.ok(!html2.includes('<script>alert(1)</script>'), 'hostile roast not rendered as markup');
     assert.ok(html2.includes('&lt;script&gt;alert(1)&lt;/script&gt;'), 'hostile roast entity-escaped');
+    const token2 = createReportToken(ROAST_TOKEN_SECRET, 'hostile-roast-scan');
+    const html2Paid = await (await fetch(`${app2.base}/api/v1/scans/hostile-roast-scan?token=${encodeURIComponent(token2)}`, { headers: { accept: 'text/html' } })).text();
+    assert.ok(!html2Paid.includes('<script>alert(1)</script>'), 'hostile roast not rendered as markup in the paid report');
+    assert.ok(html2Paid.includes('&lt;script&gt;alert(1)&lt;/script&gt;'), 'hostile roast entity-escaped in the paid report');
   } finally {
     app2.server.close();
   }
