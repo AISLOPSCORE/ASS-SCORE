@@ -43,9 +43,14 @@ const SECOND_POOL = 4;  // second teaser from the top-4, excluding the first pic
  * score (higher = worse), sorted by score desc (ties: category key asc) — the
  * funniest = most damning material is always in the pool.
  *
+ * The teaser object mirrors its source insight one-for-one, including the
+ * clean marker: a teaser from a `kind:'clean'` insight carries `kind:'clean'`
+ * (the renderers then label it COMPLIMENT / WHY IT MATTERS / KEEP IT UP);
+ * negative teasers carry no kind key, exactly like today.
+ *
  * @param {Record<string, {score?: number, findings?: unknown[], insights?: any[]}>} breakdown
  * @param {string} id scan id (seed)
- * @returns {Array<{ key: string, roast: string, why: string, fix: string, evidence: string }>}
+ * @returns {Array<{ key: string, roast: string, why: string, fix: string, evidence: string, kind?: 'clean' }>}
  */
 export function pickTeasers(breakdown, id) {
   const candidates = Object.entries(breakdown ?? {})
@@ -87,6 +92,9 @@ function teaserFrom(candidate, id, slot) {
     why: String(ins.why ?? ''),
     fix: String(ins.fix ?? ''),
     evidence: String(ins.evidence ?? candidate.findings[0] ?? ''),
+    // Clean findings surface as compliments on every free surface (the paid
+    // report renders them from the stored insights directly).
+    ...(ins.kind === 'clean' ? { kind: 'clean' } : {}),
   };
 }
 

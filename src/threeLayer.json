@@ -1,5 +1,5 @@
 {
-  "_comment": "A.S.S. Score three-layer finding copy pools (src/threeLayer.js). Config-driven like roasts.json / fingerprints.json: edit copy here, NO code changes needed. One pool per breakdown key (filler, boilerplate, infoDensity, repetitive, crossPage, fingerprints, assets). Every finding gets an insight { roast, why, fix, evidence } where evidence is the finding string itself. Roasts carry ONE OR MORE {tokens} interpolated ONLY from that finding's real parsed evidence (token names documented per group below); a roast variant is only eligible when EVERY token it references exists in the finding's parsed tokens, and when the finding carries verbatim-evidence tokens (phrase/sentence/text/label/urls/host/alt...) the variant must cite at least one of them — variants whose tokens are missing are dropped (absolute rule: never fabricate details; a roast that can cite the real trigger must cite it). Token-free roasts are the fallback for findings with no interpolatable token at all. whys/fixes are group-level business reasoning, applied to every finding of the group. Selection is deterministic: seeded by scan id + category + finding index via the same FNV-1a hashScanId the Slop Roast uses (same scan id -> identical insights, forever). Copy rules: loud/cheeky/meme tone, 1-2 sentences, pattern-based only — never assert AI authorship as fact (automated forbidden-phrase test). Token names per group: filler {count,words,density,phrase}; boilerplate {count,words,density,label,phrase,sentence,text}; infoDensity {mattr,stopwordRatio,meanLen,sentences,shortPct,paragraphs,count,words,needed,examples}; repetitive {kind,count,phrase,openings,sentences,paragraphs}; crossPage {pairCount,maxSim,urlA,urlB,sim,count,pages}; fingerprints {scope,label,confidence}; assets {stockCount,fileCount,altCount,cleanCount,total,index,host,stem,alt,altKind,src}.",
+  "_comment": "A.S.S. Score three-layer finding copy pools (src/threeLayer.js). Config-driven like roasts.json / fingerprints.json: edit copy here, NO code changes needed. One pool per breakdown key (filler, boilerplate, infoDensity, repetitive, crossPage, fingerprints, assets). Every finding gets an insight { roast, why, fix, evidence } where evidence is the finding string itself. Roasts carry ONE OR MORE {tokens} interpolated ONLY from that finding's real parsed evidence (token names documented per group below); a roast variant is only eligible when EVERY token it references exists in the finding's parsed tokens, and when the finding carries verbatim-evidence tokens (phrase/sentence/text/label/urls/host/alt...) the variant must cite at least one of them — variants whose tokens are missing are dropped (absolute rule: never fabricate details; a roast that can cite the real trigger must cite it). Token-free roasts are the fallback for findings with no interpolatable token at all. whys/fixes are group-level business reasoning, applied to every finding of the group. Selection is deterministic: seeded by scan id + category + finding index via the same FNV-1a hashScanId the Slop Roast uses (same scan id -> identical insights, forever). Copy rules: loud/cheeky/meme tone, 1-2 sentences, pattern-based only — never assert AI authorship as fact (automated forbidden-phrase test). Token names per group: filler {count,words,density,phrase}; boilerplate {count,words,density,label,phrase,sentence,text}; infoDensity {mattr,stopwordRatio,meanLen,sentences,shortPct,paragraphs,count,words,needed,examples}; repetitive {kind,count,phrase,openings,sentences,paragraphs}; crossPage {pairCount,maxSim,urlA,urlB,sim,count,pages}; fingerprints {scope,label,confidence}; assets {stockCount,fileCount,altCount,cleanCount,total,index,host,stem,alt,altKind,src}. CLEAN findings (zero/none measurements, healthy metric bands) render a compliment variant instead of a roast: { kind: 'clean', roast: compliment, why: cleanWhy, fix: keepUp, evidence } — pools compliments / cleanWhys / keepUps per category, same structural rules (1-2 sentences, <=220 chars, no AI-authorship claims, token-free by design; the evidence line carries the numbers). Negative findings keep roast/why/fix with no kind marker.",
   "pools": {
     "filler": {
       "roasts": [
@@ -29,6 +29,27 @@
         "Run a buzzword sweep with one rule: every claim must be backed by a fact, a number, or an example on the same page.",
         "Before publishing, ask \"would a competitor with the same template say this?\" If yes, cut it or sharpen it.",
         "Replace the filler with a specific differentiator: a number, a named feature, a customer outcome, or a deadline."
+      ],
+      "compliments": [
+        "Zero buzzwords across the whole page. Somebody actually put the thesaurus down — and the copy reads better for it.",
+        "Not a single filler phrase in the entire scan. Your copy says things because they're true, not because they sound important.",
+        "We scanned the whole page for corporate wind and found none. The words here are actually doing their jobs.",
+        "No \"game-changers,\" no \"seamless experiences,\" no \"unlock the potential.\" Just plain English doing real work.",
+        "Your page cleared the buzzword detector without even trying. The copy sounds like a human wrote it for humans."
+      ],
+      "cleanWhys": [
+        "Copy without buzzwords reads as confident, and confidence is the entire game: visitors who understand you in one pass are far more likely to trust you, stay, and buy.",
+        "Plain, specific language is a differentiator now — while competitors stack synonyms, this page says something real, and that is what actually converts.",
+        "Clear copy earns trust instantly because it costs the reader nothing to parse; the faster a visitor understands you, the sooner they believe you exist.",
+        "Jargon-free writing also ages well: it never sounds like a trend, so the page still reads as fresh in five years instead of like a time capsule.",
+        "Every sentence that says something beats ten that sound important — this page already knows that, and visitors can feel the difference."
+      ],
+      "keepUps": [
+        "Keep writing the way you talk: specific, plain, and free of phrases that mean nothing.",
+        "Keep doing the buzzword sweep on new pages anyway — two minutes of hunting keeps the copy this clean.",
+        "Keep the thesaurus closed. Every plain sentence you publish is a differentiator while your competitors still sound like press releases.",
+        "Don't start decorating with \"world-class\" later. If it reads well today, it reads well tomorrow.",
+        "Keep holding every sentence to the standard that made this page clean: it must say something specific."
       ]
     },
     "boilerplate": {
@@ -59,6 +80,27 @@
         "Replace \"learn more\" links with labels that say what the visitor will actually learn — \"see pricing\" or \"read the case study.\"",
         "Cut any line a competitor with the same SaaS template could publish unchanged — that is the definition of the boilerplate to remove.",
         "Do one pass where every sentence gets a fact check: if a sentence contains no verifiable claim, rewrite it until it does."
+      ],
+      "compliments": [
+        "Zero boilerplate signals in the scan — no cookie-banner copy-pasta, no generic \"learn more\" wallpaper. The page reads written, not assembled.",
+        "No default-template sentences found. Every line on this page looks like it was typed for this business, not pasted from 40,000 others.",
+        "We looked for the usual suspects — cookie notices, legal sprints, newsletter blocks — and came back empty-handed.",
+        "Your copy is refreshingly free of standard-issue boilerplate. This page says what it means instead of what templates mean.",
+        "Not a single generic \"we are committed to excellence\" in sight. The compliance is tucked away and the pitch does the talking."
+      ],
+      "cleanWhys": [
+        "A page free of boilerplate reads as written for the visitor rather than assembled from defaults — and that first impression is the whole credibility battle.",
+        "When nothing reads as filler, what you actually do becomes the only thing left to notice; every line earning its place gets the pitch full attention.",
+        "Original wording signals that the business behind the page is real — visitors have seen the template sentences so often that their absence is a genuine differentiator.",
+        "Search engines see the same boilerplate repeated across the web; pages that skip it have an easier time being treated as the original, not the echo.",
+        "Visitors scan for the familiar template tell; when it isn't there, they spend that attention on your message instead of their skepticism."
+      ],
+      "keepUps": [
+        "Keep the legal and cookie text in one quiet corner, and keep writing the rest of the page like this: specific and human.",
+        "Keep generic CTAs off the page — if the visitor needs a button, name what it does.",
+        "Keep auditing for template sentences; the day one slips in, it will stand out more than it used to.",
+        "Keep your footer boring and your body interesting. That balance is exactly what this scan just rewarded.",
+        "Keep replacing \"learn more\" with real names for things — it's the habit that keeps boilerplate out."
       ]
     },
     "infoDensity": {
@@ -89,6 +131,27 @@
         "Run a \"would my competitor write this exact sentence\" pass, and replace every yes with a specific detail about your product.",
         "If a page can't reach roughly one specific per 75 words, write more substance before you write more sentences.",
         "Cut hedging words and add proof: swap \"we help teams scale\" for \"we helped 40 teams cut onboarding time by a week.\""
+      ],
+      "compliments": [
+        "Healthy vocabulary diversity, low stopword load, and substantial paragraphs — this content is actually carrying information.",
+        "Your copy reads specific: dates, numbers, names, details — the things that make a visitor believe the business is real.",
+        "Solid numbers across the board: varied vocabulary, human-length sentences, paragraphs with actual substance.",
+        "This page is dense with real content — facts per word well above the vague-copy line. The back button has no reason to fire.",
+        "Information density is doing its job: every sentence earns its place instead of padding the word count."
+      ],
+      "cleanWhys": [
+        "Specifics are what make a business credible: when the copy carries numbers, dates and named facts, the visitor stops wondering whether it's real and starts deciding whether to buy.",
+        "Substantial content is an SEO asset — search engines reward pages that answer questions with real information, and this page already does.",
+        "Every concrete fact removes a doubt the visitor would otherwise take to a competitor; the less vague the page, the fewer questions you leave unanswered.",
+        "Dense, varied copy respects the reader's time, which reads as respect for the reader — and that impression carries straight into the buying decision.",
+        "A page that informs as it pitches converts twice: it proves the product exists and gives the visitor the ammunition to justify choosing it."
+      ],
+      "keepUps": [
+        "Keep the specifics coming: a number, a date, or a named customer per section is what kept this page off the vague list.",
+        "Keep writing paragraphs that hold at least one fact — it's the single habit that keeps density high and bounce rates low.",
+        "Keep the vocabulary varied and the sentences human-length; both are free wins that pages like this one already banked.",
+        "When you expand the site, keep the same ratio — roughly one concrete fact per 75 words — or this category stops complimenting you.",
+        "Keep trimming anything that adds words without adding information. The page is in the healthy band right now; stay there."
       ]
     },
     "repetitive": {
@@ -119,6 +182,27 @@
         "Draft once, then re-read with a highlighter: mark every sentence that restates an earlier sentence, and cut the second one.",
         "After drafting, search the page for your top five phrases; if any appears more than twice, reword or delete the extras.",
         "If a block genuinely must repeat (like a compliance line), move it to the footer once instead of restating it in the body."
+      ],
+      "compliments": [
+        "No repeated sentence openings, no cloned paragraphs — every line on this page actually differs from the one before it.",
+        "Your sentences don't all start the same, and your paragraphs don't repeat. Boring to detect, delightful to read.",
+        "Structure check: clean. No stuck-record phrasing, no copy-paste paragraphs. The page varies like a real writer wrote it.",
+        "Zero duplicated openings and zero near-identical sentences — you used the paste button about as much as a novel should.",
+        "This page has genuine structural variety — the same amount of repetition as a well-edited article, which is to say almost none."
+      ],
+      "cleanWhys": [
+        "Variety keeps attention: content that never repeats reads as shorter, sharper and more deliberate — the kind of page visitors actually finish.",
+        "Distinct sentences and paragraphs make the important lines stand out, so the message lands instead of blurring into a loop.",
+        "Fresh phrasing on every line reads as effort, and perceived effort is trust: pages that vary feel written for the reader, not recycled from a draft.",
+        "Structure variety also helps scanning — visitors who skim can find the new point in every block because no block is a repeat of the last.",
+        "A page that never repeats respects the reader's time, and nothing signals \"we know you're busy\" faster than not saying the same thing twice."
+      ],
+      "keepUps": [
+        "Keep starting sentences differently — it's the cheapest way to stay out of the repetitive-structure report.",
+        "Keep paragraphs that say new things. If one ever says what another said, merge them and write a new point.",
+        "Keep varying the rhythm: short sentence, long sentence, and never the same opening twice in a row.",
+        "When you publish new pages, give each section a different opening line — that alone keeps this detector quiet.",
+        "Keep treating repeat phrasing as a draft symptom. The absence of it is exactly what this scan just noticed."
       ]
     },
     "crossPage": {
@@ -149,6 +233,27 @@
         "If two pages must be similar, merge them into one page and redirect the other.",
         "Keep shared boilerplate (nav, footer, legal) out of the main content, where duplication comparisons look.",
         "Before publishing a new page, diff it against your other pages; if the main content is 80%+ the same, start over."
+      ],
+      "compliments": [
+        "No page pairs above the duplication threshold — every page on this site actually earns its URL.",
+        "Cross-page check came back flawless: each page we compared has its own distinct main content.",
+        "Your pages aren't clones. We compared every pair and found nothing near-duplicate — rarer than it should be.",
+        "Every URL on this site answers a different question. The duplication detector packed up and went home.",
+        "Distinct content per page, confirmed across every pair — this is what a multi-page site is supposed to look like."
+      ],
+      "cleanWhys": [
+        "Distinct pages mean the site answers more questions: every URL ranks for its own topic instead of splitting the same signal, so the whole domain is stronger.",
+        "A visitor who lands on different, purposeful pages walks away thinking the business has depth — the exact flip side of a copy-paste site.",
+        "Unique content per page keeps every page's SEO authority intact, so the pages rank for what each one actually covers.",
+        "Variety across pages makes the site feel bigger and more competent than any single-page clone ever can.",
+        "When each page earns its URL, the crawl budget and the visitor's attention both get spent on new information — the best possible use of either."
+      ],
+      "keepUps": [
+        "Keep giving each page one job; when a new page's main content starts resembling an existing one, that's the signal to rewrite.",
+        "Keep the shared stuff (nav, footer, legal) out of the main copy — that's exactly where duplication checks look.",
+        "Before publishing, diff the new page against the others; if it's 80%+ the same, the compliment disappears.",
+        "Keep letting each page carry its own specifics — prices, examples, answers — so no two pages ever need to say the same thing.",
+        "Keep growing the site page by page with unique content; the detector only complains when pages start doing each other's jobs."
       ]
     },
     "fingerprints": {
@@ -179,6 +284,27 @@
         "Remove or replace the default meta/script markers that identify the builder — the \"powered by\" tags and CDN references.",
         "Put one distinctive, real element on the homepage — an original illustration, a messy fact, a specific number — that no template ships.",
         "If a builder feature is unused (stock icon packs, demo blocks), delete it; leftovers are what make the kit visible."
+      ],
+      "compliments": [
+        "No builder fingerprints detected — no leftover default markers, no template tells. This design looks genuinely yours.",
+        "We scanned the page for the usual builder signatures and found none. The template is not showing.",
+        "Zero default-template fingerprints in the markup. Whatever you built this on, you made it your own.",
+        "No leftover builder assets, no default icon packs — the page is wearing its own clothes, not the workshop's.",
+        "Clean fingerprint check: the markup doesn't announce a template, because there isn't one on display."
+      ],
+      "cleanWhys": [
+        "A design with no template tells reads as owned and finished — visitors transfer that impression to the product or service behind it.",
+        "Original design is a differentiator that no amount of copy can fake; keeping the defaults buried keeps the site feeling built, not assembled.",
+        "When nothing on the page announces a kit, the visitor's mind goes to the work itself — and that's where you want it.",
+        "Unmarked builds also avoid the subconscious \"10,000 sites launched from this template last week\" reaction that erodes credibility.",
+        "A distinctive-looking site is remembered; the absence of the builder's signature is exactly the kind of detail that makes the difference."
+      ],
+      "keepUps": [
+        "Keep customizing past the defaults — headers, styles, real assets — so the builder never shows its face again.",
+        "If you ever use a builder again, strip its markers before launch; that's the whole trick this scan looks for.",
+        "Keep the distinctive elements coming: original visuals and honest details are what push a site out of template territory.",
+        "Keep deleting unused demo blocks and default icon packs — leftovers are what make a kit visible.",
+        "Keep the hand-built touches; the absence of fingerprints is exactly what this category is here to notice."
       ]
     },
     "assets": {
@@ -209,6 +335,27 @@
         "Write real alt text for every image: what the picture shows and why it's on the page — not just \"image\" or the filename.",
         "If an image is purely decorative, mark it as such instead of leaving empty or generic alt text.",
         "Do a visual audit for the stock look (boardroom handshakes, fake smiles, floating laptops) and swap the top three offenders first."
+      ],
+      "compliments": [
+        "None of your images are stock or placeholder — your imagery actually looks like it belongs to this business. Refreshing.",
+        "Every image passed: real filenames, real alt text, no stock CDNs. The visual side of this page is genuinely yours.",
+        "A completely clean image library — no \"img3.jpg,\" no unsplash, no generic \"image\" alts. We didn't see that coming.",
+        "Zero stock signals, and every image carries real alt text. Screen readers and SEO both thank you.",
+        "Your images look like your own: named descriptively, described properly, hosted on your turf. That's how it's done."
+      ],
+      "cleanWhys": [
+        "Real, descriptive imagery builds credibility faster than any headline: visitors read \"this is genuinely ours\" before they read a single word.",
+        "Descriptive filenames and real alt text are also free accessibility and SEO wins — every image works twice as hard when it's genuinely described.",
+        "Original visuals give visitors a concrete, memorable picture of who you are — exactly what stock photos can never provide.",
+        "Alt text that describes the image keeps screen-reader users in the conversation instead of narrating \"image, image, image\" at them.",
+        "An image library with no placeholder tells says the site was finished, not shipped — a small signal with outsized credibility value."
+      ],
+      "keepUps": [
+        "Keep naming files like \"menu-redesign-2026.png\" instead of image1 — that habit keeps the placeholder flags off.",
+        "Keep writing real alt text: what the picture shows and why it's on the page. You're already doing it.",
+        "If you add photos later, keep them yours: product shots, team, real work — not the stock CDN bestseller.",
+        "Keep the visual library this clean and it stays a strength; the detector only flags what looks unfinished.",
+        "Keep the descriptive filenames and honest alts — they cost five seconds per image and they're two flags you'll never see."
       ]
     }
   }

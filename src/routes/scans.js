@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { buildCardSvg, renderCardPng } from '../card.js';
 import { isHttpUrl } from '../branding.js';
 import { selectRoast, selectRoastInfo } from '../roast.js';
-import { withInsights } from '../threeLayer.js';
+import { withInsights, isCleanEvidence } from '../threeLayer.js';
 import { toPublicScan, publicScore } from '../serialize.js';
 import { verdictBand, verdictLabel, scoreColor } from '../verdict.js';
 import { CATEGORY_LABELS, CATEGORY_ONE_LINERS } from '../categories.js';
@@ -237,6 +237,12 @@ function finalVerdictSentence(pubScore, band) {
 /**
  * Render ONE finding with the full three-layer structure + verbatim receipts.
  *
+ * Owner rule (2026-09-16): clean findings are compliments, not insults. When
+ * the insight carries `kind:'clean'` the layers render as COMPLIMENT / WHY IT
+ * MATTERS / KEEP IT UP; a real negative finding renders exactly as today
+ * (roast line + WHY IT MATTERS / HOW TO FIX IT). The evidence/receipts line is
+ * identical in both variants — the measurement never leaves the report.
+ *
  * Markup constraint (sacred): the classed spans sit inside UNCLASSED
  * containers — a classed parent immediately followed by a child tag would
  * emit a literal `"><` sequence, which the report's blanket no-raw-delimiter
@@ -249,17 +255,22 @@ function finalVerdictSentence(pubScore, band) {
 function renderFinding(categoryLabel, finding, insight, index) {
   const title = `Finding ${index + 1} · ${categoryLabel}`;
   const hasInsight = insight && typeof insight.roast === 'string' && insight.roast !== '';
+  const clean = hasInsight && insight.kind === 'clean';
   const roast = hasInsight ? insight.roast : finding;
   const why = hasInsight ? insight.why : '';
   const fix = hasInsight ? insight.fix : '';
   const layers = hasInsight
-    ? `<div><span class="ins-why">Why it matters:</span> ${esc(why)}</div>
+    ? clean
+      ? `<div><span class="ins-kind">Compliment:</span> ${esc(roast)}</div>
+    <div><span class="ins-why">Why it matters:</span> ${esc(why)}</div>
+    <div><span class="ins-fix">Keep it up:</span> ${esc(fix)}</div>`
+      : `<p class="ins-roast">${esc(roast)}</p>
+    <div><span class="ins-why">Why it matters:</span> ${esc(why)}</div>
     <div><span class="ins-fix">How to fix it:</span> ${esc(fix)}</div>`
     : '<p class="rec-note">No deeper insight was stored for this finding — the receipts below are the evidence.</p>';
   return `
   <div>
     <h3>${esc(title)}</h3>
-    <p class="ins-roast">${esc(roast)}</p>
     ${layers}
     <div><span class="rec-label">Show the receipts:</span>
       <ul><li><strong>${esc(finding)}</strong></li></ul>
@@ -281,12 +292,19 @@ function renderFreeHtmlReport(scan, shareBase = 'https://ass-score.com') {
   const band = verdictBand(pub.score);
   const teaserLis = pub.teasers.map((t, i) => {
     const label = CATEGORY_LABELS[t.key] ?? t.key;
+    // Clean findings are compliments, not insults (owner rule 2026-09-16):
+    // a `kind:'clean'` teaser renders COMPLIMENT / WHY IT MATTERS / KEEP IT UP,
+    // a negative teaser renders exactly as today.
+    const clean = t.kind === 'clean';
+    const roastEl = clean
+      ? `<div><span class="ins-kind">Compliment:</span> ${esc(t.roast)}</div>`
+      : `<p class="ins-roast">${esc(t.roast)}</p>`;
     const why = t.why ? `<div><span class="ins-why">Why it matters:</span> ${esc(t.why)}</div>` : '';
-    const fix = t.fix ? `<div><span class="ins-fix">How to fix it:</span> ${esc(t.fix)}</div>` : '';
+    const fix = t.fix ? `<div><span class="ins-fix">${clean ? 'Keep it up:' : 'How to fix it:'}</span> ${esc(t.fix)}</div>` : '';
     return `
   <div class="free-f">
     <h3>Free sample ${i + 1} · ${esc(label)}</h3>
-    <p class="ins-roast">${esc(t.roast)}</p>
+    ${roastEl}
     ${why}
     ${fix}
     <div><span class="rec-label">Receipt:</span> <em>${esc(short(t.evidence, 140))}</em></div>
@@ -450,6 +468,22 @@ function renderHtmlReport(scan) {
 
   // --- 4. THE ACTUAL FINDINGS (three-layer + verbatim receipts) --------------
   const findingsTotal = withFindings.reduce((n, [, r]) => n + r.findings.length, 0);
+  // Clean-aware intro: a report whose findings are compliments must not talk
+  // about "roasts" (owner rule). All-negative reports keep today's exact line.
+  const cleanFindingCount = withFindings.reduce(
+    (n, [key, r]) => n + (Array.isArray(r.findings) ? r.findings : []).filter((f, i) => {
+      const ins = Array.isArray(r.insights) ? r.insights[i] : undefined;
+      return (ins && ins.kind === 'clean') || isCleanEvidence(key, f);
+    }).length,
+    0,
+  );
+  const findingsIntro = findingsTotal === 0
+    ? 'No findings this scan — nothing to roast, and nothing to hide.'
+    : cleanFindingCount === findingsTotal
+      ? `${findingsTotal} finding${findingsTotal === 1 ? '' : 's'} across ${withFindings.length} categor${withFindings.length === 1 ? 'y' : 'ies'} — and every single one is a compliment. The receipts below are what clean looks like.`
+      : cleanFindingCount > 0
+        ? `${findingsTotal} finding${findingsTotal === 1 ? '' : 's'} across ${withFindings.length} categor${withFindings.length === 1 ? 'y' : 'ies'} — every line is backed by the receipts below.`
+        : `${findingsTotal} finding${findingsTotal === 1 ? '' : 's'} across ${withFindings.length} categor${withFindings.length === 1 ? 'y' : 'ies'} — every roast points at the receipts below.`;
   const findingGroups = withFindings.map(([key, rule]) => {
     const label = CATEGORY_LABELS[key] ?? key;
     const items = rule.findings
@@ -474,9 +508,7 @@ function renderHtmlReport(scan) {
   }).join('');
   const findingsSection = `
   <h2>The Actual Findings</h2>
-  <p>${findingsTotal === 0
-    ? 'No findings this scan — nothing to roast, and nothing to hide.'
-    : `${findingsTotal} finding${findingsTotal === 1 ? '' : 's'} across ${withFindings.length} categor${withFindings.length === 1 ? 'y' : 'ies'} — every roast points at the receipts below.`}</p>
+  <p>${findingsIntro}</p>
   ${findingGroups}`;
 
   // --- 5. PAGE THAT NEEDS THE MOST WORK (worstPage; single-page graceful) ----
@@ -491,16 +523,22 @@ function renderHtmlReport(scan) {
   // --- 6. WHAT TO FIX FIRST (prioritized from REAL problems only) ------------
   // Items come ONLY from categories that do not read clean (classification
   // CLEAN is excluded — zero-count evidence lines are receipts of cleanliness,
-  // not things to fix). Order by category sub-score descending (impact proxy;
-  // stable sort keeps finding order inside a category). Effort is treated as
-  // roughly equal — each item is one concrete, scoped fix, and the "How to fix
-  // it" layer gives the effort detail. Cap at 5 for a scannable list.
+  // not things to fix), AND only from findings that are actually negative at
+  // the finding level: a `kind:'clean'` insight (or a clean evidence string
+  // with no stored insight) is a compliment, never a to-do (owner rule —
+  // never manufacture a negative from a clean measurement). Order by category
+  // sub-score descending (impact proxy; stable sort keeps finding order inside
+  // a category). Effort is treated as roughly equal — each item is one
+  // concrete, scoped fix, and the "How to fix it" layer gives the effort
+  // detail. Cap at 5 for a scannable list.
   const fixItems = [];
   for (const [key, rule] of problemCats) {
     const label = CATEGORY_LABELS[key] ?? key;
     const insights = Array.isArray(rule.insights) ? rule.insights : [];
     rule.findings.forEach((f, i) => {
       const ins = insights[i];
+      if (ins && ins.kind === 'clean') return; // compliment — not a fix item
+      if (!ins && isCleanEvidence(key, f)) return; // clean receipts are not to-dos
       fixItems.push({
         score: Number(rule.score),
         label,

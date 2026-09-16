@@ -41,7 +41,7 @@ export { hashScanId } from './roast.js'; // seeding utility, shared with the Slo
 const JSON_PATH = path.join(path.dirname(fileURLToPath(import.meta.url)), 'threeLayer.json');
 const DATA = JSON.parse(fs.readFileSync(JSON_PATH, 'utf8'));
 
-/** Raw pools (key -> { roasts[], whys[], fixes[] }). Exposed for tests/tooling. */
+/** Raw pools (key -> { roasts[], whys[], fixes[], compliments[], cleanWhys[], keepUps[] }). Exposed for tests/tooling. */
 export const THREE_LAYER_POOLS = Object.freeze(
   Object.fromEntries(Object.entries(DATA.pools).map(([k, v]) => [
     k,
@@ -49,6 +49,9 @@ export const THREE_LAYER_POOLS = Object.freeze(
       roasts: Object.freeze([...v.roasts]),
       whys: Object.freeze([...v.whys]),
       fixes: Object.freeze([...v.fixes]),
+      compliments: Object.freeze([...(v.compliments ?? [])]),
+      cleanWhys: Object.freeze([...(v.cleanWhys ?? [])]),
+      keepUps: Object.freeze([...(v.keepUps ?? [])]),
     }),
   ])),
 );
@@ -99,6 +102,26 @@ function interpolate(tpl, tokens) {
 /** Deterministic pick (FNV-1a seed via scan id + key + index + kind). */
 function pickVariant(candidates, seed) {
   return candidates[hashScanId(seed) % candidates.length];
+}
+
+/**
+ * Deterministic DISTINCT pick: like pickVariant, but never returns a line the
+ * `used` set already holds (advances through the pool with salted seeds).
+ * Falls back to a plain pick when the pool is too small. Used for the
+ * token-free clean pools so one report never repeats a compliment line.
+ */
+function pickDistinct(candidates, seed, used) {
+  if (candidates.length < 2) return pickVariant(candidates, seed);
+  for (let attempt = 0; attempt < candidates.length; attempt += 1) {
+    const tpl = pickVariant(candidates, `${seed}:distinct:${attempt}`);
+    if (!used.has(tpl)) {
+      used.add(tpl);
+      return tpl;
+    }
+  }
+  const tpl = pickVariant(candidates, seed);
+  used.add(tpl);
+  return tpl;
 }
 
 // ---------------------------------------------------------------------------
@@ -206,6 +229,87 @@ export function parseEvidenceTokens(category, finding) {
   return parser(String(finding ?? ''));
 }
 
+// ---------------------------------------------------------------------------
+// CLEAN-evidence matcher — "clean findings should be compliments, not insults"
+// (owner rule 2026-09-16). A per-finding DETERMINISTIC judgment derived from
+// the rule modules' own evidence formats (mirrored byte-for-byte):
+//
+//   filler      "0 filler phrase occurrence(s) in N words (0.0 per 300 words)"
+//               — only emitted when the detector found zero hits.
+//   boilerplate "0 boilerplate signal(s) in N words (0.0 per 300 words)"
+//               — same: zero signals across every regex + hedge + dup check.
+//   infoDensity the four metric lines are ALWAYS emitted; a line is clean only
+//               inside the rule's zero-penalty band (ttrSub/stopSub/sentSub/
+//               paraSub === 0): MATTR >= 0.85, stopwords <= 40%, mean sentence
+//               length 12-26 words, short paragraphs 0%. The "concrete
+//               specifics: 0 found / only N …" lines are GAP findings (the
+//               WORST case for that detector) and are NEVER clean.
+//   repetitive  "no notable repetitive structure (N sentences, N paragraphs)"
+//               — emitted only when all three sub-detectors came back empty.
+//   crossPage   "no page pairs above 80% similarity (N pages compared)"
+//               — emitted only when no pair crossed the 0.80 threshold.
+//   fingerprints findings only exist on pattern hits — there is no clean
+//               evidence format, so this category never compliments (a clean
+//               fingerprints scan simply has no findings/insights at all).
+//   assets      "0 of N images flagged for stock/placeholder signals" (full
+//               category clean) plus the per-signal zero lines ("0 of N images
+//               from stock/placeholder CDNs", "…with placeholder/generic
+//               filenames", "…with missing or generic alt text") which measure
+//               a specific healthy dimension and may accompany other signals'
+//               negative lines — each is complimented on its own evidence.
+//
+// Anything not matched is a real negative pattern -> normal roast treatment.
+// ---------------------------------------------------------------------------
+const CLEAN_EVIDENCE = {
+  filler(f) {
+    return /^0 filler phrase occurrence\(s\) in \d+ words \(0\.0 per \d+ words\)$/.test(f);
+  },
+  boilerplate(f) {
+    return /^0 boilerplate signal\(s\) in \d+ words \(0\.0 per \d+ words\)$/.test(f);
+  },
+  infoDensity(f) {
+    let m = /^vocabulary diversity \(MATTR-\d+\): ([\d.]+) \(lower = more repetitive vocabulary\)$/.exec(f);
+    if (m) return Number(m[1]) >= 0.85; // MATTR zero-penalty band (ttrSub = 0)
+    m = /^stopword ratio: ([\d.]+)%$/.exec(f);
+    if (m) return Number(m[1]) <= 40.0; // stopSub = 0 at/below the 40% floor
+    m = /^mean sentence length: ([\d.]+) words \(\d+ sentences\)$/.exec(f);
+    if (m) return Number(m[1]) >= 12 && Number(m[1]) <= 26; // sentSub = 0 in the sweet spot
+    m = /^short paragraphs \(<25 words\): (\d+)% \(\d+ paragraphs\)$/.exec(f);
+    if (m) return Number(m[1]) === 0; // paraSub = 0 only at zero short paragraphs
+    return false; // "concrete specifics: 0 found / only N …" are gap (negative) lines
+  },
+  repetitive(f) {
+    return /^no notable repetitive structure \(\d+ sentences, \d+ paragraphs\)$/.test(f);
+  },
+  crossPage(f) {
+    return /^no page pairs above \d+% similarity \(\d+ pages compared\)$/.test(f);
+  },
+  fingerprints() {
+    return false; // no clean evidence format exists; clean scans have no findings
+  },
+  assets(f) {
+    if (/^0 of \d+ images flagged for stock\/placeholder signals$/.test(f)) return true;
+    if (/^0 of \d+ images from stock\/placeholder CDNs$/.test(f)) return true;
+    if (/^0 of \d+ images with placeholder\/generic filenames$/.test(f)) return true;
+    return /^0 of \d+ images with missing or generic alt text$/.test(f);
+  },
+};
+
+/**
+ * Does this evidence string describe a CLEAN measurement (the detector found
+ * nothing to penalize)? Deterministic per (category, evidence); mirrors the
+ * rule modules' evidence formats and zero-penalty bands exactly. Used by the
+ * insight derivation to route clean findings to compliments instead of roasts.
+ *
+ * @param {string} category breakdown key (filler, boilerplate, ...)
+ * @param {string} finding the finding/evidence string
+ * @returns {boolean} true when the measurement is clean
+ */
+export function isCleanEvidence(category, finding) {
+  const matcher = CLEAN_EVIDENCE[category];
+  return matcher ? matcher(String(finding ?? '')) : false;
+}
+
 /**
  * Verify a template's declared tokens all exist in the parsed evidence AND,
  * when the finding carries verbatim-evidence trigger tokens, that the variant
@@ -236,17 +340,55 @@ function eligibleRoasts(pool, tokens, category) {
  * list order); insight `i` corresponds to findings `i` (evidence is the
  * finding string itself).
  *
+ * CLEAN vs NEGATIVE (owner rule 2026-09-16: "clean findings should be
+ * compliments, not insults"):
+ *   - a finding whose evidence proves a CLEAN measurement (isCleanEvidence —
+ *     zero/none counts, healthy metric bands, "no ... found" lines) emits the
+ *     COMPLIMENT variant: { kind: 'clean', roast: <compliment>, why: <cleanWhy>,
+ *     fix: <keepUp>, evidence }, picked from that category's compliments /
+ *     cleanWhys / keepUps pools.
+ *   - a finding with a real negative pattern emits exactly today's roast/why/fix
+ *     with NO kind marker (bytes unchanged: new scans of negative findings are
+ *     byte-identical to pre-change output).
+ * Compliments are token-free by design (the evidence/receipt line carries the
+ * measurement verbatim, exactly as roasts' receipts do).
+ *
  * @param {object} opts
  * @param {string} opts.category breakdown key (filler, boilerplate, ...)
  * @param {string[]} [opts.findings] the category's evidence strings
  * @param {string} opts.id scan id (seed)
- * @returns {Array<{ roast: string, why: string, fix: string, evidence: string }>}
+ * @returns {Array<{ roast: string, why: string, fix: string, evidence: string, kind?: 'clean' }>}
  */
 export function buildCategoryInsights({ category, findings = [], id }) {
   const pool = THREE_LAYER_POOLS[category];
   if (!pool || findings.length === 0) return [];
+  // Deterministic distinct-pick bookkeeping for the clean (token-free) lines:
+  // per build, a compliment/cleanWhy/keepUp line is used at most once.
+  const usedCompliments = new Set();
+  const usedCleanWhys = new Set();
+  const usedKeepUps = new Set();
   return findings.slice(0, MAX_INSIGHTS_PER_CATEGORY).map((evidence, i) => {
     const tokens = parseEvidenceTokens(category, evidence);
+
+    // Owner rule: a clean measurement gets a compliment, never a roast. The
+    // clean signal comes from the EVIDENCE ITSELF (deterministic, rule-shaped:
+    // zero/none counts and healthy metric bands), so the same input always
+    // produces the same variant. Compliments are token-free, so a category's
+    // picks are kept DISTINCT (deterministic advance through the pool) — a
+    // report never shows the same compliment twice.
+    if (isCleanEvidence(category, evidence)) {
+      const compTpl = pickDistinct(pool.compliments, `${id}:${category}:${i}:compliment`, usedCompliments);
+      const whyTpl = pickDistinct(pool.cleanWhys, `${id}:${category}:${i}:cleanWhy`, usedCleanWhys);
+      const keepTpl = pickDistinct(pool.keepUps, `${id}:${category}:${i}:keepUp`, usedKeepUps);
+      return {
+        kind: 'clean',
+        roast: interpolate(compTpl, tokens),
+        why: interpolate(whyTpl, tokens),
+        fix: interpolate(keepTpl, tokens),
+        evidence: String(evidence),
+      };
+    }
+
     const roasts = eligibleRoasts(pool, tokens, category);
     // Defensive: the eligible set is never empty (every group ships token-free
     // roasts), but stay crash-proof against future copy edits.

@@ -417,6 +417,21 @@ corresponds to `findings[i]`):
   roast MUST cite at least one of them — a roast never fabricates a detail it
   cannot point at. Findings with no interpolatable token fall back to
   group-level roasts that still reference the summary values.
+- **Clean findings are compliments, not insults** (owner rule) — a finding
+  whose evidence proves a CLEAN measurement (zero/none counts, healthy metric
+  bands, "no … found" lines — `isCleanEvidence` in `src/threeLayer.js`, which
+  mirrors the rule modules' evidence formats) renders a compliment variant
+  instead of a negative roast:
+  `{ kind: "clean", roast: <compliment>, why: <cleanWhy>, fix: <keepUp>, evidence }`.
+  The report labels those layers COMPLIMENT / WHY IT MATTERS / KEEP IT UP (in
+  place of how-to-fix-it); negative findings keep `{ roast, why, fix, evidence }`
+  with NO kind marker, byte-identical to before. The evidence/receipts line is
+  the same in both variants — a compliment is only ever backed by the real
+  measurement. The infoDensity "concrete specifics: 0 found …" line is a GAP
+  finding (the worst case for that detector) and is never treated as clean.
+  Compliment pools (`compliments`, `cleanWhys`, `keepUps`) live in
+  `src/threeLayer.json` with the roast pools, and are picked deterministically
+  and distinctly (a report never repeats the same compliment line).
 - **Where the copy lives** — `src/threeLayer.json`, one pool per breakdown
   category (`roasts`, `whys`, `fixes`). Editable WITHOUT code changes; token
   names per group are documented in the file's `_comment`. House style matches

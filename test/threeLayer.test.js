@@ -15,6 +15,7 @@ import {
   buildCategoryInsights,
   withInsights,
   hashScanId,
+  isCleanEvidence,
 } from '../src/threeLayer.js';
 import { hashScanId as roastHashScanId } from '../src/roast.js';
 import { createReportToken } from '../src/paywall.js';
@@ -95,7 +96,7 @@ const ALL_CANONICAL = Object.entries(CANONICAL).flatMap(([cat, fs]) => fs.map((f
 // ---------------------------------------------------------------------------
 // Pool validity
 // ---------------------------------------------------------------------------
-test('threeLayer.json: pools cover exactly the seven breakdown categories with 8-12 roasts, 4-6 whys/fixes', () => {
+test('threeLayer.json: pools cover exactly the seven breakdown categories with 8-12 roasts, 4-6 whys/fixes and 4-6 compliments/cleanWhys/keepUps', () => {
   assert.deepEqual([...THREE_LAYER_KEYS].sort(),
     ['filler', 'boilerplate', 'infoDensity', 'repetitive', 'crossPage', 'fingerprints', 'assets'].sort());
   for (const key of THREE_LAYER_KEYS) {
@@ -107,13 +108,21 @@ test('threeLayer.json: pools cover exactly the seven breakdown categories with 8
       `${key}: ${pool.whys.length} whys (need 4-6)`);
     assert.ok(Array.isArray(pool.fixes) && pool.fixes.length >= 4 && pool.fixes.length <= 6,
       `${key}: ${pool.fixes.length} fixes (need 4-6)`);
-    const all = [...pool.roasts, ...pool.whys, ...pool.fixes];
+    // Owner CR (2026-09-16: clean findings are compliments): every category
+    // ships a compliments pool, a clean-result why pool, and a keep-it-up pool.
+    for (const [name, lo, hi] of [['compliments', 4, 6], ['cleanWhys', 4, 6], ['keepUps', 4, 6]]) {
+      assert.ok(Array.isArray(pool[name]) && pool[name].length >= lo && pool[name].length <= hi,
+        `${key}: ${pool[name].length} ${name} (need ${lo}-${hi})`);
+    }
+    const all = [...pool.roasts, ...pool.whys, ...pool.fixes, ...pool.compliments, ...pool.cleanWhys, ...pool.keepUps];
     assert.equal(new Set(all).size, all.length, `${key}: no duplicate lines`);
     for (const line of all) {
       assert.ok(typeof line === 'string' && line.trim().length > 0, `${key}: non-empty line`);
       assert.ok(line.length <= 220, `${key}: line not overlong (${line.length} chars)`);
     }
-    for (const r of pool.roasts) {
+    // Sentence rule (1-2 sentences) applies to the roast lines AND the new
+    // compliment / keep-it-up lines — the same structural discipline.
+    for (const r of [...pool.roasts, ...pool.compliments, ...pool.keepUps]) {
       // 1-2 sentences: 1-3 sentence terminators (ellipses/rhetoric allowed).
       const terminators = (r.match(/[.!?]+(?:["'’”]|$)/g) ?? []).length;
       assert.ok(terminators >= 1 && terminators <= 3, `${key}: "${r}" not 1-2 sentences`);
@@ -152,7 +161,9 @@ test('threeLayer.json: copy is pattern-based — no factual AI-authorship claims
     /\b(?:ChatGPT|GPT-?[0-9]|Claude|Gemini) (?:wrote|made|generated)\b/i,
   ];
   for (const key of THREE_LAYER_KEYS) {
-    for (const line of [...THREE_LAYER_POOLS[key].roasts, ...THREE_LAYER_POOLS[key].whys, ...THREE_LAYER_POOLS[key].fixes]) {
+    const pools = THREE_LAYER_POOLS[key];
+    for (const line of [...pools.roasts, ...pools.whys, ...pools.fixes,
+      ...pools.compliments, ...pools.cleanWhys, ...pools.keepUps]) {
       for (const re of forbidden) {
         assert.ok(!re.test(line), `${key}: "${line}" must not assert AI authorship`);
       }
@@ -496,4 +507,312 @@ test('E2E: legacy row without insights gets deterministic derivation (additive c
   } finally {
     app.server.close();
   }
+});
+
+// ---------------------------------------------------------------------------
+// Owner CR (2026-09-16): "CLEAN FINDINGS SHOULD BE COMPLIMENTS, NOT INSULTS"
+// ---------------------------------------------------------------------------
+// Canonical CLEAN evidence strings per category (mirror the rule modules'
+// zero/none measurements and healthy metric bands exactly). fingerprints has
+// NO clean evidence format (findings only exist on pattern hits) — a clean
+// fingerprints scan has no findings, so nothing to compliment.
+const CLEAN_CANONICAL = {
+  filler: ['0 filler phrase occurrence(s) in 18 words (0.0 per 300 words)'],
+  boilerplate: ['0 boilerplate signal(s) in 18 words (0.0 per 300 words)'],
+  infoDensity: [
+    'vocabulary diversity (MATTR-50): 0.886 (lower = more repetitive vocabulary)',
+    'stopword ratio: 32.4%',
+    'mean sentence length: 18.0 words (6 sentences)',
+    'short paragraphs (<25 words): 0% (3 paragraphs)',
+  ],
+  repetitive: ['no notable repetitive structure (24 sentences, 8 paragraphs)'],
+  crossPage: ['no page pairs above 80% similarity (3 pages compared)'],
+  fingerprints: [],
+  assets: [
+    '0 of 5 images flagged for stock/placeholder signals',
+    '0 of 3 images from stock/placeholder CDNs',
+    '0 of 3 images with placeholder/generic filenames',
+    '0 of 3 images with missing or generic alt text',
+  ],
+};
+
+test('isCleanEvidence: clean measurements -> true, negative patterns -> false (incl. the specifics gap trap)', () => {
+  for (const [cat, lines] of Object.entries(CLEAN_CANONICAL)) {
+    for (const f of lines) {
+      assert.equal(isCleanEvidence(cat, f), true, `${cat}: "${f}" must read clean`);
+    }
+  }
+  // Negative patterns — including the infoDensity "concrete specifics: 0
+  // found" WORST-case line, which must NEVER become a compliment (a page with
+  // zero specific facts is maximally vague, not clean).
+  const negative = [
+    ['filler', '12 filler phrase occurrence(s) in 900 words (3.6 per 300 words)'],
+    ['filler', '3× "cutting-edge"'],
+    ['boilerplate', '7 boilerplate signal(s) in 1200 words (1.8 per 300 words)'],
+    ['boilerplate', '2× cookie banner'],
+    ['boilerplate', '1× hedge phrase "we aim to"'],
+    ['boilerplate', 'hedge evidence: "We aim to empower your journey."'],
+    ['boilerplate', '2× repeated block: "our platform is the best in class"'],
+    ['infoDensity', 'vocabulary diversity (MATTR-50): 0.581 (lower = more repetitive vocabulary)'],
+    ['infoDensity', 'stopword ratio: 52.0%'],
+    ['infoDensity', 'mean sentence length: 28.4 words (12 sentences)'],
+    ['infoDensity', 'short paragraphs (<25 words): 60% (20 paragraphs)'],
+    ['infoDensity', 'concrete specifics: only 3 in 500 words (need at least 7 per 75 words) — e.g. $99, 2021, Acme Corp'],
+    ['infoDensity', 'concrete specifics: 0 found in 500 words — no dates, numbers, prices, percentages, or named references (need at least 7 per 75 words)'],
+    ['repetitive', 'repeated sentence openings: 5× "the company", 3× "we offer"'],
+    ['repetitive', 'near-identical sentences: 4× "our platform helps businesses grow"'],
+    ['repetitive', 'repeated paragraphs: 3× "we are the leading provider of solutions"'],
+    ['crossPage', 'cross-page duplication: 2 flagged pair(s), max similarity 92.3%'],
+    ['crossPage', 'near-identical page pair: https://a.example/ ~ https://a.example/about (91.0% similar)'],
+    ['fingerprints', 'pattern evidence in html: v0.dev builder assets (high confidence, template-like signal)'],
+    ['assets', '2 of 4 images from stock/placeholder CDNs'],
+    ['assets', '1 of 4 images with placeholder/generic filenames'],
+    ['assets', '3 of 4 images with missing or generic alt text'],
+    ['assets', 'img[0] stock/placeholder CDN «unsplash.com» (https://images.unsplash.com/photo-1556742049)'],
+  ];
+  for (const [cat, f] of negative) {
+    assert.equal(isCleanEvidence(cat, f), false, `${cat}: "${f}" must read as a negative pattern`);
+  }
+});
+
+test('clean findings route to kind:"clean" compliments — layered pools, verbatim evidence, distinct picks, deterministic', () => {
+  // infoDensity has 4 clean metric findings and a 5-line compliment pool:
+  // distinct-pick guarantees no repeated compliment within the category.
+  const ins = buildCategoryInsights({ category: 'infoDensity', findings: CLEAN_CANONICAL.infoDensity, id: 'clean-route-1' });
+  assert.equal(ins.length, 4);
+  const compliments = new Set();
+  for (const x of ins) {
+    assert.equal(x.kind, 'clean', 'clean marker');
+    assert.ok(THREE_LAYER_POOLS.infoDensity.compliments.includes(x.roast), 'compliment from the compliments pool');
+    assert.ok(THREE_LAYER_POOLS.infoDensity.cleanWhys.includes(x.why), 'why from the cleanWhys pool');
+    assert.ok(THREE_LAYER_POOLS.infoDensity.keepUps.includes(x.fix), 'fix from the keepUps pool');
+    assert.ok(!/\{[a-zA-Z]+\}/.test(x.roast), `no leftover tokens: "${x.roast}"`);
+    compliments.add(x.roast);
+  }
+  assert.equal(compliments.size, 4, 'no repeated compliment inside one category');
+  assert.deepEqual(
+    buildCategoryInsights({ category: 'infoDensity', findings: CLEAN_CANONICAL.infoDensity, id: 'clean-route-1' }),
+    ins,
+    'same id -> identical clean insights',
+  );
+});
+
+test('every canonical clean finding across all categories routes to kind:"clean" with non-empty layers + verbatim evidence', () => {
+  for (const [cat, lines] of Object.entries(CLEAN_CANONICAL)) {
+    if (lines.length === 0) continue; // fingerprints has no clean evidence format
+    const ins = buildCategoryInsights({ category: cat, findings: lines, id: 'clean-all' });
+    assert.equal(ins.length, lines.length, `${cat} one insight per clean finding`);
+    ins.forEach((x, i) => {
+      assert.equal(x.kind, 'clean', `${cat}[${i}] kind`);
+      assert.ok(x.roast.length > 0 && x.why.length > 0 && x.fix.length > 0, `${cat}[${i}] layers non-empty`);
+      assert.equal(x.evidence, lines[i], `${cat}[${i}] evidence mirrors the finding verbatim`);
+      assert.ok(!/\{[a-zA-Z]+\}/.test(x.roast) && !/\{[a-zA-Z]+\}/.test(x.why) && !/\{[a-zA-Z]+\}/.test(x.fix),
+        `${cat}[${i}] no leftover tokens`);
+    });
+  }
+});
+
+test('negative findings keep today\'s exact shape — roast/why/fix/evidence, NO kind marker, roast from the roast pools', () => {
+  for (const cat of THREE_LAYER_KEYS) {
+    const neg = CANONICAL[cat].filter((f) => !isCleanEvidence(cat, f));
+    if (neg.length === 0) continue;
+    const ins = buildCategoryInsights({ category: cat, findings: neg, id: 'neg-route-1' });
+    for (const x of ins) {
+      assert.ok(!('kind' in x), `${cat}: negative insight has no kind marker (pre-change bytes preserved)`);
+      assert.deepEqual(Object.keys(x).sort(), ['evidence', 'fix', 'roast', 'why'].sort(),
+        `${cat}: exact pre-change insight shape`);
+      assert.ok(x.evidence.length > 0 && x.roast.length > 0 && x.why.length > 0 && x.fix.length > 0,
+        `${cat}: layers non-empty`);
+      assert.ok(!THREE_LAYER_POOLS[cat].compliments.includes(x.roast), `${cat}: roast is not a compliment line`);
+      assert.ok(THREE_LAYER_POOLS[cat].whys.includes(x.why) && THREE_LAYER_POOLS[cat].fixes.includes(x.fix),
+        `${cat}: why/fix stay from the negative pools`);
+    }
+  }
+});
+
+/**
+ * A fully-clean site fixture: every category's findings land in a healthy
+ * (zero-penalty) band — no filler, no boilerplate, high MATTR, low stopwords,
+ * healthy sentence lengths, no short paragraphs, no repetition, no builder
+ * fingerprints, and only real/described images. No internal links -> the
+ * crossPage module is skipped (no findings), exactly like a single-page scan.
+ */
+const CLEAN_PAGE = `<!doctype html><html><head><title>Acme Analytics Results</title></head><body>
+<p>Acme Analytics launched in 2019 with 4 engineers and now serves 3,200 customers across 40 countries. Our uptime has held at 99.98% for 18 straight months, verified independently every quarter.</p>
+<p>The 2025 migration to our new stack cut median response time from 120ms to 38ms, and the team ships 12 releases monthly. Referrals produced 74% of our enterprise deals in 2026, which tells us the product does the selling.</p>
+<p>Our engineering handbook, written by the founding engineers in 2021, now guides 60 contributors through every design review. We publish the full pricing table on the homepage, including the $49 starter plan and the $199 pro tier.</p>
+<img src="https://cdn.acme-example.net/team-photo-2026.jpg" alt="Acme engineering team at the 2026 offsite">
+<img src="https://cdn.acme-example.net/office-map-2026.png" alt="Floor plan of the Acme Berlin office">
+</body></html>`;
+
+test('E2E (Case B): clean fixture -> compliments everywhere (free teasers + paid report), zero negative roast language', async () => {
+  const dbPath = tmpDb();
+  const app = startApp(dbPath, { fetcher: fakeFetcher(CLEAN_PAGE), reportTokenSecret: TL_SECRET });
+  try {
+    const res = await fetch(`${app.base}/api/v1/scan`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ url: 'https://clean.example/' }),
+    });
+    assert.equal(res.status, 200);
+    const json = await res.json();
+    // Scoring unchanged: the deterministic engine (untouched rules + weights)
+    // gives this fixture 0 — the compliment routing never alters scores.
+    assert.equal(json.score, 0, 'clean fixture scores 0 (engine unchanged)');
+    assert.equal(json.verdict, 'CLEANEST');
+
+    // FREE JSON: every teaser is a clean compliment with the kind marker and
+    // its receipt; stable across repeated reads.
+    assert.ok(Array.isArray(json.teasers) && json.teasers.length >= 1 && json.teasers.length <= 2, '1-2 teasers');
+    for (const t of json.teasers) {
+      assert.equal(t.kind, 'clean', 'free teaser marked clean');
+      assert.ok(t.evidence.length > 0, 'receipt attached');
+    }
+
+    // FREE HTML teaser page: COMPLIMENT / WHY IT MATTERS / KEEP IT UP labels,
+    // never a "How to fix it:" on a clean finding.
+    const freeRes = await fetch(`${app.base}/api/v1/scans/${json.id}`, { headers: { accept: 'text/html' } });
+    const freeHtml = await freeRes.text();
+    assert.ok(freeHtml.includes('Compliment:'), 'free page renders the Compliment label');
+    assert.ok(freeHtml.includes('Keep it up:'), 'free page renders the Keep it up label');
+    assert.ok(!freeHtml.includes('How to fix it:'), 'free page never tells a clean finding to fix itself');
+    assert.ok(freeHtml.includes('This tool identifies writing and design patterns commonly associated with generic or templated content.'),
+      'mandated disclaimer verbatim on the free page');
+
+    // STORED insights: all kind clean, evidence mirrors findings, every
+    // evidence string is a clean measurement.
+    const row = new (await import('better-sqlite3')).default(dbPath)
+      .prepare('SELECT breakdown FROM scans WHERE id = ?').get(json.id);
+    const stored = JSON.parse(row.breakdown);
+    let cleanTotal = 0;
+    for (const [key, rule] of Object.entries(stored)) {
+      if (!Array.isArray(rule.insights)) continue;
+      rule.insights.forEach((x, i) => {
+        cleanTotal += 1;
+        assert.equal(x.kind, 'clean', `${key}[${i}] stored insight clean`);
+        assert.equal(x.evidence, rule.findings[i], `${key}[${i}] evidence mirrors finding`);
+        assert.ok(isCleanEvidence(key, x.evidence), `${key}[${i}] evidence is a clean measurement`);
+        assert.ok(x.roast.length > 0 && x.why.length > 0 && x.fix.length > 0, `${key}[${i}] layers non-empty`);
+      });
+    }
+    assert.ok(cleanTotal >= 7, `rich clean insight set (got ${cleanTotal})`);
+
+    // PAID report (token): COMPLIMENT / WHY IT MATTERS / KEEP IT UP labels,
+    // no fix tasks, clean-aware intro, empty fix-first list, verbatim
+    // disclaimer, byte-identical across reads, and no roast-pool language.
+    const token = createReportToken(TL_SECRET, json.id);
+    const url = `${app.base}/api/v1/scans/${json.id}?token=${encodeURIComponent(token)}`;
+    const html = await (await fetch(url, { headers: { accept: 'text/html' } })).text();
+    const html2 = await (await fetch(url, { headers: { accept: 'text/html' } })).text();
+    assert.equal(html, html2, 'paid report byte-identical across reads');
+    assert.ok(html.includes('Compliment:'), 'paid report renders the Compliment label');
+    assert.ok(html.includes('Why it matters:'), 'paid report renders Why it matters');
+    assert.ok(html.includes('Keep it up:'), 'paid report renders the Keep it up label');
+    assert.ok(!html.includes('How to fix it:'), 'paid report has no fix task for a clean finding');
+    assert.ok(html.includes('every single one is a compliment'), 'clean-aware findings intro');
+    assert.ok(html.includes('No findings to fix this scan — every category reads clean.'), 'fix-first list empty for a clean scan');
+    assert.ok(html.includes('This tool identifies writing and design patterns commonly associated with generic or templated content.'),
+      'mandated disclaimer intact in the paid report');
+    assert.equal((html.match(/<p class="ins-roast">/g) ?? []).length, 0, 'no roast-styled layer in an all-clean report');
+    assert.ok(!html.includes('The thesaurus is doing the heavy lifting'), 'no negative filler line reaches a clean page');
+    assert.ok(!html.includes('every roast points at the receipts'), 'no roast framing when every finding is a compliment');
+
+    // FREE JSON stable across repeated GETs (same id -> same teasers).
+    const got = await (await fetch(`${app.base}/api/v1/scans/${json.id}`, { headers: { accept: 'application/json' } })).json();
+    assert.deepEqual(got.teasers, json.teasers, 'clean teasers stable across reads');
+  } finally {
+    app.server.close();
+  }
+});
+
+/** The slop fixture with an extra stopword-heavy paragraph pushes the stopword
+ *  ratio above 40% so EVERY finding is a negative pattern (pure Case A). */
+const ALL_NEGATIVE_PAGE = `${SLOP_PAGE.slice(0, SLOP_PAGE.indexOf('</body>'))}
+<p>For the and the of the and for the of the and the of the for the.</p>
+</body></html>`;
+
+test('E2E (Case A): all-negative fixture -> every stored insight stays a plain roast/why/fix (no kind), paid report uses roast labels + today\'s intro', async () => {
+  const dbPath = tmpDb();
+  const app = startApp(dbPath, { fetcher: fakeFetcher(ALL_NEGATIVE_PAGE), reportTokenSecret: TL_SECRET });
+  try {
+    const res = await fetch(`${app.base}/api/v1/scan`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ url: 'https://slop.example/' }),
+    });
+    assert.equal(res.status, 200);
+    const json = await res.json();
+    assert.ok(json.score >= 75, `slop fixture stays high (got ${json.score})`);
+
+    // Stored insights: NO kind marker anywhere (every finding is negative).
+    const row = new (await import('better-sqlite3')).default(dbPath)
+      .prepare('SELECT breakdown FROM scans WHERE id = ?').get(json.id);
+    const stored = JSON.parse(row.breakdown);
+    let insightTotal = 0;
+    for (const [key, rule] of Object.entries(stored)) {
+      if (!Array.isArray(rule.insights)) continue;
+      rule.insights.forEach((x, i) => {
+        insightTotal += 1;
+        assert.ok(!('kind' in x), `${key}[${i}] negative insight has no kind marker`);
+        assert.equal(x.evidence, rule.findings[i], `${key}[${i}] evidence mirrors finding`);
+      });
+    }
+    assert.ok(insightTotal >= 10, `rich negative insight set (got ${insightTotal})`);
+
+    // Free teasers: no kind marker (negative teasers carry today's shape).
+    for (const t of json.teasers) {
+      assert.ok(!('kind' in t), 'negative teaser has no kind marker');
+    }
+
+    // Paid report: roast labels + today's intro, no compliments anywhere.
+    const token = createReportToken(TL_SECRET, json.id);
+    const html = await (await fetch(`${app.base}/api/v1/scans/${json.id}?token=${encodeURIComponent(token)}`, { headers: { accept: 'text/html' } })).text();
+    assert.ok(html.includes('How to fix it:'), 'negative finding keeps the fix label');
+    assert.ok(html.includes('Why it matters:'), 'why label present');
+    assert.ok(html.includes('every roast points at the receipts'), 'all-negative report keeps today\'s intro');
+    assert.ok(!html.includes('Compliment:'), 'no compliments on an all-negative scan');
+    assert.ok(!html.includes('Keep it up:'), 'no keep-it-up lines on an all-negative scan');
+    assert.ok((html.match(/<p class="ins-roast">/g) ?? []).length >= 10, 'roast-styled layers on the negative findings');
+    assert.ok(html.includes('This tool identifies writing and design patterns commonly associated with generic or templated content.'),
+      'mandated disclaimer intact');
+  } finally {
+    app.server.close();
+  }
+});
+
+test('E2E (mixed): slop fixture -> clean stopword line compliments, negative lines roast, report mixes both labels honestly', async () => {
+  // The shared SLOP_PAGE fixture has one genuinely clean measurement — the
+  // stopword ratio (~36% <= 40%) — everything else is negative. Per-finding
+  // honesty: that one line compliments, the rest roast, and the intro uses the
+  // neutral mixed phrasing.
+  const res = await fetch(`${api.base}/api/v1/scan`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ url: 'https://example.com/' }),
+  });
+  assert.equal(res.status, 200);
+  const json = await res.json();
+  const row = new (await import('better-sqlite3')).default(dbPath)
+    .prepare('SELECT breakdown FROM scans WHERE id = ?').get(json.id);
+  const stored = JSON.parse(row.breakdown);
+  const cleanOnes = [];
+  const negativeOnes = [];
+  for (const [key, rule] of Object.entries(stored)) {
+    if (!Array.isArray(rule.insights)) continue;
+    rule.insights.forEach((x, i) => {
+      if (x.kind === 'clean') cleanOnes.push([key, x, rule.findings[i]]);
+      else negativeOnes.push([key, x]);
+      assert.ok(isCleanEvidence(key, rule.findings[i]) === (x.kind === 'clean'),
+        `${key}[${i}] kind matches the evidence signal`);
+    });
+  }
+  assert.ok(cleanOnes.length >= 1 && negativeOnes.length >= 10,
+    `mixed fixture: ${cleanOnes.length} clean, ${negativeOnes.length} negative`);
+  const token = createReportToken(TL_SECRET, json.id);
+  const html = await (await fetch(`${api.base}/api/v1/scans/${json.id}?token=${encodeURIComponent(token)}`, { headers: { accept: 'text/html' } })).text();
+  assert.ok(html.includes('Compliment:') && html.includes('How to fix it:'),
+    'mixed report renders both compliment and roast labels');
+  assert.ok(html.includes('every line is backed by the receipts'), 'mixed report uses the neutral intro');
+  assert.ok(!html.includes('every single one is a compliment') && !html.includes('every roast points at the receipts'),
+    'neither pure phrasing on a mixed report');
 });
