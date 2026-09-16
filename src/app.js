@@ -80,7 +80,11 @@ export function createApp({ dbPath = './data/ass-score.db', fetcher, webhookDeli
   app.use(createCors({ allowedOrigins })); // browser origins only; no-op for non-browser clients
   app.use(express.json({ limit: '64kb' }));
 
-  app.get('/health', (_req, res) => res.json({ ok: true, service: 'ass-score' }));
+  // Spec-parity health endpoints: `GET /health` (Railway healthcheckPath) plus
+  // the `/api/health` alias — identical 200 JSON contract.
+  const health = (_req, res) => res.json({ ok: true, service: 'ass-score' });
+  app.get('/health', health);
+  app.get('/api/health', health);
   app.use(scanRouter({
     db,
     fetcher: fetcherImpl,

@@ -130,6 +130,22 @@ export function scansRouter({ db, publicBaseUrl, reportTokenSecret, reportBaseUr
     return forbidden(res, req.get('accept') || '');
   });
 
+  // --- Free HTML report alias (spec parity) ---------------------------------
+  // GET /report/:scanId — serves the SAME free result page as
+  // GET /api/v1/scans/:id with Accept: text/html (score, verdict, roast,
+  // category numbers, 1–2 teasers, $12 CTA, disclaimer). This is a FREE page
+  // by construction: any ?token is IGNORED — the full report is reachable ONLY
+  // via the token'd /api/v1/report/:id route, so this alias can never become a
+  // leak path for the paid findings.
+  r.get('/report/:id', (req, res) => {
+    const scan = db.getScan(req.params.id);
+    if (!scan) {
+      return res.status(404).json({ error: { code: 'not_found', message: `No scan found with id "${req.params.id}"` } });
+    }
+    const pub = toPublicScan({ ...scan, breakdown: breakdownFor(scan), roast: roastFor(scan) });
+    return res.type('html').send(renderFreeHtmlReport(pub, shareBase));
+  });
+
   const missing = (res, id) =>
     res.status(404).json({ error: { code: 'not_found', message: `No scan found with id "${id}"` } });
 

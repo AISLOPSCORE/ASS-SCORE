@@ -5,10 +5,12 @@ import path from 'node:path';
 /**
  * SQLite persistence for scans.
  * Table: scans(id TEXT PRIMARY KEY, url TEXT, score INTEGER, breakdown TEXT/JSON,
- * created_at TEXT, partial INTEGER, note TEXT, worst_page TEXT/JSON).
- * The phase-2 columns (partial/note/worst_page) are added with an ALTER TABLE
- * migration on open, so databases created by the v1 schema keep working.
- * The DB file lives under data/ (gitignored); the directory is created on open.
+ * created_at TEXT, partial INTEGER, note TEXT, worst_page TEXT/JSON,
+ * business_name TEXT).
+ * The phase-2 columns (partial/note/worst_page), plus branding/roast/business_name,
+ * are added with an ALTER TABLE migration on open, so databases created by the
+ * v1 schema keep working. The DB file lives under data/ (gitignored); the
+ * directory is created on open.
  */
 export function openDb(dbPath) {
   fs.mkdirSync(path.dirname(dbPath), { recursive: true });
@@ -35,12 +37,16 @@ export function openDb(dbPath) {
   // column existed load with roast null, and the read path derives the roast
   // deterministically from the stored id + breakdown (see routes/scans.js).
   if (!cols.includes('roast')) db.exec('ALTER TABLE scans ADD COLUMN roast TEXT');
+  // Spec parity: optional businessName on POST /api/v1/scan. Nullable — rows
+  // written before this column existed load with business_name null, and the
+  // free/paid surfaces never render it (storage only, like the webhook ledger).
+  if (!cols.includes('business_name')) db.exec('ALTER TABLE scans ADD COLUMN business_name TEXT');
 
   const insertStmt = db.prepare(
-    'INSERT INTO scans (id, url, score, breakdown, created_at, partial, note, worst_page, branding, roast) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    'INSERT INTO scans (id, url, score, breakdown, created_at, partial, note, worst_page, branding, roast, business_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
   );
   const getStmt = db.prepare(
-    'SELECT id, url, score, breakdown, created_at, partial, note, worst_page, branding, roast FROM scans WHERE id = ?'
+    'SELECT id, url, score, breakdown, created_at, partial, note, worst_page, branding, roast, business_name FROM scans WHERE id = ?'
   );
 
   // Webhook fulfillment ledger (order webhooks -> scans).
@@ -109,7 +115,8 @@ export function openDb(dbPath) {
     /**
      * @param {{ id: string, url: string, score: number, breakdown: object,
      *           createdAt: string, partial?: boolean, note?: string,
-     *           worstPage?: object, branding?: object, roast?: string }} scan
+     *           worstPage?: object, branding?: object, roast?: string,
+     *           businessName?: string }} scan
      */
     insertScan(scan) {
       insertStmt.run(
@@ -123,9 +130,10 @@ export function openDb(dbPath) {
         scan.worstPage === undefined ? null : JSON.stringify(scan.worstPage),
         scan.branding === undefined || scan.branding === null ? null : JSON.stringify(scan.branding),
         scan.roast ?? null,
+        scan.businessName ?? null,
       );
     },
-    /** @returns {null | { id, url, score, breakdown, created_at, partial, note, worstPage, branding, roast }} */
+    /** @returns {null | { id, url, score, breakdown, created_at, partial, note, worstPage, branding, roast, businessName }} */
     getScan(id) {
       const row = getStmt.get(id);
       if (!row) return null;
@@ -136,6 +144,7 @@ export function openDb(dbPath) {
         worstPage: row.worst_page ? JSON.parse(row.worst_page) : undefined,
         branding: row.branding ? JSON.parse(row.branding) : undefined,
         roast: row.roast ?? undefined,
+        businessName: row.business_name ?? undefined,
       };
     },
 

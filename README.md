@@ -21,10 +21,14 @@ npm test           # node:test unit + API tests (no network required)
 
 ## API
 
+### `GET /api/health`
+
+Liveness endpoint (alias of `GET /health`): `200 {"ok":true,"service":"ass-score"}`.
+
 ### `POST /api/v1/scan`
 
-Request (optionally with a callback `webhookUrl`, white-label `branding`, and a
-delivery `email`):
+Request (optionally with a callback `webhookUrl`, white-label `branding`, a
+delivery `email`, a `clientEmail` alias, and a `businessName`):
 
 ```bash
 curl -s -X POST http://localhost:4000/api/v1/scan \
@@ -38,7 +42,9 @@ curl -s -X POST http://localhost:4000/api/v1/scan \
       "accentColor": "#336699",
       "footerText": "Audit prepared by Acme Agency"
     },
-    "email": "owner@example.com"
+    "email": "owner@example.com",
+    "clientEmail": "owner@example.com",
+    "businessName": "Acme Inc"
   }'
 ```
 
@@ -53,9 +59,12 @@ time and are logged, never propagated to the caller.
 `branding` is optional white-label report branding (see
 [White-label report branding](#white-label-report-branding)). `email` is an
 optional report-delivery address (see
-[Email delivery](#email-delivery)). Both are validated BEFORE any scanning;
-invalid values are `400 invalid_branding` / `400 invalid_email` with the scan
-never started.
+[Email delivery](#email-delivery)); `clientEmail` is the spec alias for the
+same field (`email` wins when both are supplied). `businessName` is an optional
+client brand name stored on the scan row (storage only — never rendered and
+never part of any API response). `email`/`clientEmail` and `businessName` are
+validated BEFORE any scanning; invalid values are
+`400 invalid_email` / `400 invalid_business_name` with the scan never started.
 
 **Score direction (public A.S.S. Score): 0-100, HIGHER = WORSE.** 0 = clean /
 actually good, 100 = maximum ass. Every scan response carries `score` (the
@@ -115,7 +124,8 @@ Multi-page scans add four top-level fields (all webhook-delivered too):
 | SSRF-blocked / invalid URL | `400` | private/loopback/link-local/reserved target, banned hostname, malformed URL |
 | Invalid webhook URL | `400` | `webhookUrl` present but not `http(s)://host...` (checked before scanning) |
 | Invalid branding | `400` | `branding` present but malformed (checked before scanning) |
-| Invalid email | `400` | `email` present but not an address (checked before scanning) |
+| Invalid email | `400` | `email`/`clientEmail` present but not an address (checked before scanning) |
+| Invalid business name | `400` | `businessName` present but not a string (checked before scanning) |
 | Fetch failure | `502` | timeout (>10s), network error, body > 2 MB, too many redirects (>3) |
 | Parse failure | `422` | HTML could not be parsed or contained no extractable text |
 | Bad JSON | `400` | malformed request body |
@@ -450,6 +460,16 @@ corresponds to `findings[i]`):
   evidence line (evidence bold; roast italic/accent; why/fix small and muted).
 - **Additive** — scores, findings, verdicts, the score flip and rate limiting
   are untouched; `insights` is a new key on each category object.
+
+### `GET /report/:scanId`
+
+Free result-page alias (spec parity): serves the **same free teaser HTML** as
+`GET /api/v1/scans/:id` with `Accept: text/html` — score, verdict, roast,
+category numbers, 1–2 teaser findings, the share-card link, the $12 CTA, and
+the mandated disclaimer. This is a FREE page by construction: the full report
+is never reachable here — any `?token` is ignored, and the token'd paid route
+remains `GET /api/v1/report/:id?token=…`. Missing scan id → `404` JSON error,
+same shape as `GET /api/v1/scans/:id`.
 
 ### `GET /api/v1/scans/:id/card`
 

@@ -13,7 +13,8 @@ import { clientIp } from '../clientIp.js';
  * POST /api/v1/scan
  * Body: { "url": "https://example.com", "webhookUrl"?: "https://hooks.example.com/x",
  *         "branding"?: { agencyName?, logoUrl?, accentColor?, footerText? },
- *         "email"?: "owner@example.com" }
+ *         "email"?: "owner@example.com", "clientEmail"?: "owner@example.com",
+ *         "businessName"?: "Acme Inc" }
  *
  * Thin route wrapper around the shared `runScan` pipeline (src/scan.js) — the
  * same pipeline `POST /api/v1/webhook` uses for paid-order fulfillment. This
@@ -93,8 +94,19 @@ export function scanRouter({
         return res.status(400).json({ error: { code: 'invalid_branding', message: branding.message } });
       }
 
-      // Optional delivery email. Invalid values are a 400 BEFORE scanning.
-      const mail = validateEmail(req.body?.email);
+      // Optional business name (spec parity — the same field the webhook order
+      // flow normalizes). Stored on the scan row; a non-string value is a 400
+      // BEFORE scanning. Missing / empty-after-trim = not stored.
+      const rawBusiness = req.body?.businessName;
+      if (rawBusiness !== undefined && rawBusiness !== null && typeof rawBusiness !== 'string') {
+        return res.status(400).json({ error: { code: 'invalid_business_name', message: 'businessName must be a string when supplied' } });
+      }
+      const businessName = typeof rawBusiness === 'string' && rawBusiness.trim() !== '' ? rawBusiness.trim() : null;
+
+      // Optional delivery email. `clientEmail` is the spec alias for `email`
+      // (both name the report-link recipient); the documented `email` field
+      // wins when both are supplied. Invalid values are a 400 BEFORE scanning.
+      const mail = validateEmail(req.body?.email ?? req.body?.clientEmail);
       if (!mail.ok) {
         return res.status(400).json({ error: { code: 'invalid_email', message: mail.message } });
       }
@@ -141,6 +153,7 @@ export function scanRouter({
         fetcher,
         url: target.href,
         branding: branding.branding,
+        businessName,
         now,
         scanBudgetMs,
       });

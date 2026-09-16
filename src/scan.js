@@ -48,7 +48,7 @@ const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
  *   Genuine internal errors REJECT — callers route them to the centralized
  *   error handler (500), exactly like the scan route always did.
  */
-export async function runScan({ db, fetcher, url, branding = null, now = () => new Date().toISOString(), scanBudgetMs = SCAN_BUDGET_MS }) {
+export async function runScan({ db, fetcher, url, branding = null, businessName = null, now = () => new Date().toISOString(), scanBudgetMs = SCAN_BUDGET_MS }) {
   // --- time budget (covers target fetch + discovery + additional fetches) ---
   const budget = createBudget(scanBudgetMs);
   const abortCtrl = new AbortController();
@@ -212,6 +212,9 @@ export async function runScan({ db, fetcher, url, branding = null, now = () => n
     worstPage: payload.worstPage,
     branding: payload.branding,
     roast,
+    // Optional client-provided business name (POST /api/v1/scan businessName).
+    // Storage only — never part of the public/paid payload surfaces.
+    businessName,
   });
 
   return { ok: true, payload };
