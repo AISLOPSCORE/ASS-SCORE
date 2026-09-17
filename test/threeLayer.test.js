@@ -697,25 +697,26 @@ test('E2E (Case B): clean fixture -> compliments everywhere (free teasers + paid
     }
     assert.ok(cleanTotal >= 7, `rich clean insight set (got ${cleanTotal})`);
 
-    // PAID report (token): COMPLIMENT / WHY IT MATTERS / KEEP IT UP labels,
-    // no fix tasks, clean-aware intro, empty fix-first list, verbatim
-    // disclaimer, byte-identical across reads, and no roast-pool language.
+    // PAID report (token): WHAT'S WORKING carries the clean compliments as
+    // "LABEL — CLEAN:" observations, the findings section counts ZERO (clean
+    // results are not findings), the fix-first list is empty, and no negative
+    // roast language appears anywhere. Verbatim disclaimer intact.
     const token = createReportToken(TL_SECRET, json.id);
     const url = `${app.base}/api/v1/scans/${json.id}?token=${encodeURIComponent(token)}`;
     const html = await (await fetch(url, { headers: { accept: 'text/html' } })).text();
     const html2 = await (await fetch(url, { headers: { accept: 'text/html' } })).text();
     assert.equal(html, html2, 'paid report byte-identical across reads');
-    assert.ok(html.includes('Compliment:'), 'paid report renders the Compliment label');
-    assert.ok(html.includes('Why it matters:'), 'paid report renders Why it matters');
-    assert.ok(html.includes('Keep it up:'), 'paid report renders the Keep it up label');
+    assert.ok(html.includes("What's Working"), 'paid report renders the What\'s Working section');
+    assert.ok(html.includes('COPY — CLEAN:'), 'clean result renders as a CLEAN observation');
+    assert.ok(html.includes('No findings this scan — nothing to roast, and nothing to hide.'),
+      'zero-findings intro: compliments are not counted as findings');
     assert.ok(!html.includes('How to fix it:'), 'paid report has no fix task for a clean finding');
-    assert.ok(html.includes('every single one is a compliment'), 'clean-aware findings intro');
-    assert.ok(html.includes('No findings to fix this scan — every category reads clean.'), 'fix-first list empty for a clean scan');
+    assert.ok(html.includes('No negative findings to fix this scan'), 'fix-first list empty for a clean scan');
     assert.ok(html.includes('This tool identifies writing and design patterns commonly associated with generic or templated content.'),
       'mandated disclaimer intact in the paid report');
     assert.equal((html.match(/<p class="ins-roast">/g) ?? []).length, 0, 'no roast-styled layer in an all-clean report');
     assert.ok(!html.includes('The thesaurus is doing the heavy lifting'), 'no negative filler line reaches a clean page');
-    assert.ok(!html.includes('every roast points at the receipts'), 'no roast framing when every finding is a compliment');
+    assert.ok(!html.includes('every roast points at the receipts'), 'no roast framing when there are no findings');
 
     // FREE JSON stable across repeated GETs (same id -> same teasers).
     const got = await (await fetch(`${app.base}/api/v1/scans/${json.id}`, { headers: { accept: 'application/json' } })).json();
@@ -810,9 +811,8 @@ test('E2E (mixed): slop fixture -> clean stopword line compliments, negative lin
     `mixed fixture: ${cleanOnes.length} clean, ${negativeOnes.length} negative`);
   const token = createReportToken(TL_SECRET, json.id);
   const html = await (await fetch(`${api.base}/api/v1/scans/${json.id}?token=${encodeURIComponent(token)}`, { headers: { accept: 'text/html' } })).text();
-  assert.ok(html.includes('Compliment:') && html.includes('How to fix it:'),
-    'mixed report renders both compliment and roast labels');
-  assert.ok(html.includes('every line is backed by the receipts'), 'mixed report uses the neutral intro');
-  assert.ok(!html.includes('every single one is a compliment') && !html.includes('every roast points at the receipts'),
-    'neither pure phrasing on a mixed report');
+  assert.ok(html.includes('— CLEAN:') && html.includes('How to fix it:'),
+    'mixed report renders both CLEAN observations and roast labels');
+  assert.ok(html.includes('every roast points at the receipts'), 'findings intro points at the receipts');
+  assert.ok(!html.includes('every single one is a compliment'), 'no all-compliment framing on a mixed report');
 });

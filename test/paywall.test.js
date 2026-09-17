@@ -144,7 +144,7 @@ test('PAID contract: valid token on /scans/:id returns the full narrative report
   assert.equal(res.status, 200);
   assert.match(res.headers.get('content-type'), /text\/html/);
   const html = await res.text();
-  for (const section of ['The Verdict', 'The Big Picture', 'Your Breakdown', 'The Actual Findings',
+  for (const section of ['The Verdict', "What's Working", 'Your Breakdown', 'The Actual Findings',
     'Page That Needs The Most Work', 'What To Fix First', 'Final Verdict', 'Methodology']) {
     assert.ok(html.includes(section), `paid report has ${section}`);
   }

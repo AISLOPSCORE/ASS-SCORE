@@ -311,6 +311,66 @@ export function isCleanEvidence(category, finding) {
 }
 
 /**
+ * Is this evidence one of the infoDensity METRIC MEASUREMENT lines (the four
+ * always-emitted diagnostics: vocabulary diversity, stopword ratio, mean
+ * sentence length, short-paragraph prevalence)? Owner rule (2026-09-17,
+ * full-report IA §4): "metrics are not automatically findings" — a raw metric
+ * reading is a measurement, not a problem; it becomes evidence of a problem
+ * only when the existing detector logic flags it as a negative signal. The
+ * "concrete specifics" gap lines are NOT metric measurements — they are
+ * conditionally-emitted detector findings (only present when the detector
+ * found a gap) and always keep their negative-finding semantics.
+ *
+ * @param {string} category breakdown key
+ * @param {string} finding the finding/evidence string
+ * @returns {boolean} true when this is one of the four metric measurement lines
+ */
+export function isMetricFinding(category, finding) {
+  if (category !== 'infoDensity') return false;
+  const f = String(finding ?? '');
+  return (
+    /^vocabulary diversity \(MATTR-\d+\): [\d.]+ \(lower = more repetitive vocabulary\)$/.test(f) ||
+    /^stopword ratio: [\d.]+%$/.test(f) ||
+    /^mean sentence length: [\d.]+ words \(\d+ sentences\)$/.test(f) ||
+    /^short paragraphs \(<25 words\): \d+% \(\d+ paragraphs\)$/.test(f)
+  );
+}
+
+/**
+ * Classify ONE finding for the REPORT LAYER (owner full-report IA 2026-09-17).
+ *
+ * The report needs to know, per finding, whether it is:
+ *   'negative' — a real detector problem: renders as THE ROAST / WHY IT
+ *                MATTERS / HOW TO FIX IT / THE RECEIPTS, counts in summaries,
+ *                feeds What To Fix First.
+ *   'clean'    — a healthy measurement: renders as a short positive
+ *                observation (compliment) with its evidence, never a roast,
+ *                never counted as a finding.
+ *   'metric'   — a diagnostic METRIC MEASUREMENT line that sits outside the
+ *                healthy band: shown as neutral evidence, NEVER a negative
+ *                finding/roast, NEVER counted (owner IA §4: metrics are not
+ *                automatically findings — a raw metric reading is not a
+ *                problem, it is a measurement).
+ *
+ * Deterministic: derived strictly from the stored insight kind (when present)
+ * and the evidence string via isCleanEvidence / isMetricFinding — the same
+ * machinery the insight builder uses, so stored and derived results agree.
+ *
+ * @param {string} category breakdown key (filler, boilerplate, infoDensity, ...)
+ * @param {string} finding the finding/evidence string
+ * @param {object|null} [insight] the three-layer insight for this finding, if any
+ * @returns {'negative'|'clean'|'metric'}
+ */
+export function classifyFinding(category, finding, insight) {
+  const kind = insight && typeof insight.kind === 'string' ? insight.kind : '';
+  if (kind === 'clean') return 'clean';
+  if (kind === 'metric') return 'metric';
+  if (isCleanEvidence(category, finding)) return 'clean';
+  if (isMetricFinding(category, finding)) return 'metric';
+  return 'negative';
+}
+
+/**
  * Verify a template's declared tokens all exist in the parsed evidence AND,
  * when the finding carries verbatim-evidence trigger tokens, that the variant
  * references at least one of them (specificity rule above). Token-free
@@ -389,6 +449,12 @@ export function buildCategoryInsights({ category, findings = [], id }) {
       };
     }
 
+    // METRIC MEASUREMENT LINES (owner full-report IA §4) — the four infoDensity
+    // metric lines are always-emitted diagnostics. STORED BYTES stay unchanged
+    // for deterministic, backward-compatible insights; the REPORT/teaser layers
+    // gate via classifyFinding() (a metric measurement never renders as a
+    // negative finding/roast even when its stored insight is a roast-shaped
+    // line). In-band metric lines take the kind:'clean' branch above.
     const roasts = eligibleRoasts(pool, tokens, category);
     // Defensive: the eligible set is never empty (every group ships token-free
     // roasts), but stay crash-proof against future copy edits.

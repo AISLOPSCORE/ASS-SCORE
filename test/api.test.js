@@ -187,7 +187,7 @@ test('GET /api/v1/scans/:id returns the FREE scan (JSON + teaser HTML); token un
   const paidRes = await fetch(`${api.base}/api/v1/scans/${created.id}?token=${token}`, { headers: { accept: 'text/html' } });
   assert.equal(paidRes.status, 200);
   const paid = await paidRes.text();
-  assert.ok(paid.includes('The Verdict') && paid.includes('The Big Picture') && paid.includes('Your Breakdown'), 'narrative sections present');
+  assert.ok(paid.includes('The Verdict') && paid.includes("What's Working") && paid.includes('Your Breakdown'), 'narrative sections present');
   assert.ok(paid.includes('The Actual Findings'), 'findings section present');
   assert.ok(paid.includes('What To Fix First') && paid.includes('Final Verdict'), 'fix + verdict sections present');
   assert.ok(

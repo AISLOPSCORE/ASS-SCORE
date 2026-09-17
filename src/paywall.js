@@ -24,6 +24,7 @@
  */
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { hashScanId } from './roast.js';
+import { isMetricFinding } from './threeLayer.js';
 import { DISCLAIMER } from './card.js';
 
 export { DISCLAIMER };
@@ -60,7 +61,20 @@ export function pickTeasers(breakdown, id) {
       Number.isFinite(Number(r.score)) && r.score !== null &&
       Array.isArray(r.findings) && r.findings.length > 0 &&
       Array.isArray(r.insights) && r.insights.length > 0)
-    .map(([key, r]) => ({ key, score: Number(r.score), findings: r.findings, insights: r.insights }))
+    .map(([key, r]) => {
+      // Owner IA (2026-09-17): METRIC MEASUREMENT lines are not findings, so
+      // they can never be teasers (a raw "vocabulary diversity 0.766" line
+      // must not be sold as one of the funniest/damning findings). The
+      // teaser pool keeps only insights whose evidence is a real detector
+      // finding (a complement, or a genuine negative pattern). Deterministic:
+      // filtering happens before seeding, so the same (breakdown, id) still
+      // always yields identical teasers.
+      const insights = (r.insights ?? []).filter((ins) =>
+        ins && typeof ins === 'object' &&
+        !isMetricFinding(key, String(ins.evidence ?? '')));
+      return { key, score: Number(r.score), findings: r.findings, insights };
+    })
+    .filter((c) => c.insights.length > 0)
     .sort((a, b) => b.score - a.score || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
   if (candidates.length === 0) return [];
 

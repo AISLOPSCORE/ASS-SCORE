@@ -19,8 +19,8 @@
       "whys": [
         "Filler phrases signal that the copy was written to sound impressive, not to inform — and visitors who smell vague marketing lose trust in seconds.",
         "The web is saturated with this exact vocabulary. Every buzzword you reuse makes your site sound like everyone else's, not more credible.",
-        "Search engines reward pages that answer the reader's question; phrases like these add words without adding meaning, so the page ranks for nothing and convinces no one.",
-        "Generic phrasing undermines conversion: the visitor can't tell what you actually do, so they leave and buy from the site that says it plainly.",
+        "Phrases like these add words without adding meaning — the page spends its word budget sounding important instead of saying what it does, and readers can't tell what you're offering.",
+        "Generic phrasing buries what you actually do: if the visitor can't tell from the first screen what the product is, they leave — and the site that says it plainly wins their attention.",
         "When the copy sounds like a press release from 2014, the product behind it starts to feel just as dated — even if it isn't."
       ],
       "fixes": [
@@ -38,8 +38,8 @@
         "Your page cleared the buzzword detector without even trying. The copy sounds like a human wrote it for humans."
       ],
       "cleanWhys": [
-        "Copy without buzzwords reads as confident, and confidence is the entire game: visitors who understand you in one pass are far more likely to trust you, stay, and buy.",
-        "Plain, specific language is a differentiator now — while competitors stack synonyms, this page says something real, and that is what actually converts.",
+        "Copy without buzzwords reads as confident, and confidence is the entire game: visitors who understand you in one pass are far more likely to trust you and stay.",
+        "Plain, specific language is a differentiator now — while competitors stack synonyms, this page says something real, and that is what actually stands out.",
         "Clear copy earns trust instantly because it costs the reader nothing to parse; the faster a visitor understands you, the sooner they believe you exist.",
         "Jargon-free writing also ages well: it never sounds like a trend, so the page still reads as fresh in five years instead of like a time capsule.",
         "Every sentence that says something beats ten that sound important — this page already knows that, and visitors can feel the difference."
@@ -69,7 +69,7 @@
       ],
       "whys": [
         "Generic boilerplate is the fastest way to look like everyone else: visitors have seen these exact sentences on a dozen competitor sites, so nothing about you sticks.",
-        "Duplicate template language can hurt SEO — search engines see the same sentence repeated across the web, and no page gets credit for saying what everyone says.",
+        "Sentences that live on thousands of other sites make yours interchangeable with them — the reader has already seen this line on a dozen competitor pages, so nothing about you registers.",
         "Cookie banners, legal sprints and \"learn more\" CTAs are fine alone; in bulk they make the page read as assembled rather than written — and trust is the first casualty.",
         "Every generic sentence is a wasted chance to say one specific thing about your product that a competitor cannot.",
         "When the compliance text outweighs the pitch, the visitor's takeaway is \"this site is covering its ass,\" not \"this site solves my problem.\""
@@ -92,7 +92,7 @@
         "A page free of boilerplate reads as written for the visitor rather than assembled from defaults — and that first impression is the whole credibility battle.",
         "When nothing reads as filler, what you actually do becomes the only thing left to notice; every line earning its place gets the pitch full attention.",
         "Original wording signals that the business behind the page is real — visitors have seen the template sentences so often that their absence is a genuine differentiator.",
-        "Search engines see the same boilerplate repeated across the web; pages that skip it have an easier time being treated as the original, not the echo.",
+        "Readers have seen the same boilerplate repeated across the web; pages that skip it come across as the original, not the echo.",
         "Visitors scan for the familiar template tell; when it isn't there, they spend that attention on your message instead of their skepticism."
       ],
       "keepUps": [
@@ -120,8 +120,8 @@
       ],
       "whys": [
         "Thin content gives visitors no reason to stay: if a page cannot answer \"what do you do, and why you,\" the back button wins.",
-        "Low information density is a conversion killer — specifics (prices, dates, numbers, examples) are what make a visitor believe the thing is real.",
-        "Search engines measure substance: pages made of generic words around few facts struggle to rank for anything meaningful.",
+        "Low information density leaves the visitor with nothing to believe in — specifics (prices, dates, numbers, examples) are what make a product sound real.",
+        "Pages made of generic words around few facts read as substance-free next to a competitor who shows prices, dates and numbers.",
         "Vague copy forces the reader to do your selling for you, and readers don't volunteer for that.",
         "Every missing fact — a number, a date, a name — is a question the visitor now has to ask someone else. Usually your competitor."
       ],
@@ -140,15 +140,15 @@
         "Information density is doing its job: every sentence earns its place instead of padding the word count."
       ],
       "cleanWhys": [
-        "Specifics are what make a business credible: when the copy carries numbers, dates and named facts, the visitor stops wondering whether it's real and starts deciding whether to buy.",
-        "Substantial content is an SEO asset — search engines reward pages that answer questions with real information, and this page already does.",
+        "Specifics are what make a business credible: when the copy carries numbers, dates and named facts, the visitor stops wondering whether it's real and starts deciding whether it's for them.",
+        "Substantial content is the fastest way to look credible — pages that answer questions with real information read as the work of a real business, and this page already does.",
         "Every concrete fact removes a doubt the visitor would otherwise take to a competitor; the less vague the page, the fewer questions you leave unanswered.",
-        "Dense, varied copy respects the reader's time, which reads as respect for the reader — and that impression carries straight into the buying decision.",
-        "A page that informs as it pitches converts twice: it proves the product exists and gives the visitor the ammunition to justify choosing it."
+        "Dense, varied copy respects the reader's time, which reads as respect for the reader — and that impression carries straight into how seriously the visitor takes the business.",
+        "A page that informs as it pitches does two jobs at once: it proves the product exists and gives the visitor the ammunition to justify choosing it with confidence."
       ],
       "keepUps": [
         "Keep the specifics coming: a number, a date, or a named customer per section is what kept this page off the vague list.",
-        "Keep writing paragraphs that hold at least one fact — it's the single habit that keeps density high and bounce rates low.",
+        "Keep writing paragraphs that hold at least one fact — it's the single habit that keeps density high and skimming easy.",
         "Keep the vocabulary varied and the sentences human-length; both are free wins that pages like this one already banked.",
         "When you expand the site, keep the same ratio — roughly one concrete fact per 75 words — or this category stops complimenting you.",
         "Keep trimming anything that adds words without adding information. The page is in the healthy band right now; stay there."
@@ -221,11 +221,11 @@
         "This site has the page diversity of a buffet that only serves one dish."
       ],
       "whys": [
-        "Near-duplicate pages split your SEO authority: search engines pick one version to rank, and the rest of your effort stops counting.",
+        "Near-duplicate pages split the effort you put into them: the work behind one version is repeated instead of extended, so the whole site reads thinner than it is.",
         "Duplicated content across pages makes the whole site feel like a shell — visitors who land on the same text twice assume there's nothing behind it.",
-        "Every page should earn its URL with a distinct purpose; duplicated pages just dilute the one message you're actually trying to rank for.",
-        "A real site is a set of answers to different questions; when all your pages answer the same question, you're only reachable for one search.",
-        "Repeated content also burns crawl budget and trust — the faster a visitor can predict your next page, the faster they leave."
+        "Every page should earn its URL with a distinct purpose; duplicated pages just dilute the one message you actually need people to remember.",
+        "A real site is a set of answers to different questions; when all your pages answer the same question, visitors with any other question find nothing new.",
+        "Repeated content also burns trust — the faster a visitor can predict your next page, the faster they leave."
       ],
       "fixes": [
         "Give each page one job, and rewrite the main content so only that page says it.",
@@ -242,11 +242,11 @@
         "Distinct content per page, confirmed across every pair — this is what a multi-page site is supposed to look like."
       ],
       "cleanWhys": [
-        "Distinct pages mean the site answers more questions: every URL ranks for its own topic instead of splitting the same signal, so the whole domain is stronger.",
+        "Distinct pages mean the site answers more questions: every URL covers its own topic instead of repeating the same one, so the whole site feels bigger and more useful.",
         "A visitor who lands on different, purposeful pages walks away thinking the business has depth — the exact flip side of a copy-paste site.",
-        "Unique content per page keeps every page's SEO authority intact, so the pages rank for what each one actually covers.",
+        "Unique content per page keeps every page worth its own visit — visitors find something new at each URL instead of the same page again.",
         "Variety across pages makes the site feel bigger and more competent than any single-page clone ever can.",
-        "When each page earns its URL, the crawl budget and the visitor's attention both get spent on new information — the best possible use of either."
+        "When each page earns its URL, the visitor's attention gets spent on new information every time — the best possible use of a visit."
       ],
       "keepUps": [
         "Keep giving each page one job; when a new page's main content starts resembling an existing one, that's the signal to rewrite.",
@@ -274,7 +274,7 @@
       "whys": [
         "Template fingerprints tell visitors the design is not yours — and if the design is borrowed, they start wondering what else might be.",
         "A distinct look is a business asset; recognizable builder defaults make you blend into the 10,000 sites launched from the same kit this week.",
-        "The builder's defaults aren't tuned for your conversion goals — they're tuned for \"looks fine,\" not for selling your specific thing.",
+        "The builder's defaults aren't tuned for your business — they're tuned for \"looks fine\" on any site, not for presenting your specific thing.",
         "Design trust is earned in the first seconds; a stock look reads as low effort before the visitor has read a single word.",
         "Even when the template is capable, unmodified defaults send the message that you shipped the draft."
       ],
@@ -325,7 +325,7 @@
       "whys": [
         "Stock imagery is instantly recognizable and instantly forgettable — it tells visitors nothing about your actual product, team, or customers.",
         "Placeholder filenames and generic alt text are small signals that compound: together they read as \"this site was never finished.\"",
-        "Alt text is accessibility, and empty or generic alts lock out screen-reader users — while wasting an easy SEO slot on every image.",
+        "Alt text is accessibility: empty or generic alts lock out screen-reader users, who experience the page as \"image, image, image\" instead of a description.",
         "Real photos of your product, team or workspace are the cheapest credibility upgrade a website can buy; stock photos cannot do that job.",
         "Generic imagery makes your page interchangeable with every competitor who picked the same CDN's bestseller."
       ],
@@ -340,12 +340,12 @@
         "None of your images are stock or placeholder — your imagery actually looks like it belongs to this business. Refreshing.",
         "Every image passed: real filenames, real alt text, no stock CDNs. The visual side of this page is genuinely yours.",
         "A completely clean image library — no \"img3.jpg,\" no unsplash, no generic \"image\" alts. We didn't see that coming.",
-        "Zero stock signals, and every image carries real alt text. Screen readers and SEO both thank you.",
+        "Zero stock signals, and every image carries real alt text. Screen readers thank you.",
         "Your images look like your own: named descriptively, described properly, hosted on your turf. That's how it's done."
       ],
       "cleanWhys": [
         "Real, descriptive imagery builds credibility faster than any headline: visitors read \"this is genuinely ours\" before they read a single word.",
-        "Descriptive filenames and real alt text are also free accessibility and SEO wins — every image works twice as hard when it's genuinely described.",
+        "Descriptive filenames and real alt text are free accessibility wins — every image works twice as hard when it's genuinely described.",
         "Original visuals give visitors a concrete, memorable picture of who you are — exactly what stock photos can never provide.",
         "Alt text that describes the image keeps screen-reader users in the conversation instead of narrating \"image, image, image\" at them.",
         "An image library with no placeholder tells says the site was finished, not shipped — a small signal with outsized credibility value."

@@ -95,7 +95,7 @@ async function waitForEmail(min, timeoutMs = 2000) {
 const PAID_MARKERS = [
   'The Actual Findings',
   'Your Breakdown',
-  'The Big Picture',
+  "What's Working",
   'What To Fix First',
   'Page That Needs The Most Work',
   'Show the receipts:',
