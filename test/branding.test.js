@@ -244,7 +244,10 @@ test('missing branding -> 200 and the default report is unchanged (no white-labe
 
   assert.match(html, /<h1>A\.S\.S\. Score report<\/h1>/, 'default header');
   assert.ok(!html.includes('powered by'), 'no powered-by line');
-  assert.ok(!html.includes('<img'), 'no logo');
+  // Agency logos are absolute http(s) URLs; the ONLY <img> the default report
+  // may carry is the approved mascot analyst (relative /assets/… path).
+  assert.ok(!html.includes('<img src="http'), 'no agency logo img');
+  assert.ok(html.includes('src="/assets/donkey-dashboard.png"'), 'approved mascot analyst image present');
   assert.ok(!html.includes('class="footer"'), 'no agency footer');
   assert.ok(!html.includes('color:#'), 'no accent inline color');
   assert.ok(html.includes(DISCLAIMER), 'disclaimer still present');

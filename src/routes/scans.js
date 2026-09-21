@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import { Router } from 'express';
 import { buildCardSvg, renderCardPng } from '../card.js';
 import { isHttpUrl } from '../branding.js';
@@ -66,6 +67,16 @@ function breakdownFor(scan) {
 export function scansRouter({ db, publicBaseUrl, reportTokenSecret, reportBaseUrl }) {
   const r = Router();
   const shareBase = publicBaseUrl || process.env.PUBLIC_BASE_URL || 'https://ass-score.com';
+  // Approved Donkey System asset (owner spec 2026-09-22 v3): the dashboard/analyst
+  // cutout, served from the BACKEND so the token'd report HTML can reference it on
+  // the same origin (no CORS, no dependence on the site's public dir). Brand art
+  // only — never report content, so it is safe to serve without a token.
+  const DONKEY_DASHBOARD_PNG = fs.readFileSync(new URL('../assets/donkey-dashboard.png', import.meta.url));
+  r.get('/assets/donkey-dashboard.png', (_req, res) => {
+    res.set('Content-Type', 'image/png');
+    res.set('Cache-Control', 'public, max-age=86400');
+    res.send(DONKEY_DASHBOARD_PNG);
+  });
 
   /** True when the request carries the valid HMAC report token for this scan. */
   const hasValidToken = (req, scanId) =>
@@ -841,9 +852,15 @@ function renderHtmlReport(scan) {
   ${fixLis === '' ? '<p>No negative findings to fix this scan — nothing in this report needs fixing.</p>' : `<ol class="fix-list">${fixLis}</ol>`}`;
 
   // --- 7. FINAL VERDICT ------------------------------------------------------
+  // The approved donkey-dashboard cutout appears here as the "analyst" —
+  // the authority figure signing off on the verdict (Donkey System spec v3).
+  // /assets/donkey-dashboard.png is served by this router on the same origin.
   const finalSection = `
   <h2>Final Verdict</h2>
-  <p class="final-note" style="--band:${publicVerdict.color}">${esc(finalVerdictSentence(pubScore, publicVerdict))}</p>`;
+  <div class="final-analyst">
+    <img class="final-donkey" src="/assets/donkey-dashboard.png" alt="The A.S.S. analyst — final verdict" width="384" height="737" loading="lazy" />
+    <p class="final-note" style="--band:${publicVerdict.color}">${esc(finalVerdictSentence(pubScore, publicVerdict))}</p>
+  </div>`;
 
   // --- 8. METHODOLOGY + mandated DISCLAIMER (never cut, never reworded) ------
   const partialNote = scan.partial && scan.note ? ` Some pages could not be scanned this run: ${esc(scan.note)}.` : '';
@@ -1015,7 +1032,7 @@ function renderHtmlReport(scan) {
     .powered { color: var(--ink-faint); font-size: .8rem; margin: .35rem 0 0; }
     .powered a { color: var(--ass); }
     .head-tag { font-family: var(--font-hand); text-transform: uppercase; font-size: 1.02rem; letter-spacing: .03em; color: var(--ink-dim); margin: .45rem 0 0; }
-    .head-donkey { width: 56px; height: 56px; flex: none; background: url(https://www.ass-score.com/mascot-head-128.png) center / contain no-repeat; }
+    .head-donkey { width: 56px; height: 56px; flex: none; background: url(/assets/donkey-dashboard.png) center 15% / cover no-repeat; border-radius: 50%; background-color: rgba(255,255,255,.04); }
     .meta { color: var(--ink-faint); font-size: .84rem; margin: 0 0 1.6rem; overflow-wrap: anywhere; }
     .meta a { color: var(--ink-dim); text-decoration: none; border-bottom: 1px dotted var(--line-strong); }
     .meta a:hover { color: var(--ass); border-color: var(--ass); }
@@ -1177,6 +1194,12 @@ function renderHtmlReport(scan) {
     .fix-link:focus-visible { outline: 2px solid var(--ass); outline-offset: 2px; border-radius: 2px; }
     /* --- Closing verdict callout (band-tinted) --- */
     .final-note { margin: .4rem 0 0; padding: .95rem 1.1rem; border: 1px solid var(--line); border-left: 4px solid var(--band, #f87171); border-radius: 12px; background: rgba(255,255,255,.03); font-size: 1.03rem; line-height: 1.6; max-width: 78ch; }
+    /* --- Closing-verdict analyst: the approved donkey-dashboard cutout as the
+       authority figure next to the verdict sentence (Donkey System v3).
+       The transparent PNG floats on the dark panel — no box, no border. --- */
+    .final-analyst { display: flex; align-items: center; gap: 1.4rem; margin-top: .8rem; flex-wrap: wrap; }
+    .final-donkey { width: clamp(96px, 24vw, 168px); height: auto; flex: none; filter: drop-shadow(0 10px 22px rgba(0,0,0,.45)); }
+    .final-analyst .final-note { flex: 1 1 320px; margin: 0; }
     .footer { color: var(--ink-faint); font-size: .9rem; border-top: 1px solid var(--line); padding-top: .8rem; margin-top: 1.5rem; }
     ul, ol { margin: .4rem 0 1rem; padding-left: 1.25rem; }
     li { margin-bottom: .45rem; }

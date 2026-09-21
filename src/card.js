@@ -44,11 +44,13 @@ const DISCLAIMER_LINES = [
 ];
 
 /**
- * Donkey mascot (canonical bust, owner-locked). Embedded as a data-URI so the
- * card is fully self-contained and byte-deterministic on every host.
+ * Donkey mascot — the approved share-card cutout (Donkey System, owner spec
+ * 2026-09-22 v3: donkey-sharecard.png, 372×580, transparent bg, strong
+ * silhouette that reads at small sizes). Embedded as a data-URI so the card
+ * is fully self-contained and byte-deterministic on every host.
  * The same image is used for every band — never tinted or re-cropped.
  */
-const MASCOT_B64 = fs.readFileSync(new URL('./assets/mascot-card.png', import.meta.url)).toString('base64');
+const MASCOT_B64 = fs.readFileSync(new URL('./assets/donkey-sharecard.png', import.meta.url)).toString('base64');
 const MASCOT_HREF = `data:image/png;base64,${MASCOT_B64}`;
 
 /**
@@ -154,7 +156,11 @@ export function buildCardSvg({ score, url }) {
   const STAMP_FS = 34; const STAMP_PAD_X = 42; const STAMP_H = 64;
   const stampW = label.length * 0.6 * STAMP_FS + STAMP_PAD_X * 2;
   const STAMP_X = 84; const STAMP_Y = 700;
-  const D_X = 940; const D_Y = 70; const D_W = 620; const D_H = 729; // donkey bust
+  // Donkey cutout zone — sized to the approved donkey-sharecard.png portrait
+  // (372×580, aspect 0.6414): box 510×795 matches that aspect exactly, so the
+  // slice renders the full silhouette with no crop; right edge stays at the
+  // old 1560 (40px card margin), the paper sign overlaps the lower body.
+  const D_X = 1050; const D_Y = 66; const D_W = 510; const D_H = 795;
   const SIGN_X = 818; const SIGN_Y = 538; const SIGN_W = 396; const SIGN_H = 236; // paper sign
   const DISC_Y = 846;
 
