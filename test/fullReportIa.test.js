@@ -808,3 +808,49 @@ test('P2C.4: refresh with a #cat-<key> hash re-opens the same view — the inlin
     app.server.close();
   }
 });
+// ============================================================================
+// Phase 2D-1 — A.S.S. visual identity (owner 2026-09-17 2D-1 spec).
+// Presentation only: the paid report + Category Views adopt the A.S.S. Score
+// brand language (near-black foundation, band-semantic accents, Anton
+// wordmark, donkey motif, restrained brand moments) WITHOUT touching
+// architecture, audit text or the 2C wiring. These assertions are structural
+// (dark-theme marker + brand tokens + state accent class hooks); the visual
+// result is verified by the phase2d1 sample renders and screenshots.
+// ============================================================================
+test('P2D.1: report carries the A.S.S. dark theme marker, brand tokens and semantic state-accent hooks (clean + sloppy)', async () => {
+  const dbPath = tmpDb();
+  await insertScan(dbPath, { id: 'p2d1-clean', score: 7, breakdown: CLEAN_BREAKDOWN });
+  await insertScan(dbPath, { id: 'p2d1-sloppy', score: 89, breakdown: SLOPPY_BREAKDOWN_89 });
+  const app = startApp(dbPath);
+  try {
+    for (const [name, id] of [['clean', 'p2d1-clean'], ['sloppy', 'p2d1-sloppy']]) {
+      const html = await paidHtml(app.base, id);
+      // Dark A.S.S. foundation: root marker + native dark color-scheme.
+      assert.match(html, /<html lang="en" data-theme="dark">/, `${name}: document root carries the dark theme marker`);
+      assert.ok(html.includes('color-scheme: dark'), `${name}: dark color-scheme declared (native controls stay dark)`);
+      assert.ok(html.includes('--ass:#d4f000'), `${name}: brand lime token defined`);
+      assert.ok(html.includes('--bg:#0a0a0b'), `${name}: near-black page foundation token defined`);
+      assert.ok(html.includes('<meta name="viewport"'), `${name}: mobile viewport meta present`);
+      // Restrained brand moments (structure only).
+      assert.ok(html.includes('class="head-donkey"'), `${name}: masthead donkey motif present`);
+      assert.ok(html.includes('0 = LEAST ASS / 100 = MAX ASS'), `${name}: score scale hint (poster language)`);
+      // Band-semantic accents stay wired to the existing per-state classes.
+      assert.ok(html.includes('--cat: #4ade80') && html.includes('--cat: #facc15')
+        && html.includes('--cat: #fb923c') && html.includes('--cat: #f87171'),
+        `${name}: clean/watch/attention/priority accents defined`);
+    }
+    const sloppy = await paidHtml(app.base, 'p2d1-sloppy');
+    // Category-detail sections carry the SAME existing classification as a
+    // state-accent class (visual hook only — the theme CSS, never logic).
+    assert.ok(sloppy.includes('class="cat-detail cat-detail-priority"'), 'sloppy: PRIORITY sections carry the state-accent hook');
+    assert.ok(sloppy.includes('class="cat-detail cat-detail-needs-attention"'), 'sloppy: NEEDS ATTENTION sections carry the state-accent hook');
+    assert.ok(sloppy.includes('class="cat-detail cat-detail-watch"'), 'sloppy: WATCH sections carry the state-accent hook');
+    // The 2C view state badge class is normalized (previously emitted as
+    // "cv-state-needs attention" with a space, so it could never be styled);
+    // the category view name inherits the state accent via :has().
+    assert.ok(sloppy.includes('cv-state cv-state-needs-attention'), 'sloppy: view state badge class normalized (needs-attention)');
+    assert.ok(sloppy.includes('.cat-view:has(.cv-state-needs-attention)'), 'sloppy: view accent themed via the normalized badge class');
+  } finally {
+    app.server.close();
+  }
+});

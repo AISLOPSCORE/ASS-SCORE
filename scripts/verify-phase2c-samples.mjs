@@ -71,4 +71,18 @@ assert.equal(roasts(clean), 0, 'clean: zero roast layers');
 assert.ok(!clean.includes('How to fix it:'), 'clean: no fix zone');
 assert.ok(clean.includes('COPY — CLEAN:'), 'clean: compliments still render in What\'s Working');
 
-console.log('phase2c sample verification PASSED (clean + sloppy)');
+console.log('phase2c sample verification PASSED (clean + sloppy)');// --- Phase 2D-1 additions: A.S.S. dark identity markers -------------------
+for (const [name, html] of [['clean', clean], ['sloppy', sloppy]]) {
+  assert.ok(html.includes('data-theme="dark"'), `${name}: dark theme marker on the document root`);
+  assert.ok(html.includes('--ass:#d4f000'), `${name}: brand lime token present`);
+  assert.ok(html.includes('--bg:#0a0a0b'), `${name}: near-black foundation token present`);
+  assert.ok(html.includes('class="head-donkey"'), `${name}: masthead donkey motif present`);
+  assert.ok(html.includes('0 = LEAST ASS / 100 = MAX ASS'), `${name}: score scale hint present`);
+  assert.ok(html.includes('<meta name="viewport"'), `${name}: mobile viewport meta present`);
+  assert.ok(!html.includes('#e2e8f0') && !html.includes('#f8fafc'), `${name}: no legacy light-theme surface colors remain`);
+}
+assert.ok(sloppy.includes('class="cat-detail cat-detail-priority"'), 'sloppy: PRIORITY section accent hook');
+assert.ok(sloppy.includes('class="cat-detail cat-detail-needs-attention"'), 'sloppy: NEEDS ATTENTION section accent hook');
+assert.ok(sloppy.includes('class="cat-detail cat-detail-watch"'), 'sloppy: WATCH section accent hook');
+assert.ok(sloppy.includes('cv-state cv-state-needs-attention'), 'sloppy: view state badge class normalized');
+console.log('phase2d1 additions PASSED (dark theme + semantic accents)');

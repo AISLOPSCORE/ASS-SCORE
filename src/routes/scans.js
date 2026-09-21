@@ -690,6 +690,11 @@ function renderHtmlReport(scan) {
     const fgSub = (Number.isFinite(Number(fgScore)) && fgScore !== null) ? publicScore(fgScore) : null;
     const fgCount = Array.isArray(g.rule?.findings) ? g.rule.findings.length : 0;
     const fgState = (g.negatives.length > 0 && fgSub !== null) ? categoryClass(fgSub, fgCount) : null;
+    // Phase 2D-1: the section carries a semantic state accent class (watch /
+    // needs-attention / priority / neutral) — presentation only, same
+    // classification as the cards; never a data change. `cat-detail-empty`
+    // stays intact in its own className for the 2C clone check.
+    const fgAccent = fgState === null ? 'neutral' : (fgState === 'NEEDS ATTENTION' ? 'needs-attention' : fgState.toLowerCase());
     const items = g.negatives
       .map((x, i) => renderFinding(scan.id, g.key, label, x.finding, x.insight, i, fgState, ++findingOrdinal))
       .join('');
@@ -710,7 +715,7 @@ function renderHtmlReport(scan) {
       ? `<div><span class="rec-label">Measurements:</span> <em>${g.metrics.map((m) => esc(m.finding)).join(' · ')}</em></div>`
       : '';
     return `
-  <section class="cat-detail" id="cat-${g.key.toLowerCase()}">
+  <section class="cat-detail cat-detail-${fgAccent}" id="cat-${g.key.toLowerCase()}">
     <h3>${esc(label)}</h3>
     ${items}
     ${pairsBlock}
@@ -817,10 +822,10 @@ function renderHtmlReport(scan) {
       const sub = publicScore(rule.score);
       const nFindings = Array.isArray(rule.findings) ? rule.findings.length : 0;
       const cls = categoryClass(sub, nFindings);
-      stateLine = `\n    <span class="cv-score">${sub}<span class="cv-den">/100</span></span>\n    <span class="cv-state cv-state-${cls.toLowerCase()}">${esc(cls)}</span>\n    <span class="cv-line">${esc(CATEGORY_ONE_LINERS[key] ?? '')}</span>`;
+      stateLine = `\n    <span class="cv-score">${sub}<span class="cv-den">/100</span></span>\n    <span class="cv-state cv-state-${cls.toLowerCase().replace(/[^a-z0-9]+/g, '-')}">${esc(cls)}</span>\n    <span class="cv-line">${esc(CATEGORY_ONE_LINERS[key] ?? '')}</span>`;
     }
     const cleanLis = (g && g.cleans.length > 0)
-      ? `\n    <ul>${g.cleans.map((item) => renderCleanItem(label, item)).join('')}</ul>`
+      ? `\n    <ul class="cv-clean">\n      ${g.cleans.map((item) => renderCleanItem(label, item)).join('')}\n    </ul>`
       : '';
     return `
   <section class="cat-view" id="view-${anchor}" hidden>
@@ -893,130 +898,232 @@ function renderHtmlReport(scan) {
 </script>`;
 
   return `<!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>A.S.S. Score report</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Anton&family=Caveat:wght@500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
   <style>
-    /* Phase 2A dashboard shell — presentation only. All report text is emitted
-       by the sections below and is unchanged from the owner-approved IA. */
-    body { font-family: system-ui, sans-serif; max-width: 980px; margin: 2rem auto; padding: 0 1rem; color: #1a202c; line-height: 1.5; }
-    h1 { font-size: 1.4rem; } h2 { font-size: 1.05rem; margin-top: 2.6rem; padding-bottom: .35rem; border-bottom: 2px solid #e2e8f0; }
-    h3 { font-size: 1rem; margin-top: 1.2rem; margin-bottom: .2rem; }
-    .powered { color: #64748b; font-size: .85rem; margin-top: -.25rem; }
-    /* --- Score hero (score + verdict values UNCHANGED; band color from the shared verdict module) --- */
-    .hero { margin: 1.5rem 0 0; padding: 1.75rem 1.25rem 1.4rem; border-radius: 14px; text-align: center; border: 1px solid #e2e8f0; border-top: 6px solid var(--band, #64748b); background: #f8fafc; }
-    .hero .score { font-size: 3.4rem; font-weight: 800; letter-spacing: -.01em; margin: 0; }
-    .hero .verdict { display: inline-block; font-size: 1.7rem; font-weight: 800; letter-spacing: .08em; margin: .45rem 0 .2rem; padding: .22rem 1.1rem; border-radius: 999px; }
-    .hero .b-catastrophic { color: #b91c1c; background: #fef2f2; }
-    .hero .b-extreme, .hero .b-very { color: #c2410c; background: #fff7ed; }
-    .hero .b-mild { color: #a16207; background: #fefce8; }
-    .hero .b-clean { color: #4d7c0f; background: #f7fee7; }
-    .hero .b-cleanest { color: #15803d; background: #f0fdf4; }
-    .hero .pages { color: #64748b; font-size: .85rem; margin: .5rem 0 0; }
+/* ================================================================
+       A.S.S. Score — Full Report visual identity (Phase 2D-1).
+       CSS/UI ONLY: every class/id the dashboard, finding cards and
+       Category Views already use is preserved and restyled; no audit
+       text, scoring, category structure or 2C navigation is changed.
+       Design language mirrors the A.S.S. Score site + share card:
+       near-black foundation, Anton display / Caveat annotation / Inter
+       body, band colors (green -> amber -> red, HIGHER = WORSE) used
+       semantically for score, states and accents, and the brand lime
+       (#d4f000) reserved for interaction (hover/focus) and the
+       wordmark. No generic AI glow, no gradients-for-decoration.
+       ================================================================ */
+    :root {
+      color-scheme: dark;
+      --ass:#d4f000;             /* A.S.S. brand lime — wordmark + interaction */
+      --bg:#0a0a0b;              /* page foundation (near-black) */
+      --surface:#151517;         /* cards */
+      --surface-2:#1d1d21;       /* raised / hover */
+      --line:rgba(255,255,255,.09);
+      --line-strong:rgba(255,255,255,.17);
+      --ink:#f4f4f5;             /* primary text */
+      --ink-dim:#b8b8c0;         /* secondary */
+      --ink-faint:#8b8b95;       /* captions/meta */
+      --font-display:"Anton","Impact","Arial Black",sans-serif;
+      --font-hand:"Caveat","Comic Sans MS",cursive;
+      --font-sans:"Inter",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+      --band:#f87171;            /* overridden inline per scan */
+    }
+    * { box-sizing: border-box; }
+    html { -webkit-text-size-adjust: 100%; }
+    body { font-family: var(--font-sans); background: var(--bg); color: var(--ink); max-width: 1024px; margin: 0 auto; padding: 2rem 1.25rem 4rem; line-height: 1.6; font-size: .95rem; }
+    /* --- Masthead (wordmark h1 kept verbatim for the branding contract;
+       styled as the Anton wordmark, with the donkey as the brand moment) --- */
+    .report-head { border-bottom: 1px solid var(--line); padding-bottom: 1.1rem; margin-bottom: .9rem; }
+    .head-row { display: flex; align-items: center; justify-content: space-between; gap: 1.25rem; }
+    .head-text { min-width: 0; }
+    h1 { font-family: var(--font-display); font-size: clamp(1.45rem, 4vw, 2rem); text-transform: uppercase; letter-spacing: .03em; color: var(--ass); line-height: 1.05; margin: 0; font-weight: 400; }
+    .powered { color: var(--ink-faint); font-size: .8rem; margin: .35rem 0 0; }
+    .powered a { color: var(--ass); }
+    .head-tag { font-family: var(--font-hand); text-transform: uppercase; font-size: 1.02rem; letter-spacing: .03em; color: var(--ink-dim); margin: .45rem 0 0; }
+    .head-donkey { width: 56px; height: 56px; flex: none; background: url(https://www.ass-score.com/mascot-head-128.png) center / contain no-repeat; }
+    .meta { color: var(--ink-faint); font-size: .84rem; margin: 0 0 1.5rem; overflow-wrap: anywhere; }
+    .meta a { color: var(--ink-dim); text-decoration: none; border-bottom: 1px dotted var(--line-strong); }
+    .meta a:hover { color: var(--ass); border-color: var(--ass); }
+    /* --- Score hero: big band-colored Anton score (poster language),
+       solid band pill verdict — NEVER glowing, green=good / red=ass (0 best,
+       100 worst). --- */
+    .hero { margin: 0 0 2rem; padding: 2.4rem 1.4rem 1.5rem; border-radius: 18px; text-align: center; border: 1px solid var(--line-strong); border-top: 5px solid var(--band, #f87171); background: var(--surface); }
+    .hero .score { font-family: var(--font-display); font-size: clamp(2.6rem, 9vw, 4.9rem); text-transform: uppercase; letter-spacing: .01em; line-height: 1; margin: 0; color: var(--band, var(--ink)); font-weight: 400; }
+    .hero .verdict { display: inline-block; font-family: var(--font-display); font-size: clamp(1.1rem, 3vw, 1.5rem); font-weight: 400; text-transform: uppercase; letter-spacing: .08em; margin: 1rem 0 .3rem; padding: .4rem 1.3rem; border-radius: 999px; }
+    .hero .b-catastrophic { color: #150a0a; background: #f87171; }
+    .hero .b-extreme { color: #150a0a; background: #f97316; }
+    .hero .b-very { color: #150a0a; background: #fb923c; }
+    .hero .b-mild { color: #150a0a; background: #facc15; }
+    .hero .b-clean { color: #0f1103; background: #a3e635; }
+    .hero .b-cleanest { color: #07110a; background: #4ade80; }
+    .hero .pages { color: var(--ink-faint); font-size: .85rem; margin: .75rem 0 0; }
+    .hero-scale { color: var(--ink-faint); font-size: .72rem; letter-spacing: .14em; text-transform: uppercase; margin: 1.1rem 0 0; }
     .score { font-size: 2.6rem; font-weight: 700; }
     .verdict { font-size: 1.15rem; font-weight: 700; margin: .25rem 0 .75rem; }
     .b-catastrophic { color: #f87171; } .b-extreme { color: #f97316; } .b-very { color: #fb923c; }
     .b-mild { color: #facc15; } .b-clean { color: #a3e635; } .b-cleanest { color: #4ade80; }
-    .roast { font-size: 1.15rem; font-weight: 600; margin: .75rem 0 .25rem; }
-    .hint { color: #64748b; font-size: .85rem; margin: .25rem 0 .75rem; }
-    /* --- Category cards: clickable <a>, state-colored, stack on mobile --- */
-    .cat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(215px, 1fr)); gap: .75rem; margin: .75rem 0 1rem; }
-    .cat-card { display: block; text-decoration: none; color: inherit; border: 1px solid var(--cat-border, #cbd5e1); border-left: 5px solid var(--cat, #64748b); border-radius: 10px; padding: .7rem .85rem; background: var(--cat-bg, #f8fafc); transition: transform .06s ease, box-shadow .12s ease, border-color .12s ease; }
-    .cat-card:hover { box-shadow: 0 4px 14px rgba(15, 23, 42, .14); transform: translateY(-1px); border-color: var(--cat, #64748b); }
-    .cat-card:focus-visible { outline: 3px solid var(--cat, #64748b); outline-offset: 2px; }
-    .cat-clean { --cat: #16a34a; --cat-bg: #f0fdf4; --cat-border: #bbf7d0; }
-    .cat-watch { --cat: #ca8a04; --cat-bg: #fefce8; --cat-border: #fde047; }
-    .cat-attention { --cat: #ea580c; --cat-bg: #fff7ed; --cat-border: #fed7aa; }
-    .cat-priority { --cat: #dc2626; --cat-bg: #fef2f2; --cat-border: #fecaca; }
-    .cat-skipped { --cat: #64748b; --cat-bg: #f8fafc; --cat-border: #e2e8f0; }
+    .roast { font-family: var(--font-hand); font-size: 1.32rem; line-height: 1.45; color: var(--ink); margin: .6rem 0 .3rem; }
+    .hint { color: var(--ink-faint); font-size: .85rem; margin: -.35rem 0 1rem; }
+    /* --- Section headings: Anton uppercase editorial rules --- */
+    h2 { font-family: var(--font-display); font-size: 1.16rem; text-transform: uppercase; letter-spacing: .05em; margin: 3rem 0 .9rem; padding-bottom: .5rem; border-bottom: 1px solid var(--line); color: var(--ink); font-weight: 400; }
+    h3 { font-family: var(--font-sans); font-weight: 800; font-size: .9rem; text-transform: uppercase; letter-spacing: .07em; color: var(--ink); margin: 1.4rem 0 .5rem; }
+    /* --- Category cards: clickable <a>, state-colored left edge + state
+       pill (solid band + dark ink, same language as the hero verdict); the
+       accent has a job: it IS the severity. Hover uses the state color --- */
+    .cat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(218px, 1fr)); gap: .8rem; margin: 1.1rem 0 1rem; }
+    .cat-card { display: block; text-decoration: none; color: inherit; border: 1px solid var(--line); border-left: 4px solid var(--cat, #8b8b95); border-radius: 14px; padding: .85rem .95rem .8rem; background: var(--surface); transition: transform .08s ease, border-color .15s ease, background-color .15s ease; }
+    .cat-card:hover { background: var(--surface-2); transform: translateY(-1px); border-color: var(--cat, #8b8b95); }
+    .cat-card:focus-visible { outline: 2px solid var(--cat, #8b8b95); outline-offset: 2px; }
+    .cat-clean { --cat: #4ade80; }
+    .cat-watch { --cat: #facc15; }
+    .cat-attention { --cat: #fb923c; }
+    .cat-priority { --cat: #f87171; }
+    .cat-skipped { --cat: #8b8b95; }
     .cat-top { display: flex; justify-content: space-between; align-items: baseline; gap: .5rem; }
-    .cat-name { font-weight: 800; font-size: 1rem; letter-spacing: .04em; }
-    .cat-go { color: var(--cat, #64748b); font-size: .75rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
+    .cat-name { font-weight: 800; font-size: .95rem; letter-spacing: .03em; color: var(--ink); }
+    .cat-go { color: var(--cat, #8b8b95); font-size: .69rem; font-weight: 800; text-transform: uppercase; letter-spacing: .09em; }
     .cat-card:hover .cat-go, .cat-card:focus-visible .cat-go { text-decoration: underline; }
-    .cat-mid { display: flex; align-items: baseline; justify-content: space-between; gap: .5rem; margin: .45rem 0 .3rem; }
-    .cat-score { font-size: 1.7rem; font-weight: 800; color: var(--cat, #334155); }
-    .cat-den { font-size: .8rem; font-weight: 600; color: #94a3b8; }
-    .cat-state { font-size: .7rem; font-weight: 800; letter-spacing: .05em; padding: .16rem .5rem; border-radius: 999px; color: var(--cat, #475569); background: #ffffff; border: 1px solid var(--cat-border, #cbd5e1); }
-    .cat-line { display: block; font-size: .85rem; color: #475569; margin-top: .35rem; }
-    /* --- Category detail sections (the cards' in-page targets) --- */
-    .cat-detail { border: 1px solid #e2e8f0; border-radius: 10px; padding: .6rem 1rem 1rem; margin: 1.25rem 0; background: #fcfcfd; scroll-margin-top: 1rem; }
-    .cat-detail-empty { background: #f8fafc; border-style: dashed; }
-    .cat-empty { color: #64748b; font-size: .9rem; margin: .3rem 0 .5rem; }
-    /* --- Phase 2B: diagnostic finding cards (one clearly separated card per
-       negative finding; four labeled zones: ROAST / WHY / FIX / RECEIPTS).
-       Professional SaaS-audit + dashboard styling, restrained accents. The
-       label text is Phase 1 verbatim; display case is applied here. --- */
-    .finding-card { border: 1px solid #e2e8f0; border-left: 4px solid #7c3aed; border-radius: 12px; padding: 1.05rem 1.15rem 1rem; margin: 1rem 0; background: #ffffff; box-shadow: 0 1px 3px rgba(15, 23, 42, .05); overflow-wrap: break-word; word-break: break-word; }
-    .finding-card + .finding-card { margin-top: 1.35rem; }
-    .fc-head { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin-bottom: .7rem; }
-    .fc-count { font-size: .74rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: #94a3b8; }
-    .fc-cat { font-size: .74rem; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: #475569; background: #f1f5f9; border: 1px solid #e2e8f0; padding: .14rem .55rem; border-radius: 999px; }
-    .fc-state { font-size: .68rem; font-weight: 800; letter-spacing: .05em; padding: .14rem .5rem; border-radius: 999px; color: #475569; background: #ffffff; border: 1px solid #cbd5e1; }
-    .fc-state-watch { color: #a16207; border-color: #fde047; background: #fefce8; }
-    .fc-state-needs-attention { color: #c2410c; border-color: #fed7aa; background: #fff7ed; }
-    .fc-state-priority { color: #b91c1c; border-color: #fecaca; background: #fef2f2; }
-    .fc-body { display: flex; flex-direction: column; gap: .8rem; }
-    .fc-roast { max-width: 72ch; }
-    .fc-label { display: block; font-size: .68rem; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; color: #94a3b8; margin-bottom: .28rem; }
-    .fc-roast .ins-roast { font-size: 1.22rem; font-weight: 700; line-height: 1.35; color: #111827; margin: 0; font-style: normal; padding-left: .75rem; border-left: 3px solid #7c3aed; }
-    .fc-roast .rec-note { margin: 0; font-style: italic; color: #94a3b8; font-size: .9rem; }
-    .fc-why, .fc-fix { max-width: 72ch; border-top: 1px solid #f1f5f9; padding-top: .75rem; line-height: 1.6; color: #334155; font-size: .95rem; }
-    .fc-why .ins-why, .fc-fix .ins-fix { display: block; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; font-size: .7rem; color: #64748b; margin: 0 0 .2rem; }
-    .fc-fix { border-left: 3px solid #16a34a; padding-left: .85rem; background: #fbfdfb; }
-    .fc-receipts { margin-top: .15rem; border-top: 1px dashed #e2e8f0; padding-top: .7rem; }
-    .fc-receipts summary { cursor: pointer; color: #64748b; font-weight: 700; font-size: .82rem; list-style: none; user-select: none; }
+    .cat-mid { display: flex; align-items: baseline; justify-content: space-between; gap: .5rem; margin: .5rem 0 .35rem; }
+    .cat-score { font-family: var(--font-display); font-weight: 400; font-size: 1.6rem; letter-spacing: .01em; color: var(--cat, var(--ink)); }
+    .cat-den { font-size: .75rem; font-weight: 600; color: var(--ink-faint); }
+    .cat-state { font-size: .65rem; font-weight: 800; letter-spacing: .07em; padding: .18rem .55rem; border-radius: 999px; color: #0a0a0b; background: var(--cat, #8b8b95); }
+    .cat-line { display: block; font-size: .82rem; color: var(--ink-dim); margin-top: .4rem; line-height: 1.45; }
+    /* --- Category detail sections (card targets) + state accent edges --- */
+    .cat-detail { border: 1px solid var(--line); border-radius: 16px; padding: .9rem 1.15rem 1.1rem; margin: 1.4rem 0; background: var(--surface); scroll-margin-top: 1rem; }
+    .cat-detail-empty { background: rgba(255,255,255,.015); border-style: dashed; }
+    .cat-detail-watch { border-left: 3px solid #facc15; }
+    .cat-detail-needs-attention { border-left: 3px solid #fb923c; }
+    .cat-detail-priority { border-left: 3px solid #f87171; }
+    .cat-detail-neutral { border-left: 3px solid #8b8b95; }
+    .cat-empty { color: var(--ink-faint); font-size: .9rem; margin: .4rem 0 .5rem; }
+    /* --- Phase 2B finding cards: one card per negative finding, four
+       labeled zones. Left accent follows the category severity (semantic),
+       the fix zone uses the brand lime (action), receipts read like a
+       terminal transcript. Labels keep Phase 1 verbatim; case is CSS. --- */
+    .finding-card { border: 1px solid var(--line); border-left: 3px solid var(--fc, #f87171); border-radius: 14px; padding: 1.1rem 1.2rem 1rem; margin: 1.1rem 0; background: var(--surface); overflow-wrap: break-word; word-break: break-word; }
+    .finding-card + .finding-card { margin-top: 1.4rem; }
+    .cat-detail-watch .finding-card { --fc: #facc15; }
+    .cat-detail-needs-attention .finding-card { --fc: #fb923c; }
+    .cat-detail-priority .finding-card { --fc: #f87171; }
+    .fc-head { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin-bottom: .8rem; }
+    .fc-count { font-size: .7rem; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; color: var(--ink-faint); }
+    .fc-cat { font-size: .7rem; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: var(--ink-dim); background: rgba(255,255,255,.06); border: 1px solid var(--line); padding: .16rem .6rem; border-radius: 999px; }
+    .fc-state { font-size: .64rem; font-weight: 800; letter-spacing: .07em; padding: .16rem .55rem; border-radius: 999px; color: #0a0a0b; background: #8b8b95; }
+    .fc-state-watch { background: #facc15; }
+    .fc-state-needs-attention { background: #fb923c; }
+    .fc-state-priority { background: #f87171; }
+    .fc-body { display: flex; flex-direction: column; gap: .85rem; }
+    .fc-roast { max-width: 78ch; }
+    .fc-label { display: block; font-size: .66rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-faint); margin-bottom: .3rem; }
+    .fc-roast .ins-roast { font-size: 1.16rem; font-weight: 700; line-height: 1.42; color: var(--ink); margin: 0; font-style: normal; padding-left: .8rem; border-left: 3px solid var(--fc, #f87171); }
+    .fc-roast .rec-note { margin: 0; font-style: italic; color: var(--ink-faint); font-size: .9rem; }
+    .fc-why, .fc-fix { max-width: 78ch; border-top: 1px solid var(--line); padding-top: .85rem; line-height: 1.65; color: var(--ink-dim); font-size: .93rem; }
+    .fc-why .ins-why, .fc-fix .ins-fix { display: block; font-weight: 800; text-transform: uppercase; letter-spacing: .07em; font-size: .66rem; color: var(--ink-faint); margin: 0 0 .25rem; }
+    .fc-fix { border-left: 3px solid var(--ass); padding-left: .85rem; background: rgba(212,240,0,.03); }
+    .fc-receipts { margin-top: .2rem; border-top: 1px dashed var(--line); padding-top: .8rem; }
+    .fc-receipts summary { cursor: pointer; color: var(--ink-dim); font-weight: 700; font-size: .82rem; list-style: none; user-select: none; }
     .fc-receipts summary::-webkit-details-marker { display: none; }
-    .fc-receipts summary::before { content: "▸  "; color: #94a3b8; }
-    .fc-receipts[open] summary::before { content: "▾  "; color: #94a3b8; }
-    .fc-receipts ul { margin: .5rem 0 0; padding-left: 1.15rem; color: #334155; font-size: .9rem; }
-    .fc-receipts li { margin-bottom: .35rem; }
-    .fc-receipts .rec-label { color: #64748b; }
-    .footer { color: #64748b; font-size: .9rem; border-top: 1px solid #e2e8f0; padding-top: .75rem; margin-top: 1.5rem; }
-    ul, ol { margin: .25rem 0 .75rem; padding-left: 1.1rem; }
+    .fc-receipts summary::before { content: "▸  "; color: var(--ass); }
+    .fc-receipts[open] summary::before { content: "▾  "; color: var(--ass); }
+    .fc-receipts ul { margin: .6rem 0 0; padding: .7rem .9rem; list-style: none; background: #0d0d0f; border: 1px solid var(--line); border-radius: 10px; }
+    .fc-receipts li { margin-bottom: .35rem; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .84rem; color: #c9c9d1; overflow-wrap: anywhere; }
+    .fc-receipts .rec-label { color: var(--ink-faint); font-family: var(--font-sans); }
+    .footer { color: var(--ink-faint); font-size: .9rem; border-top: 1px solid var(--line); padding-top: .8rem; margin-top: 1.5rem; }
+    ul, ol { margin: .4rem 0 1rem; padding-left: 1.25rem; }
     li { margin-bottom: .45rem; }
-    .ins-roast { font-style: italic; color: #7c3aed; font-weight: 600; margin: .25rem 0 .25rem; font-size: .92rem; }
-    .ins-why, .ins-fix { font-weight: 700; color: #475569; margin-right: .25rem; }
-    .rec-label { font-weight: 700; color: #64748b; font-size: .8rem; }
-    .rec-note { color: #94a3b8; font-size: .85rem; font-style: italic; }
-    .disclaimer { color: #64748b; font-size: .8rem; border-top: 1px solid #e2e8f0; padding-top: .75rem; margin-top: 1.5rem; }
-    /* --- Phase 2C: focused Category Views (hash-driven, single document) ---
-       The dashboard stays fully present; each view is a hidden, layered section
-       shown only while its #cat-<key> hash is active. The hidden attribute is
-       honored even under any author display rule (belt-and-suspenders for the
-       no-JS default, which must show the dashboard). Views reuse the SAME
-       existing audit markup — the .cat-view-body is populated by cloning the
-       dashboard's own cat-<key> section, so no audit text is ever
-       regenerated. */
+    /* The clean-compliments list (the good news) gets the green accent;
+       scoped to direct section children so receipts and view clones stay
+       neutral. */
+    #dashboard > h2 + ul > li { border-left: 3px solid #4ade80; background: rgba(74,222,128,.05); border-radius: 0 10px 10px 0; padding: .45rem .85rem; margin: .6rem 0; }
+    .ins-roast { font-style: italic; color: var(--ink); font-weight: 600; margin: .3rem 0; font-size: .95rem; }
+    .ins-why, .ins-fix { font-weight: 700; color: var(--ink-dim); margin-right: .25rem; }
+    .rec-label { font-weight: 700; color: var(--ink-faint); font-size: .78rem; }
+    .rec-note { color: var(--ink-faint); font-size: .87rem; font-style: italic; }
+    .disclaimer { color: var(--ink-faint); font-size: .78rem; border-top: 1px solid var(--line); padding-top: .8rem; margin-top: 2rem; line-height: 1.6; }
+    /* --- Phase 2C focused Category Views (hash-driven, single document).
+       Chrome keeps the same classes the inline script selects on; the
+       per-category accent is themed via :has() on the existing cv-state
+       badge (pure CSS, no markup change, no data change). --- */
     #dashboard[hidden], .cat-view[hidden] { display: none !important; }
-    .cat-view { max-width: 100%; }
-    .cat-back { display: inline-block; text-decoration: none; font-weight: 700; color: #334155; border: 1px solid #cbd5e1; border-radius: 8px; padding: .5rem .9rem; margin: 0 0 1.25rem; background: #f8fafc; }
-    .cat-back:hover { border-color: #94a3b8; background: #eef2f7; }
-    .cat-view-name { font-size: 1.3rem; margin: 0 0 .4rem; border: none; padding: 0; }
-    .cat-view-state { display: flex; flex-wrap: wrap; align-items: baseline; gap: .6rem; margin: .1rem 0 1rem; }
-    .cv-none { color: #64748b; font-size: .92rem; }
-    .cv-score { font-size: 1.5rem; font-weight: 800; color: #334155; }
-    .cv-den { font-size: .85rem; font-weight: 600; color: #94a3b8; }
-    .cv-state { font-size: .72rem; font-weight: 800; letter-spacing: .05em; padding: .16rem .55rem; border-radius: 999px; border: 1px solid #cbd5e1; background: #fff; }
-    .cv-state-clean { color: #4d7c0f; border-color: #bbf7d0; background: #f7fee7; }
-    .cv-state-watch { color: #a16207; border-color: #fde047; background: #fefce8; }
-    .cv-state-needs-attention { color: #c2410c; border-color: #fed7aa; background: #fff7ed; }
-    .cv-state-priority { color: #b91c1c; border-color: #fecaca; background: #fef2f2; }
-    .cv-line { color: #475569; font-size: .92rem; }
+    .cat-view { max-width: 100%; padding-top: .4rem; }
+    .cat-back { display: inline-flex; align-items: center; gap: .45rem; text-decoration: none; font-weight: 700; font-size: .85rem; color: var(--ink); border: 1px solid var(--line-strong); border-radius: 999px; padding: .55rem 1.05rem; margin: 0 0 1.5rem; background: var(--surface); transition: border-color .15s ease, color .15s ease; }
+    .cat-back:hover, .cat-back:focus-visible { border-color: var(--ass); color: var(--ass); }
+    .cat-back:focus-visible { outline: 2px solid var(--ass); outline-offset: 2px; }
+    .cat-view-name { font-family: var(--font-display); font-size: 1.55rem; text-transform: uppercase; letter-spacing: .03em; margin: 0 0 .5rem; border: none; padding: 0 0 0 .65rem; border-left: 4px solid var(--view-accent, #8b8b95); color: var(--ink); font-weight: 400; }
+    .cat-view:has(.cv-state-clean) { --view-accent: #4ade80; }
+    .cat-view:has(.cv-state-watch) { --view-accent: #facc15; }
+    .cat-view:has(.cv-state-needs-attention) { --view-accent: #fb923c; }
+    .cat-view:has(.cv-state-priority) { --view-accent: #f87171; }
+    .cat-view-state { display: flex; flex-wrap: wrap; align-items: baseline; gap: .6rem; margin: .1rem 0 1.1rem; }
+    .cv-none { color: var(--ink-faint); font-size: .92rem; }
+    .cv-score { font-family: var(--font-display); font-weight: 400; font-size: 1.5rem; letter-spacing: .01em; color: var(--ink); }
+    .cv-den { font-size: .85rem; font-weight: 600; color: var(--ink-faint); }
+    .cv-state { font-size: .7rem; font-weight: 800; letter-spacing: .06em; padding: .18rem .6rem; border-radius: 999px; color: #0a0a0b; background: #8b8b95; }
+    .cv-state-clean { background: #4ade80; }
+    .cv-state-watch { background: #facc15; }
+    .cv-state-needs-attention { background: #fb923c; }
+    .cv-state-priority { background: #f87171; }
+    .cv-line { color: var(--ink-dim); font-size: .92rem; }
+    .cv-clean { list-style: none; padding: 0; margin: .3rem 0 1.1rem; }
+    .cv-clean li { border-left: 3px solid #4ade80; background: rgba(74,222,128,.05); border-radius: 0 10px 10px 0; padding: .45rem .85rem; margin: .5rem 0; }
     .cat-view-body .cat-detail { border: none; border-radius: 0; padding: 0; margin: 0; background: transparent; }
     .cat-view-body .cat-detail h3 { display: none; }
+    /* --- Responsive: no horizontal overflow, nav intact at 390px --- */
+    @media (max-width: 640px) {
+      body { padding: 1.2rem .9rem 3rem; }
+      .head-donkey { width: 44px; height: 44px; }
+      .hero { padding: 1.7rem .9rem 1.2rem; }
+      .cat-grid { grid-template-columns: 1fr; }
+      .fc-why, .fc-fix, .fc-roast { max-width: none; }
+      .meta { font-size: .8rem; }
+    }
+    /* --- Print: receipts and the whole report stay legible on paper --- */
+    @media print {
+      body { background: #fff; color: #111; max-width: none; }
+      .report-head { border-color: #d4d4d8; }
+      .head-donkey { display: none; }
+      h1 { color: #111; }
+      .hero { background: #fafafa; border-color: #d4d4d8; }
+      .hero .score { color: #111; }
+      .cat-card, .finding-card, .cat-detail { background: #fff; border-color: #d4d4d8; }
+      .fc-receipts ul { background: #f6f6f6; border-color: #d4d4d8; }
+      .cat-line, .fc-why, .fc-fix, .cv-line, .meta, .hint, .powered, .head-tag { color: #333; }
+      .fc-roast .ins-roast { color: #111; }
+      .fc-receipts li { color: #1a1a1e; }
+      .disclaimer { color: #555; border-color: #d4d4d8; }
+      a { color: #000; }
+    }
   </style>
 </head>
 <body>
-  ${logo}
   <div id="dashboard">
-  ${header}
-  <p><a href="${esc(scan.url)}">${esc(scan.url)}</a> · scanned ${esc(humanScanDate(scan.created_at))}</p>
+  <header class="report-head">
+    ${logo}
+    <div class="head-row">
+      <div class="head-text">
+      ${header}
+      <p class="head-tag">Be brutally honest about your website.</p>
+      </div>
+      <div class="head-donkey" role="img" aria-label="A.S.S. Score donkey mascot">
+    </div>
+    </div>
+  </header>
+  <p class="meta">
+    <a href="${esc(scan.url)}">${esc(scan.url)}</a> · scanned ${esc(humanScanDate(scan.created_at))}
+  </p>
 
   <section class="hero" style="--band:${publicVerdict.color}">
     <p class="score"${scoreAccent}>A.S.S. Score: ${pubScore} / 100</p>
     ${verdictLine}
     ${pagesLine}
+    <p class="hero-scale">0 = LEAST ASS / 100 = MAX ASS</p>
   </section>
 
   ${verdictSection}
