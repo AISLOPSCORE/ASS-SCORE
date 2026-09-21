@@ -339,23 +339,46 @@ function insightFor(scanId, key, finding, insight, index) {
  * assertion (branding hostile test) rejects. Every classed element here is
  * followed by escaped text, never by a tag.
  */
-function renderFinding(scanId, categoryKey, categoryLabel, finding, insight, index) {
-  const title = `Finding ${index + 1} · ${categoryLabel}`;
+function renderFinding(scanId, categoryKey, categoryLabel, finding, insight, index, state = null, ordinal = index + 1) {
   const ins = insightFor(scanId, categoryKey, finding, insight, index);
   const roast = ins ? ins.roast : finding;
   const why = ins ? ins.why : '';
   const fix = ins ? ins.fix : '';
-  const layers = ins
-    ? `<p class="ins-roast">${esc(roast)}</p>
-    <div><span class="ins-why">Why it matters:</span> ${esc(why)}</div>
-    <div><span class="ins-fix">How to fix it:</span> ${esc(fix)}</div>`
+  // Phase 2B diagnostic card — each negative finding is ONE clearly separated
+  // card with four labeled zones: THE ROAST / WHY IT MATTERS / HOW TO FIX IT /
+  // RECEIPTS. The label TEXT stays exactly as Phase 1 emitted it (so every
+  // existing assertion still matches); the display case is applied via CSS
+  // text-transform. The severity badge comes from the SAME existing category
+  // classification (categoryClass on the stored sub-score) — never invented.
+  const stateBadge = state && state !== 'CLEAN'
+    ? `<span class="fc-state fc-state-${String(state).toLowerCase().replace(/[^a-z0-9]+/g, '-')}">${esc(state)}</span>`
+    : '';
+  const roastBlock = ins
+    ? `<p class="ins-roast">${esc(roast)}</p>`
     : '<p class="rec-note">No deeper insight was stored for this finding — the receipts below are the evidence.</p>';
-  return `
-  <div>
-    <h3>${esc(title)}</h3>
-    ${layers}
-    <div><span class="rec-label">Show the receipts:</span>
-      <ul><li><strong>${esc(finding)}</strong></li></ul>
+  const whyBlock = why
+    ? `<div class="fc-why">\n      <span class="ins-why">Why it matters:</span> ${esc(why)}\n    </div>`
+    : '';
+  const fixBlock = fix
+    ? `<div class="fc-fix">\n      <span class="ins-fix">How to fix it:</span> ${esc(fix)}\n    </div>`
+    : '';
+  return `\n  <div class="finding-card">
+    <div class="fc-head">
+      <span class="fc-count">Finding ${ordinal}</span>
+      <span class="fc-cat">${esc(categoryLabel)}</span>
+      ${stateBadge}
+    </div>
+    <div class="fc-body">
+      <div class="fc-roast">
+        <span class="fc-label fc-label-roast">The Roast</span>
+        ${roastBlock}
+      </div>
+      ${whyBlock}
+      ${fixBlock}
+      <details class="fc-receipts">
+        <summary><span class="rec-label">Show the receipts:</span></summary>
+        <ul><li><strong>${esc(finding)}</strong></li></ul>
+      </details>
     </div>
   </div>`;
 }
@@ -641,6 +664,10 @@ function renderHtmlReport(scan) {
   // (the breakdown cards link to it). Categories without negative findings or
   // metric measurements render a NEUTRAL placeholder using the same wording
   // their breakdown card already shows — never a finding, never a count.
+  // Phase 2B: global finding ordinal across the whole report ("Finding 1, 2,
+  // 3…" in owner spec), independent of the per-category insight-seeding index
+  // which is deliberately left untouched for byte-determinism of derived copy.
+  let findingOrdinal = 0;
   const findingGroups = classified.map((g) => {
     const label = CATEGORY_LABELS[g.key] ?? g.key;
     if (!(g.negatives.length > 0 || g.metrics.length > 0)) {
@@ -653,8 +680,16 @@ function renderHtmlReport(scan) {
     <p class="cat-empty">${note}</p>
   </section>`;
     }
+    // Phase 2B: each negative finding's severity badge comes from the SAME
+    // existing category classification (categoryClass on the stored sub-score
+    // + finding count) — never a new/reinterpreted severity. CLEAN is never
+    // badgeable here: a category with negative findings is never CLEAN.
+    const fgScore = g.rule?.score;
+    const fgSub = (Number.isFinite(Number(fgScore)) && fgScore !== null) ? publicScore(fgScore) : null;
+    const fgCount = Array.isArray(g.rule?.findings) ? g.rule.findings.length : 0;
+    const fgState = (g.negatives.length > 0 && fgSub !== null) ? categoryClass(fgSub, fgCount) : null;
     const items = g.negatives
-      .map((x, i) => renderFinding(scan.id, g.key, label, x.finding, x.insight, i))
+      .map((x, i) => renderFinding(scan.id, g.key, label, x.finding, x.insight, i, fgState, ++findingOrdinal))
       .join('');
     // Cross-page duplication pairs -> REPETITION receipts (real evidence,
     // replaces the old "Templated Content" section).
@@ -803,6 +838,35 @@ function renderHtmlReport(scan) {
     .cat-detail { border: 1px solid #e2e8f0; border-radius: 10px; padding: .6rem 1rem 1rem; margin: 1.25rem 0; background: #fcfcfd; scroll-margin-top: 1rem; }
     .cat-detail-empty { background: #f8fafc; border-style: dashed; }
     .cat-empty { color: #64748b; font-size: .9rem; margin: .3rem 0 .5rem; }
+    /* --- Phase 2B: diagnostic finding cards (one clearly separated card per
+       negative finding; four labeled zones: ROAST / WHY / FIX / RECEIPTS).
+       Professional SaaS-audit + dashboard styling, restrained accents. The
+       label text is Phase 1 verbatim; display case is applied here. --- */
+    .finding-card { border: 1px solid #e2e8f0; border-left: 4px solid #7c3aed; border-radius: 12px; padding: 1.05rem 1.15rem 1rem; margin: 1rem 0; background: #ffffff; box-shadow: 0 1px 3px rgba(15, 23, 42, .05); overflow-wrap: break-word; word-break: break-word; }
+    .finding-card + .finding-card { margin-top: 1.35rem; }
+    .fc-head { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin-bottom: .7rem; }
+    .fc-count { font-size: .74rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: #94a3b8; }
+    .fc-cat { font-size: .74rem; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: #475569; background: #f1f5f9; border: 1px solid #e2e8f0; padding: .14rem .55rem; border-radius: 999px; }
+    .fc-state { font-size: .68rem; font-weight: 800; letter-spacing: .05em; padding: .14rem .5rem; border-radius: 999px; color: #475569; background: #ffffff; border: 1px solid #cbd5e1; }
+    .fc-state-watch { color: #a16207; border-color: #fde047; background: #fefce8; }
+    .fc-state-needs-attention { color: #c2410c; border-color: #fed7aa; background: #fff7ed; }
+    .fc-state-priority { color: #b91c1c; border-color: #fecaca; background: #fef2f2; }
+    .fc-body { display: flex; flex-direction: column; gap: .8rem; }
+    .fc-roast { max-width: 72ch; }
+    .fc-label { display: block; font-size: .68rem; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; color: #94a3b8; margin-bottom: .28rem; }
+    .fc-roast .ins-roast { font-size: 1.22rem; font-weight: 700; line-height: 1.35; color: #111827; margin: 0; font-style: normal; padding-left: .75rem; border-left: 3px solid #7c3aed; }
+    .fc-roast .rec-note { margin: 0; font-style: italic; color: #94a3b8; font-size: .9rem; }
+    .fc-why, .fc-fix { max-width: 72ch; border-top: 1px solid #f1f5f9; padding-top: .75rem; line-height: 1.6; color: #334155; font-size: .95rem; }
+    .fc-why .ins-why, .fc-fix .ins-fix { display: block; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; font-size: .7rem; color: #64748b; margin: 0 0 .2rem; }
+    .fc-fix { border-left: 3px solid #16a34a; padding-left: .85rem; background: #fbfdfb; }
+    .fc-receipts { margin-top: .15rem; border-top: 1px dashed #e2e8f0; padding-top: .7rem; }
+    .fc-receipts summary { cursor: pointer; color: #64748b; font-weight: 700; font-size: .82rem; list-style: none; user-select: none; }
+    .fc-receipts summary::-webkit-details-marker { display: none; }
+    .fc-receipts summary::before { content: "▸  "; color: #94a3b8; }
+    .fc-receipts[open] summary::before { content: "▾  "; color: #94a3b8; }
+    .fc-receipts ul { margin: .5rem 0 0; padding-left: 1.15rem; color: #334155; font-size: .9rem; }
+    .fc-receipts li { margin-bottom: .35rem; }
+    .fc-receipts .rec-label { color: #64748b; }
     .footer { color: #64748b; font-size: .9rem; border-top: 1px solid #e2e8f0; padding-top: .75rem; margin-top: 1.5rem; }
     ul, ol { margin: .25rem 0 .75rem; padding-left: 1.1rem; }
     li { margin-bottom: .45rem; }

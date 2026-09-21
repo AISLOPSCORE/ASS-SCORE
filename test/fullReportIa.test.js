@@ -8,6 +8,7 @@ import { validateUrl } from '../src/fetch/ssrf.js';
 import { createReportToken } from '../src/paywall.js';
 import { verdictBand } from '../src/verdict.js';
 import { classifyFinding, buildCategoryInsights } from '../src/threeLayer.js';
+import { CATEGORY_LABELS } from '../src/categories.js';
 import { openDb } from '../src/db.js';
 
 /**
@@ -443,6 +444,190 @@ test('P2A.4: dashboard section hierarchy — hero → verdict → breakdown → 
     const firstCard = html.indexOf('<a class="cat-card');
     const firstDetail = html.indexOf('id="cat-');
     assert.ok(firstCard >= 0 && firstDetail > firstCard, 'category detail targets sit lower on the page than the cards');
+  } finally {
+    app.server.close();
+  }
+});
+
+// ============================================================================
+// Phase 2B — diagnostic finding cards (owner 2026-09-17 2B spec).
+// Presentation/UI only: each NEGATIVE finding renders as ONE clearly separated
+// `.finding-card` with the four labeled zones ROAST / WHY IT MATTERS / HOW TO
+// FIX IT / RECEIPTS. Neutral metric measurements stay "Measurements:" blocks,
+// never cards; clean reports have zero cards. Finding order and every content
+// string are unchanged from the fixture.
+// ============================================================================
+
+/** The renderer's esc() (src/routes/scans.js) — mirrored so tests can assert
+ * the verbatim receipt text as it actually appears in the HTML. */
+function escForTest(v) {
+  return String(v)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;');
+}
+
+/** Expected NEGATIVE findings in engine (Object.entries) order — recomputed
+ * with the SAME classifyFinding the renderer uses, so the expected list is
+ * derived from the fixture, never hand-maintained. */
+function negativeFindings(breakdown) {
+  const out = [];
+  for (const [key, rule] of Object.entries(breakdown)) {
+    const findings = Array.isArray(rule?.findings) ? rule.findings : [];
+    const insights = Array.isArray(rule?.insights) ? rule.insights : [];
+    findings.forEach((f, i) => {
+      if (classifyFinding(key, String(f), insights[i]) === 'negative') out.push({ key, finding: String(f) });
+    });
+  }
+  return out;
+}
+
+/** Isolate each `.finding-card` region of the report (from its opening tag to
+ * just before the next card's opening tag) so per-card assertions can run. */
+function cardRegions(html) {
+  const starts = [...html.matchAll(/<div class="finding-card">/g)].map((m) => m.index);
+  const regions = [];
+  for (let i = 0; i < starts.length; i++) {
+    const to = i + 1 < starts.length ? starts[i + 1] : html.length;
+    regions.push(html.slice(starts[i], to));
+  }
+  return regions;
+}
+
+test('P2B.1: every negative finding renders as its own diagnostic card — count equals the fixture negatives, order matches input order, four labeled zones with verbatim receipts', async () => {
+  const dbPath = tmpDb();
+  await insertScan(dbPath, { id: 'p2b-sloppy', score: 89, breakdown: SLOPPY_BREAKDOWN_89 });
+  const app = startApp(dbPath);
+  try {
+    const html = await paidHtml(app.base, 'p2b-sloppy');
+    const expected = negativeFindings(SLOPPY_BREAKDOWN_89);
+    const regions = cardRegions(html);
+
+    // Count equals the fixture's negative finding list.
+    assert.equal(regions.length, expected.length,
+      `one card per negative finding (expected ${expected.length}, got ${regions.length})`);
+    // The roast layer count mirrors the card count (one roast per card).
+    assert.equal((html.match(/<p class="ins-roast">/g) ?? []).length, expected.length,
+      'one roast layer per negative finding');
+
+    // Order matches the input order, and every card carries the four labeled
+    // zones with its own verbatim receipt text.
+    for (let i = 0; i < expected.length; i++) {
+      const card = regions[i];
+      const exp = expected[i];
+      const label = CATEGORY_LABELS[exp.key] ?? exp.key;
+      assert.ok(card.includes('The Roast'), `card ${i + 1} has a Roast zone`);
+      assert.ok(card.includes('Why it matters:'), `card ${i + 1} has a Why It Matters zone`);
+      assert.ok(card.includes('How to fix it:'), `card ${i + 1} has a How To Fix It zone`);
+      assert.ok(card.includes('Show the receipts:'), `card ${i + 1} has a Receipts zone`);
+      assert.ok(card.includes('<p class="ins-roast">'), `card ${i + 1} renders a roast paragraph`);
+      assert.ok(card.includes(label), `card ${i + 1} shows its category context (${label})`);
+      assert.ok(card.includes(escForTest(exp.finding)),
+        `card ${i + 1} keeps the verbatim receipt (${exp.finding})`);
+      assert.ok(card.includes('Finding ' + (i + 1)), `card ${i + 1} shows its ordinal`);
+    }
+
+    // Order sanity: the fixture's receipt strings appear in the same sequence.
+    const receiptSeq = expected.map((e) => escForTest(e.finding));
+    let prev = -1;
+    for (const r of receiptSeq) {
+      const at = html.indexOf(r);
+      assert.ok(at > prev, `receipt "${r}" appears after the previous card`);
+      prev = at;
+    }
+
+    // A high-finding report separates cards visually — each card is bounded.
+    assert.ok(html.includes('class="finding-card"'), 'finding-card container class present');
+    // Severity badge comes from the existing classification (filler 88 = PRIORITY).
+    assert.ok(html.includes('class="fc-state fc-state-priority"'), 'PRIORITY badge from category classification');
+    assert.ok(!html.includes('"><'), 'no raw quote-bracket sequence anywhere (sacred markup constraint)');
+  } finally {
+    app.server.close();
+  }
+});
+
+test('P2B.2: neutral metric measurements are NOT cards — a metric-only category stays a Measurements block', async () => {
+  const dbPath = tmpDb();
+  // infoDensity carries ONLY out-of-band metric readings (no concrete-specifics
+  // gap) -> zero negative findings there. filler is the one real negative.
+  // The SAME breakdown drives both the insert and the expected-negative
+  // computation (full canonical metric lines, exactly as the detectors emit).
+  const P2B_METRIC_BREAKDOWN = {
+    filler: { score: 50, findings: ['3× "cutting-edge"'] },
+    boilerplate: { score: 0, findings: ['0 boilerplate signal(s) in 108 words (0.0 per 300 words)'] },
+    infoDensity: { score: 30, findings: [
+      'vocabulary diversity (MATTR-50): 0.766 (lower = more repetitive vocabulary)',
+      'stopword ratio: 46.0%',
+      'mean sentence length: 28.4 words (12 sentences)',
+      'short paragraphs (<25 words): 60% (20 paragraphs)',
+    ] },
+    repetitive: { score: 0, findings: ['no notable repetitive structure (6 sentences, 3 paragraphs)'] },
+    crossPage: { score: null, findings: [], note: 'insufficient pages for cross-page analysis' },
+    fingerprints: { score: 0, findings: [] },
+    assets: { score: 0, findings: ['0 of 2 images flagged for stock/placeholder signals'] },
+  };
+  await insertScan(dbPath, { id: 'p2b-metric', score: 50, breakdown: P2B_METRIC_BREAKDOWN });
+  const app = startApp(dbPath);
+  try {
+    const html = await paidHtml(app.base, 'p2b-metric');
+    const expected = negativeFindings(P2B_METRIC_BREAKDOWN);
+    assert.equal(expected.length, 1, 'fixture has exactly one negative (filler)');
+    // Exactly one card — the metric-only category is NOT a finding card.
+    assert.equal(cardRegions(html).length, 1, 'only the real negative becomes a card');
+    // The metric measurements render as a neutral Measurements block, not a card.
+    const infoSection = html.slice(html.indexOf('id="cat-infodensity"'), html.indexOf('id="cat-repetitive"'));
+    assert.ok(infoSection.includes('Measurements:'), 'metric-only category shows Measurements');
+    assert.ok(!infoSection.includes('class="finding-card"'), 'metric-only category has no finding card');
+    assert.ok(!infoSection.includes('How to fix it:'), 'no fix task manufactured from a metric');
+    assert.ok(infoSection.includes('vocabulary diversity (MATTR-50): 0.766'), 'MATTR reading kept as neutral evidence');
+  } finally {
+    app.server.close();
+  }
+});
+
+test('P2B.3: clean report has zero finding-card elements (no cards for compliments or measurements)', async () => {
+  const dbPath = tmpDb();
+  await insertScan(dbPath, { id: 'p2b-clean', score: 7, breakdown: CLEAN_BREAKDOWN });
+  const app = startApp(dbPath);
+  try {
+    const html = await paidHtml(app.base, 'p2b-clean');
+    assert.equal(cardRegions(html).length, 0, 'clean report has zero finding cards');
+    assert.equal((html.match(/<p class="ins-roast">/g) ?? []).length, 0, 'no roast layers on a clean report');
+    assert.ok(!html.includes('How to fix it:'), 'no fix zone on a clean report');
+    assert.ok(!html.includes('class="finding-card"'), 'no finding-card container markup at all');
+  } finally {
+    app.server.close();
+  }
+});
+
+test('P2B.4: Phase 2A assertions hold unchanged under the card redesign (hero, 7 cards, anchors, hierarchy)', async () => {
+  const dbPath = tmpDb();
+  await insertScan(dbPath, { id: 'p2b-clean', score: 7, breakdown: CLEAN_BREAKDOWN });
+  await insertScan(dbPath, { id: 'p2b-sloppy', score: 89, breakdown: SLOPPY_BREAKDOWN_89 });
+  const app = startApp(dbPath);
+  try {
+    const clean = await paidHtml(app.base, 'p2b-clean');
+    assert.ok(clean.includes('A.S.S. Score: 7 / 100') && clean.includes('CLEANEST'), 'clean hero unchanged');
+    assert.ok(clean.includes('does not detect AI authorship'), 'exact disclaimer unchanged');
+    const sloppy = await paidHtml(app.base, 'p2b-sloppy');
+    assert.ok(sloppy.includes('A.S.S. Score: 89 / 100') && sloppy.includes('EXTREMELY ASS'), 'sloppy hero unchanged');
+    // 7 category cards + in-page anchors still intact.
+    const hrefs = [...sloppy.matchAll(/<a class="cat-card[^"]*" href="#(cat-[a-z]+)">/g)].map((m) => m[1]);
+    assert.deepEqual(hrefs,
+      ['cat-filler', 'cat-boilerplate', 'cat-infodensity', 'cat-repetitive', 'cat-crosspage', 'cat-fingerprints', 'cat-assets'],
+      'the 7 existing category cards remain');
+    for (const anchor of hrefs) assert.ok(sloppy.includes(`id="${anchor}"`), `anchor ${anchor} still present`);
+    // Section hierarchy unchanged.
+    const idx = (s) => sloppy.indexOf(s);
+    const seq = ['A.S.S. Score: 89 / 100', 'The Verdict', 'Your Breakdown', "What's Working",
+      'The Actual Findings', 'Page That Needs The Most Work', 'What To Fix First', 'Final Verdict', 'Methodology'];
+    let prev = -1;
+    for (const marker of seq) {
+      const at = idx(marker);
+      assert.ok(at > prev, `"${marker}" still ordered after the previous section`);
+      prev = at;
+    }
   } finally {
     app.server.close();
   }
