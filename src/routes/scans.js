@@ -605,9 +605,11 @@ function renderHtmlReport(scan) {
     : cleanLis}</ul>`;
 
   // --- 2. YOUR BREAKDOWN (7 customer-facing CATEGORY CARDS, Phase 2A shell) ---
-  // Each category renders as a CLICKABLE card whose href="#cat-<key>" jumps to
-  // the matching anchor section in THE ACTUAL FINDINGS area lower on the same
-  // page (no separate routes). The number + state come from the SAME existing
+  // Each category renders as a CLICKABLE card whose href="#cat-<key>" hash now
+  // opens that category's FOCUSED view (Phase 2C) — the inline script shows the
+  // matching #view-cat-<key> section. The dashboard's own id="cat-<key>"
+  // sections stay in place (Phase 2A anchor contract + the no-JS degraded path
+  // still scroll to them). The number + state come from the SAME existing
   // classification as the old list (categoryClass on the stored sub-score;
   // stored note for skipped modules) — no recalculation, no reinterpretation.
   // State colors are applied by class only (green/amber/red/gray), driven by
@@ -646,7 +648,7 @@ function renderHtmlReport(scan) {
   }).join('');
   const breakdownSection = `
   <h2>Your Breakdown</h2>
-  <p class="hint">Tap a category card to jump to its details below.</p>
+  <p class="hint">Tap a category to open its focused view — the details are one click away.</p>
   <div class="cat-grid">
   ${breakdownCards}
   </div>`;
@@ -787,6 +789,109 @@ function renderHtmlReport(scan) {
   <p>Every finding in this report comes from a deterministic, rule-based analysis of the pages we fetched — the same URL always produces the same score. The seven categories look for concrete, documented patterns: filler phrasing, generic marketing boilerplate, vague content, repeated text, duplicated language across pages, template-built design fingerprints, and stock or placeholder imagery. Every finding lists the verbatim evidence behind it, and the overall A.S.S. Score is the weighted rollup of the seven category scores.${partialNote}</p>
   <p class="disclaimer">${DISCLAIMER}</p>`;
 
+  // --- Phase 2C: focused Category Views (navigation/presentation only) ------
+  // Hash-driven (#cat-<key>) drill-down in the SAME single document. Each view
+  // is a hidden <section class="cat-view" id="view-cat-<key>"> carrying only the
+  // navigation chrome (Back to Dashboard → category name → existing score/state
+  // → the category's own clean items), plus an empty .cat-view-body whose
+  // data-source names the SAME existing dashboard section (id="cat-<key>"). On
+  // open, the inline script CLONES that existing section into the body — so the
+  // view shows the exact existing finding cards / duplication pairs /
+  // measurements, never regenerated content. Because the cards are cloned
+  // client-side, the server HTML stays free of duplicate audit text: the
+  // Phase 2A anchors (id="cat-<key>") and Phase 2B card counts are untouched,
+  // and the dashboard remains fully present for no-JS/print/SEO. The state and
+  // one-liner lines reuse the SAME existing classification data as the cards
+  // (categoryClass on the stored sub-score; CATEGORY_ONE_LINERS) — no
+  // reinterpretation. Clean categories show their clean items; a category with
+  // measurements but no negative finding keeps those measurements as neutral
+  // evidence (never a warning) via the cloned section.
+  const categoryViews = Object.entries(scan.breakdown ?? {}).map(([key, rule]) => {
+    const label = CATEGORY_LABELS[key] ?? key;
+    const anchor = `cat-${key.toLowerCase()}`;
+    const g = classified.find((x) => x.key === key);
+    let stateLine;
+    if (!(Number.isFinite(Number(rule?.score)) && rule.score !== null)) {
+      stateLine = `\n    <span class="cv-none">${rule?.note ? esc(rule.note) : 'skipped'}</span>`;
+    } else {
+      const sub = publicScore(rule.score);
+      const nFindings = Array.isArray(rule.findings) ? rule.findings.length : 0;
+      const cls = categoryClass(sub, nFindings);
+      stateLine = `\n    <span class="cv-score">${sub}<span class="cv-den">/100</span></span>\n    <span class="cv-state cv-state-${cls.toLowerCase()}">${esc(cls)}</span>\n    <span class="cv-line">${esc(CATEGORY_ONE_LINERS[key] ?? '')}</span>`;
+    }
+    const cleanLis = (g && g.cleans.length > 0)
+      ? `\n    <ul>${g.cleans.map((item) => renderCleanItem(label, item)).join('')}</ul>`
+      : '';
+    return `
+  <section class="cat-view" id="view-${anchor}" hidden>
+    <a class="cat-back" href="#dashboard">← Back to Dashboard</a>
+    <h2 class="cat-view-name">${esc(label)}</h2>
+    <p class="cat-view-state">${stateLine}
+    </p>${cleanLis}
+    <div class="cat-view-body" data-source="${anchor}">
+    </div>
+  </section>`;
+  }).join('');
+
+  // Inline, dependency-free view toggle. Degrades to the dashboard (views stay
+  // hidden); the cards' native #cat-<key> anchors still scroll to the sections
+  // when JS is off. KEYS is generated from the same breakdown keys as the views.
+  const viewKeys = Object.keys(scan.breakdown ?? {}).map((k) => `cat-${k.toLowerCase()}`);
+  const categoryViewScript = `
+<script>
+/* Phase 2C category drill-down — hash-driven, single document, no dependencies.
+   The dashboard stays fully present; a #cat-<key> hash shows that category's
+   focused view. The view's .cat-view-body is filled by CLONING the dashboard's
+   own cat-<key> section (same finding cards / measurements, no regeneration).
+   Unknown or empty hash = dashboard. With JS off, the report is simply the
+   dashboard and the cards' native hash anchors scroll as in Phase 2A. */
+(function () {
+  var KEYS = ['${viewKeys.join("','")}'];
+  function currentKey() {
+    var h = (location.hash || '').replace(/^#/, '');
+    if (h.indexOf('cat-') === 0 && KEYS.indexOf(h) !== -1) return h;
+    return null;
+  }
+  function showDashboard() {
+    var d = document.getElementById('dashboard');
+    if (d) d.hidden = false;
+    var views = document.querySelectorAll('.cat-view');
+    for (var i = 0; i < views.length; i++) views[i].hidden = true;
+    window.scrollTo(0, 0);
+  }
+  function openView(key) {
+    var d = document.getElementById('dashboard');
+    var view = document.getElementById('view-' + key);
+    if (!d || !view) return;
+    var body = view.querySelector('.cat-view-body');
+    var section = document.getElementById(key);
+    if (body && section && !body.firstElementChild
+        && section.className.indexOf('cat-detail-empty') === -1) {
+      var clone = section.cloneNode(true);
+      clone.removeAttribute('id');
+      body.appendChild(clone);
+    }
+    d.hidden = true;
+    var views = document.querySelectorAll('.cat-view');
+    for (var i = 0; i < views.length; i++) views[i].hidden = (views[i] !== view);
+    window.scrollTo(0, 0);
+  }
+  function apply() {
+    var key = currentKey();
+    if (key) openView(key); else showDashboard();
+  }
+  window.addEventListener('hashchange', apply);
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', apply);
+  } else {
+    apply();
+  }
+  window.addEventListener('load', function () {
+    if (currentKey()) window.scrollTo(0, 0);
+  });
+})();
+</script>`;
+
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -875,10 +980,36 @@ function renderHtmlReport(scan) {
     .rec-label { font-weight: 700; color: #64748b; font-size: .8rem; }
     .rec-note { color: #94a3b8; font-size: .85rem; font-style: italic; }
     .disclaimer { color: #64748b; font-size: .8rem; border-top: 1px solid #e2e8f0; padding-top: .75rem; margin-top: 1.5rem; }
+    /* --- Phase 2C: focused Category Views (hash-driven, single document) ---
+       The dashboard stays fully present; each view is a hidden, layered section
+       shown only while its #cat-<key> hash is active. The hidden attribute is
+       honored even under any author display rule (belt-and-suspenders for the
+       no-JS default, which must show the dashboard). Views reuse the SAME
+       existing audit markup — the .cat-view-body is populated by cloning the
+       dashboard's own cat-<key> section, so no audit text is ever
+       regenerated. */
+    #dashboard[hidden], .cat-view[hidden] { display: none !important; }
+    .cat-view { max-width: 100%; }
+    .cat-back { display: inline-block; text-decoration: none; font-weight: 700; color: #334155; border: 1px solid #cbd5e1; border-radius: 8px; padding: .5rem .9rem; margin: 0 0 1.25rem; background: #f8fafc; }
+    .cat-back:hover { border-color: #94a3b8; background: #eef2f7; }
+    .cat-view-name { font-size: 1.3rem; margin: 0 0 .4rem; border: none; padding: 0; }
+    .cat-view-state { display: flex; flex-wrap: wrap; align-items: baseline; gap: .6rem; margin: .1rem 0 1rem; }
+    .cv-none { color: #64748b; font-size: .92rem; }
+    .cv-score { font-size: 1.5rem; font-weight: 800; color: #334155; }
+    .cv-den { font-size: .85rem; font-weight: 600; color: #94a3b8; }
+    .cv-state { font-size: .72rem; font-weight: 800; letter-spacing: .05em; padding: .16rem .55rem; border-radius: 999px; border: 1px solid #cbd5e1; background: #fff; }
+    .cv-state-clean { color: #4d7c0f; border-color: #bbf7d0; background: #f7fee7; }
+    .cv-state-watch { color: #a16207; border-color: #fde047; background: #fefce8; }
+    .cv-state-needs-attention { color: #c2410c; border-color: #fed7aa; background: #fff7ed; }
+    .cv-state-priority { color: #b91c1c; border-color: #fecaca; background: #fef2f2; }
+    .cv-line { color: #475569; font-size: .92rem; }
+    .cat-view-body .cat-detail { border: none; border-radius: 0; padding: 0; margin: 0; background: transparent; }
+    .cat-view-body .cat-detail h3 { display: none; }
   </style>
 </head>
 <body>
   ${logo}
+  <div id="dashboard">
   ${header}
   <p><a href="${esc(scan.url)}">${esc(scan.url)}</a> · scanned ${esc(humanScanDate(scan.created_at))}</p>
 
@@ -898,6 +1029,9 @@ function renderHtmlReport(scan) {
   ${methodologySection}
   ${footerLine}
   <p>Deterministic rule-based analysis — the same URL always produces the same score.</p>
+  </div>
+  ${categoryViews}
+  ${categoryViewScript}
 </body>
 </html>`;
 }

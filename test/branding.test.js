@@ -269,7 +269,12 @@ test('hostile branding values are HTML-escaped in the paid report (no markup inj
   assert.ok(html.includes('&quot;&gt;&lt;img src=x onerror=alert(1)&gt;'), 'agency name escaped in the h1');
   assert.ok(!html.includes('"><'), 'no raw quote-bracket sequence (no attribute/value breakout)');
   assert.ok(!html.includes('<img src=x'), 'no raw injected img tag');
-  assert.ok(!html.includes('<script'), 'no raw script tag anywhere');
+  // The report carries EXACTLY ONE script — its own inline Phase 2C view
+  // toggle (owner-sanctioned: dependency-free, inline). Hostile branding
+  // must never add a second one, and its payloads stay escaped.
+  assert.equal((html.match(/<script\b/g) ?? []).length, 1,
+    "exactly the report's own inline 2C script — hostile branding cannot inject another");
+  assert.ok(html.includes('<script>\n/* Phase 2C category drill-down'), "the single script is the report's own 2C view toggle");
   assert.ok(html.includes('&lt;script&gt;window.pwned=1&lt;/script&gt;'), 'footerText escaped');
   assert.ok(html.includes('#fff000'), 'valid accent color still applied');
   // Even under hostile branding the mandated content survives:

@@ -632,3 +632,179 @@ test('P2B.4: Phase 2A assertions hold unchanged under the card redesign (hero, 7
     app.server.close();
   }
 });
+
+// ============================================================================
+// Phase 2C — category drill-down views (owner 2026-09-17 2C spec).
+// Navigation/presentation only: each category card opens a FOCUSED Category
+// View (Back to Dashboard → category name → existing score/state → the
+// category's own clean info + finding cards / measurements), hash-driven
+// (#cat-<key>) in the SAME single document. The dashboard stays fully present;
+// views layer on top. No audit/scoring/content data is changed.
+// ============================================================================
+
+const VIEW_KEYS = ['cat-filler', 'cat-boilerplate', 'cat-infodensity', 'cat-repetitive', 'cat-crosspage', 'cat-fingerprints', 'cat-assets'];
+
+/** Metric-only fixture: infoDensity has ONLY neutral Measurements (no negative
+ * finding); filler is the one real negative. */
+const P2C_METRIC_BREAKDOWN = {
+  filler: { score: 50, findings: ['3× "cutting-edge"'] },
+  boilerplate: { score: 0, findings: ['0 boilerplate signal(s) in 108 words (0.0 per 300 words)'] },
+  infoDensity: { score: 30, findings: [
+    'vocabulary diversity (MATTR-50): 0.766 (lower = more repetitive vocabulary)',
+    'stopword ratio: 46.0%',
+    'mean sentence length: 28.4 words (12 sentences)',
+    'short paragraphs (<25 words): 60% (20 paragraphs)',
+  ] },
+  repetitive: { score: 0, findings: ['no notable repetitive structure (6 sentences, 3 paragraphs)'] },
+  crossPage: { score: null, findings: [], note: 'insufficient pages for cross-page analysis' },
+  fingerprints: { score: 0, findings: [] },
+  assets: { score: 0, findings: ['0 of 2 images flagged for stock/placeholder signals'] },
+};
+
+/** Isolate each `.cat-view` region (from its opening tag to the next one). */
+function viewRegions(html) {
+  const starts = [...html.matchAll(/<section class="cat-view" id="(view-cat-[a-z]+)" hidden>/g)].map((m) => m.index);
+  return starts.map((s, i) => ({
+    id: html.slice(s).match(/id="(view-cat-[a-z]+)"/)[1],
+    html: html.slice(s, i + 1 < starts.length ? starts[i + 1] : html.length),
+  }));
+}
+
+test('P2C.1: all 7 category cards open a focused Category View — every card resolves to a distinct per-category view container wired to its own dashboard section (clean + sloppy)', async () => {
+  const dbPath = tmpDb();
+  await insertScan(dbPath, { id: 'p2c-clean', score: 7, breakdown: CLEAN_BREAKDOWN });
+  await insertScan(dbPath, { id: 'p2c-sloppy', score: 89, breakdown: SLOPPY_BREAKDOWN_89 });
+  const app = startApp(dbPath);
+  try {
+    const clean = await paidHtml(app.base, 'p2c-clean');
+    const sloppy = await paidHtml(app.base, 'p2c-sloppy');
+    for (const [name, html] of [['clean', clean], ['sloppy', sloppy]]) {
+      const cards = [...html.matchAll(/<a class="cat-card[^"]*" href="#(cat-[a-z]+)">/g)].map((m) => m[1]);
+      assert.deepEqual(cards, VIEW_KEYS, `${name}: the 7 category cards remain, engine order`);
+      const views = viewRegions(html);
+      assert.equal(views.length, 7, `${name}: one focused view per category`);
+      assert.equal(new Set(views.map((v) => v.id)).size, 7, `${name}: all 7 view containers are distinct`);
+      for (const anchor of VIEW_KEYS) {
+        const view = views.find((v) => v.id === `view-${anchor}`);
+        assert.ok(view, `${name}: card ${anchor} has a focused view container (view-${anchor})`);
+        // Distinct from the dashboard: a Back to Dashboard control…
+        assert.ok(view.html.includes('class="cat-back" href="#dashboard"'), `${name}: ${anchor} view has a Back to Dashboard control`);
+        // …and a clone body wired to the SAME existing dashboard section.
+        assert.ok(view.html.includes(`data-source="${anchor}"`), `${name}: ${anchor} view body resolves to the existing ${anchor} section`);
+        assert.ok(html.includes(`id="${anchor}"`), `${name}: dashboard still carries the ${anchor} section target`);
+        assert.ok(view.html.includes('class="cat-view-name"'), `${name}: ${anchor} view carries the category name`);
+      }
+    }
+  } finally {
+    app.server.close();
+  }
+});
+
+test('P2C.2: dashboard retains every existing section in order — views layer on top, hidden by default (clean + sloppy)', async () => {
+  const dbPath = tmpDb();
+  await insertScan(dbPath, { id: 'p2c-clean', score: 7, breakdown: CLEAN_BREAKDOWN });
+  await insertScan(dbPath, { id: 'p2c-sloppy', score: 89, breakdown: SLOPPY_BREAKDOWN_89 });
+  const app = startApp(dbPath);
+  try {
+    for (const [name, id] of [['clean', 'p2c-clean'], ['sloppy', 'p2c-sloppy']]) {
+      const html = await paidHtml(app.base, id);
+      const idx = (s) => html.indexOf(s);
+      const seq = ['A.S.S. Score: ', 'The Verdict', 'Your Breakdown', "What's Working",
+        'The Actual Findings', 'Page That Needs The Most Work', 'What To Fix First', 'Final Verdict', 'Methodology'];
+      let prev = -1;
+      for (const marker of seq) {
+        const at = idx(marker);
+        assert.ok(at > prev, `${name}: "${marker}" still ordered after the previous section`);
+        prev = at;
+      }
+      assert.ok(html.includes('does not detect AI authorship'), `${name}: mandated disclaimer unchanged`);
+      assert.ok(html.includes('id="dashboard"'), `${name}: dashboard wrapper present (default/no-JS view)`);
+      // Views are layered AFTER the full dashboard and hidden by default.
+      assert.ok(idx('id="view-cat-filler"') > idx('Methodology'), `${name}: focused views come after all dashboard sections`);
+      const views = viewRegions(html);
+      assert.equal(views.length, 7, `${name}: exactly 7 views`);
+      for (const v of views) {
+        assert.ok(/<section class="cat-view" id="view-cat-[a-z]+" hidden>/.test(v.html),
+          `${name}: ${v.id} is hidden by default (dashboard = the no-JS baseline)`);
+        assert.ok(v.html.includes('class="cat-view-state"'), `${name}: ${v.id} carries the existing score/state line`);
+      }
+    }
+  } finally {
+    app.server.close();
+  }
+});
+
+test('P2C.3: Category Views reuse the existing audit content — negative (2B cards), clean (compliments only), metric-only (neutral Measurements, never a card)', async () => {
+  const dbPath = tmpDb();
+  await insertScan(dbPath, { id: 'p2c-sloppy', score: 89, breakdown: SLOPPY_BREAKDOWN_89 });
+  await insertScan(dbPath, { id: 'p2c-metric', score: 50, breakdown: P2C_METRIC_BREAKDOWN });
+  const app = startApp(dbPath);
+  try {
+    const sloppy = await paidHtml(app.base, 'p2c-sloppy');
+    // (a) COPY (filler) has TWO negative findings — its view is wired to the
+    // dashboard section that carries both 2B cards verbatim (roast/why/fix/
+    // receipts), so the focused view shows the SAME cards.
+    const fillerView = viewRegions(sloppy).find((v) => v.id === 'view-cat-filler');
+    const fillerSection = sloppy.slice(sloppy.indexOf('id="cat-filler"'), sloppy.indexOf('id="cat-boilerplate"'));
+    assert.ok(fillerView.html.includes('data-source="cat-filler"'), 'filler view wired to its dashboard section');
+    assert.equal((fillerSection.match(/<div class="finding-card">/g) ?? []).length, 2,
+      'filler dashboard section carries the 2 negative finding cards (the two-card category)');
+    assert.ok(fillerSection.includes('3× &quot;cutting-edge&quot;') && fillerSection.includes('2× &quot;seamless&quot;'),
+      'filler cards keep the verbatim receipts');
+    for (const zone of ['The Roast', 'Why it matters:', 'How to fix it:', 'Show the receipts:']) {
+      assert.ok(fillerSection.includes(zone), `filler view resolves to 2B cards with the ${zone} zone`);
+    }
+    assert.ok(fillerSection.includes('Finding 1') && fillerSection.includes('Finding 2'),
+      'filler cards keep their global ordinals');
+    // (b) REPETITION (crossPage, skipped on a single-page scan) — the focused
+    // view carries the stored note as its neutral state, no finding card.
+    const crossView = viewRegions(sloppy).find((v) => v.id === 'view-cat-crosspage');
+    assert.ok(crossView.html.includes('insufficient pages for cross-page analysis'),
+      'skipped category view surfaces the stored note');
+    // (c) Clean category on the sloppy report (fingerprints, score 0) — the
+    // view chrome keeps the CLEAN state; no finding card anywhere in it.
+    const fpView = viewRegions(sloppy).find((v) => v.id === 'view-cat-fingerprints');
+    assert.ok(fpView.html.includes('cv-state-clean'), 'clean category view keeps the CLEAN state');
+    assert.ok(!fpView.html.includes('class="finding-card"'), 'clean category view has no finding card');
+
+    const metric = await paidHtml(app.base, 'p2c-metric');
+    // (d) Metric-only category (ORIGINALITY/infoDensity): the view is wired to
+    // the dashboard section that keeps the NEUTRAL Measurements block — never
+    // a finding card, never a warning.
+    const infoView = viewRegions(metric).find((v) => v.id === 'view-cat-infodensity');
+    const infoSection = metric.slice(metric.indexOf('id="cat-infodensity"'), metric.indexOf('id="cat-repetitive"'));
+    assert.ok(infoView.html.includes('data-source="cat-infodensity"'), 'infoDensity view wired to its dashboard section');
+    assert.ok(infoSection.includes('Measurements:'), 'metric-only category keeps its neutral Measurements block');
+    assert.ok(infoSection.includes('vocabulary diversity (MATTR-50): 0.766'), 'MATTR reading kept as neutral evidence');
+    assert.ok(!infoSection.includes('class="finding-card"'), 'metric-only category has no finding card');
+    assert.ok(!infoSection.includes('How to fix it:'), 'no fix task manufactured from a metric');
+  } finally {
+    app.server.close();
+  }
+});
+
+test('P2C.4: refresh with a #cat-<key> hash re-opens the same view — the inline script maps every hash to its view container on load (clean + sloppy)', async () => {
+  const dbPath = tmpDb();
+  await insertScan(dbPath, { id: 'p2c-clean', score: 7, breakdown: CLEAN_BREAKDOWN });
+  await insertScan(dbPath, { id: 'p2c-sloppy', score: 89, breakdown: SLOPPY_BREAKDOWN_89 });
+  const app = startApp(dbPath);
+  try {
+    for (const [name, id] of [['clean', 'p2c-clean'], ['sloppy', 'p2c-sloppy']]) {
+      const html = await paidHtml(app.base, id);
+      const script = html.slice(html.indexOf('<script>'), html.indexOf('</script>'));
+      const keys = [...script.matchAll(/'((?:cat-[a-z]+))'/g)].map((m) => m[1]);
+      assert.deepEqual(keys, VIEW_KEYS, `${name}: the inline script knows all 7 category hashes`);
+      assert.ok(script.includes("addEventListener('hashchange', apply)"), `${name}: navigation (incl. browser Back) drives the views`);
+      assert.ok(script.includes("addEventListener('DOMContentLoaded', apply)"), `${name}: refresh with a hash re-opens the view on load`);
+      assert.ok(script.includes("getElementById('view-' + key)"), `${name}: the hash resolves to its view container on load`);
+      for (const anchor of VIEW_KEYS) {
+        const view = viewRegions(html).find((v) => v.id === `view-${anchor}`);
+        assert.ok(view, `${name}: #${anchor} refresh never lands on an empty state — view-${anchor} exists`);
+        assert.ok(view.html.includes(`data-source="${anchor}"`) && html.includes(`id="${anchor}"`),
+          `${name}: #${anchor} resolves to a real dashboard section in the same document`);
+      }
+    }
+  } finally {
+    app.server.close();
+  }
+});

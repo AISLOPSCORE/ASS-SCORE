@@ -1,11 +1,11 @@
 /**
- * Render the Phase 2A dashboard-shell + Phase 2B finding-card samples through
- * the REAL paid report renderer (the token'd route) — same harness as
- * test/fullReportIa.test.js (fixture rows inserted straight into a temp SQLite
- * DB, no live scans).
+ * Render the Phase 2A dashboard-shell + Phase 2B finding-card + Phase 2C
+ * category-drill-down samples through the REAL paid report renderer (the
+ * token'd route) — same harness as test/fullReportIa.test.js (fixture rows
+ * inserted straight into a temp SQLite DB, no live scans).
  *
  * Usage: node scripts/render-report-samples.mjs [outDir]
- *   outDir defaults to /home/team/shared/phase2b-samples
+ *   outDir defaults to /home/team/shared/phase2c-samples
  * Writes <outDir>/clean.html  (score 7  -> CLEANEST) and
  *         <outDir>/sloppy.html (score 89 -> EXTREMELY ASS).
  *
@@ -19,8 +19,8 @@ import { validateUrl } from '../src/fetch/ssrf.js';
 import { createReportToken } from '../src/paywall.js';
 import { openDb } from '../src/db.js';
 
-const SECRET = 'phase2b-sample-secret';
-const outDir = process.argv[2] ?? '/home/team/shared/phase2b-samples';
+const SECRET = 'phase2c-sample-secret';
+const outDir = process.argv[2] ?? '/home/team/shared/phase2c-samples';
 
 const fakeFetcher = () => ({ fetchHtml: async (raw) => ({ status: 200, url: new URL(raw).href, body: '<html><body><p>x</p></body></html>' }) });
 const offlineValidateTarget = async (raw) => validateUrl(raw);
