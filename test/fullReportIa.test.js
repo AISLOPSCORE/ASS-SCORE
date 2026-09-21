@@ -71,6 +71,22 @@ const CLEAN_BREAKDOWN = {
   assets: { score: 0, findings: ['0 of 2 images flagged for stock/placeholder signals'] },
 };
 
+/**
+ * Sloppy fixture — 89/100 EXTREMELY ASS, every card state represented (PRIORITY
+ * red, NEEDS ATTENTION orange, WATCH amber, CLEAN green, skipped gray) so the
+ * Phase 2A dashboard shell tests cover all classes the existing classification
+ * can produce.
+ */
+const SLOPPY_BREAKDOWN_89 = {
+  filler: { score: 88, findings: ['3× "cutting-edge"', '2× "seamless"'] },
+  boilerplate: { score: 62, findings: ['1× hedge phrase "we aim to"'] },
+  infoDensity: { score: 90, findings: ['concrete specifics: 0 found in 500 words — no dates, numbers, prices, percentages, or named references (need at least 7 per 75 words)'] },
+  repetitive: { score: 30, findings: ['repeated sentence openings: 5× "the company"'] },
+  crossPage: { score: null, findings: [], note: 'insufficient pages for cross-page analysis' },
+  fingerprints: { score: 0, findings: [] },
+  assets: { score: 82, findings: ['2 of 2 images from stock/placeholder CDNs'] },
+};
+
 test('1. clean site -> zero negative findings in the full report', async () => {
   const dbPath = tmpDb();
   await insertScan(dbPath, { id: 'ia-clean-0001', score: 0, breakdown: CLEAN_BREAKDOWN });
@@ -330,5 +346,104 @@ test('8. score direction remains 0 best / 100 worst', async () => {
     assert.ok(high.includes('badge nobody asked for'), 'final verdict calls the high score bad');
   } finally {
     appHigh.server.close();
+  }
+});
+
+// ============================================================================
+// Phase 2A — dashboard shell (presentation/UI rework, owner 2026-09-17).
+// UI-only assertions: the shell (hero, cards, anchors, hierarchy) renders
+// around the Phase 1 content WITHOUT changing score/verdict/disclaimer values.
+// ============================================================================
+
+test('P2A.1: hero shows the scan score + verdict unchanged and the mandated disclaimer is present (clean 7 / sloppy 89)', async () => {
+  const dbPath = tmpDb();
+  await insertScan(dbPath, { id: 'p2a-clean', score: 7, breakdown: CLEAN_BREAKDOWN });
+  await insertScan(dbPath, { id: 'p2a-sloppy', score: 89, breakdown: SLOPPY_BREAKDOWN_89 });
+  const app = startApp(dbPath);
+  try {
+    const clean = await paidHtml(app.base, 'p2a-clean');
+    assert.ok(clean.includes('A.S.S. Score: 7 / 100'), 'clean hero shows score 7');
+    assert.ok(clean.includes('CLEANEST'), 'clean hero shows the CLEANEST band');
+    assert.ok(clean.includes('does not detect AI authorship'), 'exact disclaimer on clean report');
+
+    const sloppy = await paidHtml(app.base, 'p2a-sloppy');
+    assert.ok(sloppy.includes('A.S.S. Score: 89 / 100'), 'sloppy hero shows score 89');
+    assert.ok(sloppy.includes('EXTREMELY ASS'), 'sloppy hero shows the EXTREMELY ASS band');
+    assert.ok(sloppy.includes('does not detect AI authorship'), 'exact disclaimer on sloppy report');
+  } finally {
+    app.server.close();
+  }
+});
+
+test('P2A.2: all 7 category cards render as <a> links, each href="#…" targeting an id that exists on the same page', async () => {
+  const dbPath = tmpDb();
+  await insertScan(dbPath, { id: 'p2a-cards', score: 89, breakdown: SLOPPY_BREAKDOWN_89 });
+  const app = startApp(dbPath);
+  try {
+    const html = await paidHtml(app.base, 'p2a-cards');
+    const hrefs = [...html.matchAll(/<a class="cat-card[^"]*" href="#(cat-[a-z]+)">/g)].map((m) => m[1]);
+    assert.deepEqual(hrefs,
+      ['cat-filler', 'cat-boilerplate', 'cat-infodensity', 'cat-repetitive', 'cat-crosspage', 'cat-fingerprints', 'cat-assets'],
+      'exactly the 7 existing categories as cards, engine key order');
+    for (const anchor of hrefs) {
+      assert.ok(html.includes(`id="${anchor}"`), `card href "#${anchor}" has a matching in-page id`);
+    }
+    // The 7 customer-facing names all appear (cards + detail sections).
+    for (const name of ['COPY', 'MESSAGING', 'ORIGINALITY', 'STRUCTURE', 'REPETITION', 'DESIGN', 'IMAGERY']) {
+      assert.ok(html.includes(name), `category name ${name} appears on the page`);
+    }
+  } finally {
+    app.server.close();
+  }
+});
+
+test('P2A.3: card numbers/states come from the existing classification (state classes + unchanged values)', async () => {
+  const dbPath = tmpDb();
+  await insertScan(dbPath, { id: 'p2a-states', score: 89, breakdown: SLOPPY_BREAKDOWN_89 });
+  const app = startApp(dbPath);
+  try {
+    const html = await paidHtml(app.base, 'p2a-states');
+    // State colors are driven by categoryClass on the stored sub-scores.
+    assert.ok(html.includes('class="cat-card cat-priority"'), 'high sub-score renders a PRIORITY (red) card');
+    assert.ok(html.includes('class="cat-card cat-attention"'), 'mid sub-score renders a NEEDS ATTENTION (orange) card');
+    assert.ok(html.includes('class="cat-card cat-watch"'), 'low sub-score renders a WATCH (amber) card');
+    assert.ok(html.includes('class="cat-card cat-clean"'), 'zero sub-score renders a CLEAN (green) card');
+    assert.ok(html.includes('class="cat-card cat-skipped"'), 'null sub-score renders a neutral (gray) skipped card');
+    // Existing values are shown verbatim: score numbers and state labels.
+    for (const score of ['88', '62', '90', '30', '0', '82']) {
+      assert.ok(html.includes(`<span class="cat-score">${score}<span class="cat-den">/100</span></span>`),
+        `card shows the existing sub-score ${score}/100`);
+    }
+    for (const state of ['PRIORITY', 'NEEDS ATTENTION', 'WATCH', 'CLEAN']) {
+      assert.ok(html.includes(`<span class="cat-state">${state}</span>`), `card shows state ${state}`);
+    }
+    assert.ok(html.includes('insufficient pages for cross-page analysis'),
+      'skipped card surfaces the stored note (REPETITION on a single-page scan)');
+  } finally {
+    app.server.close();
+  }
+});
+
+test('P2A.4: dashboard section hierarchy — hero → verdict → breakdown → working → findings → page → fix → final → methodology', async () => {
+  const dbPath = tmpDb();
+  await insertScan(dbPath, { id: 'p2a-order', score: 89, breakdown: SLOPPY_BREAKDOWN_89 });
+  const app = startApp(dbPath);
+  try {
+    const html = await paidHtml(app.base, 'p2a-order');
+    const idx = (s) => html.indexOf(s);
+    const seq = ['A.S.S. Score: 89 / 100', 'The Verdict', 'Your Breakdown', "What's Working",
+      'The Actual Findings', 'Page That Needs The Most Work', 'What To Fix First', 'Final Verdict', 'Methodology'];
+    let prev = -1;
+    for (const marker of seq) {
+      const at = idx(marker);
+      assert.ok(at > prev, `"${marker}" appears after the previous section (at ${at}, expected > ${prev})`);
+      prev = at;
+    }
+    // The category detail anchors live inside the findings area (after the cards).
+    const firstCard = html.indexOf('<a class="cat-card');
+    const firstDetail = html.indexOf('id="cat-');
+    assert.ok(firstCard >= 0 && firstDetail > firstCard, 'category detail targets sit lower on the page than the cards');
+  } finally {
+    app.server.close();
   }
 });

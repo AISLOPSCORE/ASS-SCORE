@@ -292,7 +292,11 @@ test('GET HTML: free page shows the IMAGERY number; paid report renders findings
   // verbatim receipts.
   const html = await paidHtml(api.base, created.id);
   assert.ok(html.includes('IMAGERY'), 'assets row renders under its customer name IMAGERY');
-  assert.match(html, /<strong>IMAGERY<\/strong> — 50\/100 <em>\(NEEDS ATTENTION\)<\/em>/, 'IMAGERY row shows score + classification');
+  // Phase 2A dashboard shell: the same sub-score + classification now render
+  // on the IMAGERY category CARD (score number + state pill) — existing
+  // classification, values unchanged (50/100 NEEDS ATTENTION).
+  assert.ok(html.includes('<span class="cat-score">50<span class="cat-den">/100</span></span>'), 'IMAGERY card shows the existing 50/100');
+  assert.ok(html.includes('<span class="cat-state">NEEDS ATTENTION</span>'), 'IMAGERY card shows the existing NEEDS ATTENTION classification');
   assert.ok(html.includes('2 of 4 images from stock/placeholder CDNs'), 'stock finding rendered as a receipt');
   assert.ok(html.includes('generic alt'), 'alt finding rendered as a receipt');
   assert.ok(html.includes('Nothing meaningful to roast here.'), 'clean category line rendered (single-page scan leaves REPETITION skipped)');

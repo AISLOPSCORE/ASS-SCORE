@@ -473,9 +473,13 @@ function renderFreeHtmlReport(scan, shareBase = 'https://ass-score.com') {
 
 /**
  * Render the HTML report — the customer-facing Full Report (owner content/IA
- * rebuild 2026-09-17, Phase 1). Section order: THE VERDICT → WHAT'S WORKING →
- * YOUR BREAKDOWN → THE ACTUAL FINDINGS → PAGE THAT NEEDS THE MOST WORK → WHAT
- * TO FIX FIRST → FINAL VERDICT → METHODOLOGY + mandated DISCLAIMER.
+ * rebuild 2026-09-17, Phase 1, wrapped by the Phase 2A dashboard shell).
+ * Page order (target hierarchy, owner/lead 2026-09-17): SCORE HERO + THE
+ * VERDICT → YOUR BREAKDOWN (category cards) → WHAT'S WORKING → THE ACTUAL
+ * FINDINGS → PAGE THAT NEEDS THE MOST WORK → WHAT TO FIX FIRST → FINAL
+ * VERDICT → METHODOLOGY + mandated DISCLAIMER. Phase 2A is presentation-only:
+ * every content string (roast copy, why/fix, receipts, methodology,
+ * disclaimer) is emitted verbatim by the sections below.
  *
  * Finding semantics (owner IA §1–4, §7–9):
  *   - WHAT'S WORKING holds CLEAN/positive detector results ONLY (compliments
@@ -545,7 +549,7 @@ function renderHtmlReport(scan) {
 
   // Pages scanned line (+ partial-scan note, surfaced right under the score).
   const pagesLine = Array.isArray(cross.pages) && cross.pages.length >= 2
-    ? `<p>Pages scanned: ${cross.pages.map((u) => `<a href="${esc(u)}">${esc(u)}</a>`).join(', ')}${scan.partial && scan.note ? ` · ${esc(scan.note)}` : ''}</p>`
+    ? `<p class="pages">Pages scanned: ${cross.pages.map((u) => `<a href="${esc(u)}">${esc(u)}</a>`).join(', ')}${scan.partial && scan.note ? ` · ${esc(scan.note)}` : ''}</p>`
     : '';
 
   // --- Per-finding classification (owner IA) --------------------------------
@@ -566,7 +570,8 @@ function renderHtmlReport(scan) {
   <p class="roast">${roastInfo.emoji} ${esc(roastInfo.line)}</p>
   <p>${esc(verdictConclusion(scan, pubScore, publicVerdict, negativeTotal))}</p>`;
 
-  // --- 2. WHAT'S WORKING (clean/positive detector results only) --------------
+  // --- 3. WHAT'S WORKING (clean/positive detector results only; rendered
+  // below the breakdown, per the Phase 2A target hierarchy) ------------------
   const cleanLis = classified
     .flatMap((g) => g.cleans.map((item) => renderCleanItem(CATEGORY_LABELS[g.key] ?? g.key, item)))
     .join('');
@@ -576,24 +581,52 @@ function renderHtmlReport(scan) {
     ? '<li>Nothing to compliment this scan — the findings and measurements below are the whole story.</li>'
     : cleanLis}</ul>`;
 
-  // --- 3. YOUR BREAKDOWN (7 customer-facing categories + classification) -----
-  const breakdownLis = Object.entries(scan.breakdown ?? {}).map(([key, rule]) => {
+  // --- 2. YOUR BREAKDOWN (7 customer-facing CATEGORY CARDS, Phase 2A shell) ---
+  // Each category renders as a CLICKABLE card whose href="#cat-<key>" jumps to
+  // the matching anchor section in THE ACTUAL FINDINGS area lower on the same
+  // page (no separate routes). The number + state come from the SAME existing
+  // classification as the old list (categoryClass on the stored sub-score;
+  // stored note for skipped modules) — no recalculation, no reinterpretation.
+  // State colors are applied by class only (green/amber/red/gray), driven by
+  // that classification, never by changing data.
+  const breakdownCards = Object.entries(scan.breakdown ?? {}).map(([key, rule]) => {
     const label = CATEGORY_LABELS[key] ?? key;
+    const anchor = `cat-${key.toLowerCase()}`;
     if (!(Number.isFinite(Number(rule?.score)) && rule.score !== null)) {
       // Skipped module (score null, e.g. crossPage on a single-page scan):
       // surface its note instead of a score.
       const note = rule?.note ? esc(rule.note) : 'skipped';
-      return `<li><strong>${esc(label)}</strong> — ${note}</li>`;
+      return `\n  <a class="cat-card cat-skipped" href="#${anchor}">
+    <span class="cat-top">
+      <span class="cat-name">${esc(label)}</span>
+      <span class="cat-go">details →</span>
+    </span>
+    <span class="cat-line">${note}</span>
+  </a>`;
     }
     const sub = publicScore(rule.score);
     const nFindings = Array.isArray(rule.findings) ? rule.findings.length : 0;
     const cls = categoryClass(sub, nFindings);
+    const stateClass = cls === 'NEEDS ATTENTION' ? 'cat-attention' : `cat-${cls.toLowerCase()}`;
     const line = cls === 'CLEAN' ? 'Nothing meaningful to roast here.' : (CATEGORY_ONE_LINERS[key] ?? '');
-    return `<li><strong>${esc(label)}</strong> — ${sub}/100 <em>(${cls})</em> — ${esc(line)}</li>`;
+    return `\n  <a class="cat-card ${stateClass}" href="#${anchor}">
+    <span class="cat-top">
+      <span class="cat-name">${esc(label)}</span>
+      <span class="cat-go">details →</span>
+    </span>
+    <span class="cat-mid">
+      <span class="cat-score">${sub}<span class="cat-den">/100</span></span>
+      <span class="cat-state">${cls}</span>
+    </span>
+    <span class="cat-line">${esc(line)}</span>
+  </a>`;
   }).join('');
   const breakdownSection = `
   <h2>Your Breakdown</h2>
-  <ul>${breakdownLis}</ul>`;
+  <p class="hint">Tap a category card to jump to its details below.</p>
+  <div class="cat-grid">
+  ${breakdownCards}
+  </div>`;
 
   // --- 4. THE ACTUAL FINDINGS (negative findings only, four concepts) --------
   const findingsIntro = negativeTotal === 0
@@ -604,10 +637,22 @@ function renderHtmlReport(scan) {
   // stopword/sentence-length measurements) still shows its Measurements block.
   // negativeCats above stays strictly negative-only for the intro count, the
   // page summary, and What To Fix First (owner IA §4/§5/§8).
-  const findingGroups = classified
-    .filter((g) => g.negatives.length > 0 || g.metrics.length > 0)
-    .map((g) => {
+  // Phase 2A shell: EVERY category gets an anchor section id="cat-<key>" here
+  // (the breakdown cards link to it). Categories without negative findings or
+  // metric measurements render a NEUTRAL placeholder using the same wording
+  // their breakdown card already shows — never a finding, never a count.
+  const findingGroups = classified.map((g) => {
     const label = CATEGORY_LABELS[g.key] ?? g.key;
+    if (!(g.negatives.length > 0 || g.metrics.length > 0)) {
+      const rule = g.rule ?? {};
+      const skipped = !(Number.isFinite(Number(rule?.score)) && rule.score !== null);
+      const note = skipped ? (rule.note ? esc(rule.note) : 'skipped') : 'Nothing meaningful to roast here.';
+      return `
+  <section class="cat-detail cat-detail-empty" id="cat-${g.key.toLowerCase()}">
+    <h3>${esc(label)}</h3>
+    <p class="cat-empty">${note}</p>
+  </section>`;
+    }
     const items = g.negatives
       .map((x, i) => renderFinding(scan.id, g.key, label, x.finding, x.insight, i))
       .join('');
@@ -628,12 +673,12 @@ function renderHtmlReport(scan) {
       ? `<div><span class="rec-label">Measurements:</span> <em>${g.metrics.map((m) => esc(m.finding)).join(' · ')}</em></div>`
       : '';
     return `
-  <div>
+  <section class="cat-detail" id="cat-${g.key.toLowerCase()}">
     <h3>${esc(label)}</h3>
     ${items}
     ${pairsBlock}
     ${metricsBlock}
-  </div>`;
+  </section>`;
   }).join('');
   const findingsSection = `
   <h2>The Actual Findings</h2>
@@ -713,15 +758,51 @@ function renderHtmlReport(scan) {
   <meta charset="utf-8" />
   <title>A.S.S. Score report</title>
   <style>
-    body { font-family: system-ui, sans-serif; max-width: 760px; margin: 2rem auto; padding: 0 1rem; color: #1a202c; }
-    h1 { font-size: 1.4rem; } h2 { font-size: 1.1rem; margin-top: 1.8rem; }
+    /* Phase 2A dashboard shell — presentation only. All report text is emitted
+       by the sections below and is unchanged from the owner-approved IA. */
+    body { font-family: system-ui, sans-serif; max-width: 980px; margin: 2rem auto; padding: 0 1rem; color: #1a202c; line-height: 1.5; }
+    h1 { font-size: 1.4rem; } h2 { font-size: 1.05rem; margin-top: 2.6rem; padding-bottom: .35rem; border-bottom: 2px solid #e2e8f0; }
     h3 { font-size: 1rem; margin-top: 1.2rem; margin-bottom: .2rem; }
     .powered { color: #64748b; font-size: .85rem; margin-top: -.25rem; }
+    /* --- Score hero (score + verdict values UNCHANGED; band color from the shared verdict module) --- */
+    .hero { margin: 1.5rem 0 0; padding: 1.75rem 1.25rem 1.4rem; border-radius: 14px; text-align: center; border: 1px solid #e2e8f0; border-top: 6px solid var(--band, #64748b); background: #f8fafc; }
+    .hero .score { font-size: 3.4rem; font-weight: 800; letter-spacing: -.01em; margin: 0; }
+    .hero .verdict { display: inline-block; font-size: 1.7rem; font-weight: 800; letter-spacing: .08em; margin: .45rem 0 .2rem; padding: .22rem 1.1rem; border-radius: 999px; }
+    .hero .b-catastrophic { color: #b91c1c; background: #fef2f2; }
+    .hero .b-extreme, .hero .b-very { color: #c2410c; background: #fff7ed; }
+    .hero .b-mild { color: #a16207; background: #fefce8; }
+    .hero .b-clean { color: #4d7c0f; background: #f7fee7; }
+    .hero .b-cleanest { color: #15803d; background: #f0fdf4; }
+    .hero .pages { color: #64748b; font-size: .85rem; margin: .5rem 0 0; }
     .score { font-size: 2.6rem; font-weight: 700; }
     .verdict { font-size: 1.15rem; font-weight: 700; margin: .25rem 0 .75rem; }
     .b-catastrophic { color: #f87171; } .b-extreme { color: #f97316; } .b-very { color: #fb923c; }
     .b-mild { color: #facc15; } .b-clean { color: #a3e635; } .b-cleanest { color: #4ade80; }
     .roast { font-size: 1.15rem; font-weight: 600; margin: .75rem 0 .25rem; }
+    .hint { color: #64748b; font-size: .85rem; margin: .25rem 0 .75rem; }
+    /* --- Category cards: clickable <a>, state-colored, stack on mobile --- */
+    .cat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(215px, 1fr)); gap: .75rem; margin: .75rem 0 1rem; }
+    .cat-card { display: block; text-decoration: none; color: inherit; border: 1px solid var(--cat-border, #cbd5e1); border-left: 5px solid var(--cat, #64748b); border-radius: 10px; padding: .7rem .85rem; background: var(--cat-bg, #f8fafc); transition: transform .06s ease, box-shadow .12s ease, border-color .12s ease; }
+    .cat-card:hover { box-shadow: 0 4px 14px rgba(15, 23, 42, .14); transform: translateY(-1px); border-color: var(--cat, #64748b); }
+    .cat-card:focus-visible { outline: 3px solid var(--cat, #64748b); outline-offset: 2px; }
+    .cat-clean { --cat: #16a34a; --cat-bg: #f0fdf4; --cat-border: #bbf7d0; }
+    .cat-watch { --cat: #ca8a04; --cat-bg: #fefce8; --cat-border: #fde047; }
+    .cat-attention { --cat: #ea580c; --cat-bg: #fff7ed; --cat-border: #fed7aa; }
+    .cat-priority { --cat: #dc2626; --cat-bg: #fef2f2; --cat-border: #fecaca; }
+    .cat-skipped { --cat: #64748b; --cat-bg: #f8fafc; --cat-border: #e2e8f0; }
+    .cat-top { display: flex; justify-content: space-between; align-items: baseline; gap: .5rem; }
+    .cat-name { font-weight: 800; font-size: 1rem; letter-spacing: .04em; }
+    .cat-go { color: var(--cat, #64748b); font-size: .75rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
+    .cat-card:hover .cat-go, .cat-card:focus-visible .cat-go { text-decoration: underline; }
+    .cat-mid { display: flex; align-items: baseline; justify-content: space-between; gap: .5rem; margin: .45rem 0 .3rem; }
+    .cat-score { font-size: 1.7rem; font-weight: 800; color: var(--cat, #334155); }
+    .cat-den { font-size: .8rem; font-weight: 600; color: #94a3b8; }
+    .cat-state { font-size: .7rem; font-weight: 800; letter-spacing: .05em; padding: .16rem .5rem; border-radius: 999px; color: var(--cat, #475569); background: #ffffff; border: 1px solid var(--cat-border, #cbd5e1); }
+    .cat-line { display: block; font-size: .85rem; color: #475569; margin-top: .35rem; }
+    /* --- Category detail sections (the cards' in-page targets) --- */
+    .cat-detail { border: 1px solid #e2e8f0; border-radius: 10px; padding: .6rem 1rem 1rem; margin: 1.25rem 0; background: #fcfcfd; scroll-margin-top: 1rem; }
+    .cat-detail-empty { background: #f8fafc; border-style: dashed; }
+    .cat-empty { color: #64748b; font-size: .9rem; margin: .3rem 0 .5rem; }
     .footer { color: #64748b; font-size: .9rem; border-top: 1px solid #e2e8f0; padding-top: .75rem; margin-top: 1.5rem; }
     ul, ol { margin: .25rem 0 .75rem; padding-left: 1.1rem; }
     li { margin-bottom: .45rem; }
@@ -736,12 +817,16 @@ function renderHtmlReport(scan) {
   ${logo}
   ${header}
   <p><a href="${esc(scan.url)}">${esc(scan.url)}</a> · scanned ${esc(humanScanDate(scan.created_at))}</p>
-  <p class="score"${scoreAccent}>A.S.S. Score: ${pubScore} / 100</p>
-  ${verdictLine}
-  ${pagesLine}
+
+  <section class="hero" style="--band:${publicVerdict.color}">
+    <p class="score"${scoreAccent}>A.S.S. Score: ${pubScore} / 100</p>
+    ${verdictLine}
+    ${pagesLine}
+  </section>
+
   ${verdictSection}
-  ${workingSection}
   ${breakdownSection}
+  ${workingSection}
   ${findingsSection}
   ${pageSection}
   ${fixSection}
