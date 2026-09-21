@@ -376,7 +376,10 @@ function renderFinding(scanId, categoryKey, categoryLabel, finding, insight, ind
       ${whyBlock}
       ${fixBlock}
       <details class="fc-receipts">
-        <summary><span class="rec-label">Show the receipts:</span></summary>
+        <summary>
+          <span class="rec-label">Show the receipts:</span>
+          <span class="rec-count">1 line of evidence</span>
+        </summary>
         <ul><li><strong>${esc(finding)}</strong></li></ul>
       </details>
     </div>
@@ -392,7 +395,13 @@ function renderCleanItem(categoryLabel, item) {
   const roast = item.insight && typeof item.insight.roast === 'string' && item.insight.roast !== ''
     ? item.insight.roast
     : 'No meaningful signal detected here.';
-  return `<li><strong>${esc(categoryLabel)} — CLEAN:</strong> ${esc(roast)} <span class="rec-label">Receipt:</span> <em>${esc(short(item.finding, 140))}</em></li>`;
+  return `<li class="working-item">
+    <span class="working-point">
+      <strong>${esc(categoryLabel)} — CLEAN:</strong> ${esc(roast)}</span>
+    <span class="working-receipt">
+      <span class="rec-label">Receipt:</span> <em>${esc(short(item.finding, 140))}</em>
+    </span>
+  </li>`;
 }
 
 /** The four categories a worstPage.findings list can contain (scan.js order). */
@@ -591,7 +600,7 @@ function renderHtmlReport(scan) {
   const verdictSection = `
   <h2>The Verdict</h2>
   <p class="roast">${roastInfo.emoji} ${esc(roastInfo.line)}</p>
-  <p>${esc(verdictConclusion(scan, pubScore, publicVerdict, negativeTotal))}</p>`;
+  <p class="conclusion">${esc(verdictConclusion(scan, pubScore, publicVerdict, negativeTotal))}</p>`;
 
   // --- 3. WHAT'S WORKING (clean/positive detector results only; rendered
   // below the breakdown, per the Phase 2A target hierarchy) ------------------
@@ -600,9 +609,11 @@ function renderHtmlReport(scan) {
     .join('');
   const workingSection = `
   <h2>What's Working</h2>
-  <ul>${cleanLis === ''
-    ? '<li>Nothing to compliment this scan — the findings and measurements below are the whole story.</li>'
-    : cleanLis}</ul>`;
+  ${cleanLis === ''
+    ? '<div class="working-empty">\n      <p class="working-empty-line">Nothing to compliment this scan — the findings and measurements below are the whole story.</p>\n    </div>'
+    : `<ul class="working-list">
+  ${cleanLis}
+  </ul>`}`;
 
   // --- 2. YOUR BREAKDOWN (7 customer-facing CATEGORY CARDS, Phase 2A shell) ---
   // Each category renders as a CLICKABLE card whose href="#cat-<key>" hash now
@@ -634,6 +645,14 @@ function renderHtmlReport(scan) {
     const cls = categoryClass(sub, nFindings);
     const stateClass = cls === 'NEEDS ATTENTION' ? 'cat-attention' : `cat-${cls.toLowerCase()}`;
     const line = cls === 'CLEAN' ? 'Nothing meaningful to roast here.' : (CATEGORY_ONE_LINERS[key] ?? '');
+    // Findings-or-not line: counts NEGATIVE findings only (the report-wide
+    // convention — compliments and metric measurements are never "findings").
+    const grp = classified.find((x) => x.key === key);
+    const negs = grp ? grp.negatives.length : 0;
+    const metr = grp ? grp.metrics.length : 0;
+    const findingsLine = negs > 0
+      ? `<span class="cat-findings cat-findings-problem">${negs} roast${negs === 1 ? '' : 's'} — see receipts</span>`
+      : (metr > 0 ? '<span class="cat-findings">Measurements only</span>' : '<span class="cat-findings cat-findings-clean">No roasts</span>');
     return `\n  <a class="cat-card ${stateClass}" href="#${anchor}">
     <span class="cat-top">
       <span class="cat-name">${esc(label)}</span>
@@ -643,6 +662,10 @@ function renderHtmlReport(scan) {
       <span class="cat-score">${sub}<span class="cat-den">/100</span></span>
       <span class="cat-state">${cls}</span>
     </span>
+    <span class="cat-meter" aria-hidden="true">
+      <span class="cat-meter-fill" style="width:${sub}%"> </span>
+    </span>
+    ${findingsLine}
     <span class="cat-line">${esc(line)}</span>
   </a>`;
   }).join('');
@@ -704,7 +727,8 @@ function renderHtmlReport(scan) {
       ? cross.pairs.filter((p) => p.similarity >= 0.8)
       : [];
     const pairsBlock = pairs.length > 0
-      ? `<div><span class="rec-label">Duplicated page pairs (receipts):</span>
+      ? `<div class="rec-block">
+      <span class="rec-label">Duplicated page pairs (receipts):</span>
     <ul>${pairs.map((p) => `<li><a href="${esc(p.pageA)}">${esc(p.pageA)}</a> ~ <a href="${esc(p.pageB)}">${esc(p.pageB)}</a> — ${(p.similarity * 100).toFixed(1)}% similar</li>`).join('')}</ul>
   </div>`
       : '';
@@ -712,7 +736,9 @@ function renderHtmlReport(scan) {
     // §4): never a finding/roast, never counted — just the numbers, labelled
     // as measurements.
     const metricsBlock = g.metrics.length > 0
-      ? `<div><span class="rec-label">Measurements:</span> <em>${g.metrics.map((m) => esc(m.finding)).join(' · ')}</em></div>`
+      ? `<div class="rec-block rec-block-metric">
+      <span class="rec-label">Measurements:</span> <em>${g.metrics.map((m) => esc(m.finding)).join(' · ')}</em>
+    </div>`
       : '';
     return `
   <section class="cat-detail cat-detail-${fgAccent}" id="cat-${g.key.toLowerCase()}">
@@ -741,16 +767,26 @@ function renderHtmlReport(scan) {
       : '<li>No actual negative findings captured for this page — its combined score comes from duplication or sub-threshold signals.</li>';
     pageSection = `
   <h2>Page That Needs The Most Work</h2>
-  <p><a href="${esc(worst.url)}">${esc(worst.url)}</a> — combined score ${Number(worst.score)} / 100 (higher = worse).</p>
-  <ul>${lis}</ul>`;
+  <div class="page-panel" style="--pp:${negativeTotal === 0 ? '#4ade80' : '#f87171'}">
+  <p class="page-head">
+    <a href="${esc(worst.url)}">${esc(worst.url)}</a> — combined score ${Number(worst.score)} / 100 (higher = worse).</p>
+  <ul class="page-list">
+  ${lis}
+  </ul>
+  </div>`;
   } else {
     const lis = negativeCats.length > 0
       ? negativeCats.map((g) => `<li><strong>${esc(CATEGORY_LABELS[g.key] ?? g.key)}</strong> — ${g.negatives.length} actual finding${g.negatives.length === 1 ? '' : 's'} to fix.</li>`).join('')
       : '<li>Nothing to fix here this scan.</li>';
     pageSection = `
   <h2>Page That Needs The Most Work</h2>
-  <p><strong>Homepage</strong> — this is the only page scanned.</p>
-  <ul>${lis}</ul>`;
+  <div class="page-panel" style="--pp:${negativeTotal === 0 ? '#4ade80' : '#f87171'}">
+  <p class="page-head">
+    <strong>Homepage</strong> — this is the only page scanned.</p>
+  <ul class="page-list">
+  ${lis}
+  </ul>
+  </div>`;
   }
 
   // --- 6. WHAT TO FIX FIRST (actual negative findings only, prioritized) -----
@@ -763,11 +799,16 @@ function renderHtmlReport(scan) {
   for (const g of classified) {
     if (g.negatives.length === 0) continue;
     const label = CATEGORY_LABELS[g.key] ?? g.key;
+    const sub = (Number.isFinite(Number(g.rule?.score)) && g.rule?.score !== null) ? publicScore(g.rule.score) : 0;
+    const nFindings = Array.isArray(g.rule?.findings) ? g.rule.findings.length : 0;
+    const cls = categoryClass(sub, nFindings);
     g.negatives.forEach((x, i) => {
       const ins = insightFor(scan.id, g.key, x.finding, x.insight, i);
       fixItems.push({
+        key: g.key,
         score: Number(g.rule?.score),
         label,
+        cls,
         problem: ins ? ins.roast : x.finding,
         action: ins ? ins.fix : '',
         evidence: x.finding,
@@ -775,17 +816,34 @@ function renderHtmlReport(scan) {
     });
   }
   fixItems.sort((a, b) => (Number.isFinite(b.score) ? b.score : 0) - (Number.isFinite(a.score) ? a.score : 0));
+  // Each fix is a RANKED CARD (rank = real priority order, category severity
+  // desc): category + state pill, the problem, the specific action, the
+  // receipt, and a link to the underlying finding in the report.
   const fixLis = fixItems.slice(0, 5)
-    .map((it) => `<li><strong>${esc(it.label)}</strong> — ${esc(it.problem)} ${it.action ? `${esc(it.action)} ` : ''}<em>(receipt: ${esc(short(it.evidence, 90))})</em></li>`)
+    .map((it) => `\n  <li class="fix-item fix-${it.cls.toLowerCase().replace(/[^a-z0-9]+/g, '-')}">
+    <div class="fix-top">
+      <span class="fix-cat">${esc(it.label)}</span>
+      <span class="fix-pill">${esc(it.cls)}</span>
+    </div>
+    <p class="fix-problem">${esc(it.problem)}</p>
+    ${it.action ? `<p class="fix-action">
+      <span class="fix-action-label">Fix it:</span> ${esc(it.action)}
+    </p>` : ''}
+    <p class="fix-evidence">
+      <span class="rec-label">Receipt:</span> <em>${esc(short(it.evidence, 110))}</em>
+    </p>
+    <a class="fix-link" href="#cat-${it.key.toLowerCase()}">See the full finding ↓</a>
+  </li>`)
     .join('');
   const fixSection = `
   <h2>What To Fix First</h2>
-  ${fixLis === '' ? '<p>No negative findings to fix this scan — nothing in this report needs fixing.</p>' : `<ol>${fixLis}</ol>`}`;
+  <p class="hint">Ranked by category severity — the highest A.S.S. score first. Fix these and the number drops.</p>
+  ${fixLis === '' ? '<p>No negative findings to fix this scan — nothing in this report needs fixing.</p>' : `<ol class="fix-list">${fixLis}</ol>`}`;
 
   // --- 7. FINAL VERDICT ------------------------------------------------------
   const finalSection = `
   <h2>Final Verdict</h2>
-  <p>${esc(finalVerdictSentence(pubScore, publicVerdict))}</p>`;
+  <p class="final-note" style="--band:${publicVerdict.color}">${esc(finalVerdictSentence(pubScore, publicVerdict))}</p>`;
 
   // --- 8. METHODOLOGY + mandated DISCLAIMER (never cut, never reworded) ------
   const partialNote = scan.partial && scan.note ? ` Some pages could not be scanned this run: ${esc(scan.note)}.` : '';
@@ -908,16 +966,20 @@ function renderHtmlReport(scan) {
   <link href="https://fonts.googleapis.com/css2?family=Anton&family=Caveat:wght@500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
   <style>
 /* ================================================================
-       A.S.S. Score — Full Report visual identity (Phase 2D-1).
-       CSS/UI ONLY: every class/id the dashboard, finding cards and
-       Category Views already use is preserved and restyled; no audit
-       text, scoring, category structure or 2C navigation is changed.
-       Design language mirrors the A.S.S. Score site + share card:
-       near-black foundation, Anton display / Caveat annotation / Inter
-       body, band colors (green -> amber -> red, HIGHER = WORSE) used
-       semantically for score, states and accents, and the brand lime
-       (#d4f000) reserved for interaction (hover/focus) and the
-       wordmark. No generic AI glow, no gradients-for-decoration.
+       A.S.S. Score — Full Report visual identity.
+       Phase 2D-1 foundation (dark A.S.S. brand) + Phase 2D-2 polish
+       (owner spec 2026-09-21): hero severity at a glance, scannable
+       category meters, premium audit finding cards, prominent
+       receipts, actionable priority cards, intentional empty
+       states for clean scans. CSS/UI ONLY: every class/id the dashboard, finding
+       cards and Category Views use is preserved and restyled; no
+       audit text, scoring, category structure or 2C navigation is
+       changed. Score direction locked: 0 = LEAST ASS / BEST,
+       100 = MAX ASS / WORST. Lower = better. Band colors
+       (green -> amber -> red, HIGHER = WORSE) are used semantically
+       for scores, states and accents; brand lime (#d4f000) is
+       reserved for interaction and the wordmark. No generic AI
+       glow, no decorative gradients.
        ================================================================ */
     :root {
       color-scheme: dark;
@@ -930,17 +992,23 @@ function renderHtmlReport(scan) {
       --ink:#f4f4f5;             /* primary text */
       --ink-dim:#b8b8c0;         /* secondary */
       --ink-faint:#8b8b95;       /* captions/meta */
+      --good:#4ade80;            /* CLEAN / CLEANEST (low = best) */
+      --warn:#facc15;            /* WATCH / GETTING ASSY */
+      --mid:#fb923c;             /* NEEDS ATTENTION / VERY ASS */
+      --worse:#f87171;           /* PRIORITY / EXTREMELY+ ASS */
+      --neutral:#8b8b95;         /* skipped / no data */
       --font-display:"Anton","Impact","Arial Black",sans-serif;
       --font-hand:"Caveat","Comic Sans MS",cursive;
       --font-sans:"Inter",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
       --band:#f87171;            /* overridden inline per scan */
+      --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
     }
     * { box-sizing: border-box; }
     html { -webkit-text-size-adjust: 100%; }
-    body { font-family: var(--font-sans); background: var(--bg); color: var(--ink); max-width: 1024px; margin: 0 auto; padding: 2rem 1.25rem 4rem; line-height: 1.6; font-size: .95rem; }
+    body { font-family: var(--font-sans); background: var(--bg); color: var(--ink); max-width: 1024px; margin: 0 auto; padding: 2rem 1.25rem 4rem; line-height: 1.6; font-size: .95rem; overflow-x: clip; }
     /* --- Masthead (wordmark h1 kept verbatim for the branding contract;
        styled as the Anton wordmark, with the donkey as the brand moment) --- */
-    .report-head { border-bottom: 1px solid var(--line); padding-bottom: 1.1rem; margin-bottom: .9rem; }
+    .report-head { border-bottom: 1px solid var(--line); padding-bottom: 1.1rem; margin-bottom: 1rem; }
     .head-row { display: flex; align-items: center; justify-content: space-between; gap: 1.25rem; }
     .head-text { min-width: 0; }
     h1 { font-family: var(--font-display); font-size: clamp(1.45rem, 4vw, 2rem); text-transform: uppercase; letter-spacing: .03em; color: var(--ass); line-height: 1.05; margin: 0; font-weight: 400; }
@@ -948,38 +1016,54 @@ function renderHtmlReport(scan) {
     .powered a { color: var(--ass); }
     .head-tag { font-family: var(--font-hand); text-transform: uppercase; font-size: 1.02rem; letter-spacing: .03em; color: var(--ink-dim); margin: .45rem 0 0; }
     .head-donkey { width: 56px; height: 56px; flex: none; background: url(https://www.ass-score.com/mascot-head-128.png) center / contain no-repeat; }
-    .meta { color: var(--ink-faint); font-size: .84rem; margin: 0 0 1.5rem; overflow-wrap: anywhere; }
+    .meta { color: var(--ink-faint); font-size: .84rem; margin: 0 0 1.6rem; overflow-wrap: anywhere; }
     .meta a { color: var(--ink-dim); text-decoration: none; border-bottom: 1px dotted var(--line-strong); }
     .meta a:hover { color: var(--ass); border-color: var(--ass); }
-    /* --- Score hero: big band-colored Anton score (poster language),
-       solid band pill verdict — NEVER glowing, green=good / red=ass (0 best,
-       100 worst). --- */
-    .hero { margin: 0 0 2rem; padding: 2.4rem 1.4rem 1.5rem; border-radius: 18px; text-align: center; border: 1px solid var(--line-strong); border-top: 5px solid var(--band, #f87171); background: var(--surface); }
-    .hero .score { font-family: var(--font-display); font-size: clamp(2.6rem, 9vw, 4.9rem); text-transform: uppercase; letter-spacing: .01em; line-height: 1; margin: 0; color: var(--band, var(--ink)); font-weight: 400; }
-    .hero .verdict { display: inline-block; font-family: var(--font-display); font-size: clamp(1.1rem, 3vw, 1.5rem); font-weight: 400; text-transform: uppercase; letter-spacing: .08em; margin: 1rem 0 .3rem; padding: .4rem 1.3rem; border-radius: 999px; }
+    /* --- Score hero (poster language): small label line, GIANT band-colored
+       number, solid band pill verdict, band fill gauge, scale caption.
+       Everything below the number is optional reading — the score + its
+       severity read in 2 seconds from number color, pill and gauge fill.
+       0 = best / 100 = worst, per the locked direction. --- */
+    .hero { margin: 0 0 2.2rem; padding: 2.7rem 1.4rem 1.7rem; border-radius: 20px; text-align: center; border: 1px solid var(--line-strong); border-top: 6px solid var(--band, #f87171); background: var(--surface); }
+    .hero .score { margin: 0 0 .45rem; font-size: .8rem; font-weight: 700; letter-spacing: .22em; text-transform: uppercase; color: var(--ink-faint); }
+    .hero-num { display: flex; align-items: baseline; justify-content: center; gap: .4rem; margin: 0; font-family: var(--font-display); color: var(--band, #f87171); font-weight: 400; }
+    .hero-val { font-size: clamp(4.3rem, 15vw, 7.4rem); line-height: .9; letter-spacing: .01em; }
+    .hero-den { font-size: clamp(1.35rem, 4vw, 2.1rem); color: var(--ink-faint); letter-spacing: .02em; }
+    .hero .verdict { display: inline-block; font-family: var(--font-display); font-size: clamp(1.2rem, 3.6vw, 1.65rem); font-weight: 400; text-transform: uppercase; letter-spacing: .1em; margin: 1.15rem 0 .75rem; padding: .55rem 1.7rem; border-radius: 999px; border: 2px solid rgba(0,0,0,.18); }
     .hero .b-catastrophic { color: #150a0a; background: #f87171; }
     .hero .b-extreme { color: #150a0a; background: #f97316; }
     .hero .b-very { color: #150a0a; background: #fb923c; }
     .hero .b-mild { color: #150a0a; background: #facc15; }
     .hero .b-clean { color: #0f1103; background: #a3e635; }
     .hero .b-cleanest { color: #07110a; background: #4ade80; }
-    .hero .pages { color: var(--ink-faint); font-size: .85rem; margin: .75rem 0 0; }
-    .hero-scale { color: var(--ink-faint); font-size: .72rem; letter-spacing: .14em; text-transform: uppercase; margin: 1.1rem 0 0; }
+    /* the severity gauge: fill width = score (0 clean -> 100 full+red) */
+    .hero-gauge { width: min(430px, 100%); height: 13px; margin: .35rem auto 0; border-radius: 999px; background: rgba(255,255,255,.07); border: 1px solid var(--line-strong); overflow: hidden; }
+    .hero-gauge-fill { display: block; height: 100%; border-radius: 999px; background: var(--band, #f87171); }
+    .hero-scale { color: var(--ink-faint); font-size: .72rem; letter-spacing: .16em; text-transform: uppercase; margin: .9rem 0 0; }
+    .hero .pages { color: var(--ink-faint); font-size: .85rem; margin: .85rem 0 0; }
+    .hero .pages a { color: var(--ink-dim); text-decoration: none; border-bottom: 1px dotted var(--line-strong); }
+    .hero .pages a:hover { color: var(--ass); border-color: var(--ass); }
     .score { font-size: 2.6rem; font-weight: 700; }
     .verdict { font-size: 1.15rem; font-weight: 700; margin: .25rem 0 .75rem; }
     .b-catastrophic { color: #f87171; } .b-extreme { color: #f97316; } .b-very { color: #fb923c; }
     .b-mild { color: #facc15; } .b-clean { color: #a3e635; } .b-cleanest { color: #4ade80; }
-    .roast { font-family: var(--font-hand); font-size: 1.32rem; line-height: 1.45; color: var(--ink); margin: .6rem 0 .3rem; }
+    .roast { font-family: var(--font-hand); font-size: 1.38rem; line-height: 1.45; color: var(--ink); margin: .6rem 0 .3rem; }
     .hint { color: var(--ink-faint); font-size: .85rem; margin: -.35rem 0 1rem; }
-    /* --- Section headings: Anton uppercase editorial rules --- */
-    h2 { font-family: var(--font-display); font-size: 1.16rem; text-transform: uppercase; letter-spacing: .05em; margin: 3rem 0 .9rem; padding-bottom: .5rem; border-bottom: 1px solid var(--line); color: var(--ink); font-weight: 400; }
+    .conclusion { color: var(--ink-dim); font-size: .97rem; max-width: 78ch; margin: .4rem 0 0; }
+    /* --- Section headings: numbered Anton editorial rules. Numbers are pure
+       presentation (updates only with the section order, never the data). --- */
+    #dashboard { counter-reset: sec; }
+    #dashboard > h2 { counter-increment: sec; }
+    #dashboard > h2::before { content: counter(sec, decimal-leading-zero) "  /  "; font-size: .62em; letter-spacing: .05em; color: var(--ink-faint); }
+    h2 { font-family: var(--font-display); font-size: clamp(1.12rem, 3.2vw, 1.32rem); text-transform: uppercase; letter-spacing: .05em; margin: 3.4rem 0 1rem; padding-bottom: .55rem; border-bottom: 1px solid var(--line); color: var(--ink); font-weight: 400; scroll-margin-top: 1.4rem; }
     h3 { font-family: var(--font-sans); font-weight: 800; font-size: .9rem; text-transform: uppercase; letter-spacing: .07em; color: var(--ink); margin: 1.4rem 0 .5rem; }
-    /* --- Category cards: clickable <a>, state-colored left edge + state
-       pill (solid band + dark ink, same language as the hero verdict); the
-       accent has a job: it IS the severity. Hover uses the state color --- */
-    .cat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(218px, 1fr)); gap: .8rem; margin: 1.1rem 0 1rem; }
-    .cat-card { display: block; text-decoration: none; color: inherit; border: 1px solid var(--line); border-left: 4px solid var(--cat, #8b8b95); border-radius: 14px; padding: .85rem .95rem .8rem; background: var(--surface); transition: transform .08s ease, border-color .15s ease, background-color .15s ease; }
-    .cat-card:hover { background: var(--surface-2); transform: translateY(-1px); border-color: var(--cat, #8b8b95); }
+    /* --- Category cards: clickable <a>, state-colored left edge, state pill
+       (solid band + dark ink), per-category severity meter (fill = sub-score,
+       band color = state), findings-or-not line. Scan = name + number +
+       meter + pill. The accent has a job: it IS the severity. --- */
+    .cat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(228px, 1fr)); gap: .9rem; margin: 1.25rem 0 1rem; }
+    .cat-card { display: block; text-decoration: none; color: inherit; border: 1px solid var(--line); border-left: 4px solid var(--cat, #8b8b95); border-radius: 14px; padding: 1rem 1.05rem .95rem; background: var(--surface); transition: transform .08s ease, border-color .15s ease, background-color .15s ease, box-shadow .15s ease; }
+    .cat-card:hover { background: var(--surface-2); transform: translateY(-2px); border-color: var(--cat, #8b8b95); box-shadow: 0 8px 22px rgba(0,0,0,.35); }
     .cat-card:focus-visible { outline: 2px solid var(--cat, #8b8b95); outline-offset: 2px; }
     .cat-clean { --cat: #4ade80; }
     .cat-watch { --cat: #facc15; }
@@ -990,58 +1074,112 @@ function renderHtmlReport(scan) {
     .cat-name { font-weight: 800; font-size: .95rem; letter-spacing: .03em; color: var(--ink); }
     .cat-go { color: var(--cat, #8b8b95); font-size: .69rem; font-weight: 800; text-transform: uppercase; letter-spacing: .09em; }
     .cat-card:hover .cat-go, .cat-card:focus-visible .cat-go { text-decoration: underline; }
-    .cat-mid { display: flex; align-items: baseline; justify-content: space-between; gap: .5rem; margin: .5rem 0 .35rem; }
-    .cat-score { font-family: var(--font-display); font-weight: 400; font-size: 1.6rem; letter-spacing: .01em; color: var(--cat, var(--ink)); }
-    .cat-den { font-size: .75rem; font-weight: 600; color: var(--ink-faint); }
-    .cat-state { font-size: .65rem; font-weight: 800; letter-spacing: .07em; padding: .18rem .55rem; border-radius: 999px; color: #0a0a0b; background: var(--cat, #8b8b95); }
-    .cat-line { display: block; font-size: .82rem; color: var(--ink-dim); margin-top: .4rem; line-height: 1.45; }
-    /* --- Category detail sections (card targets) + state accent edges --- */
-    .cat-detail { border: 1px solid var(--line); border-radius: 16px; padding: .9rem 1.15rem 1.1rem; margin: 1.4rem 0; background: var(--surface); scroll-margin-top: 1rem; }
+    .cat-mid { display: flex; align-items: baseline; justify-content: space-between; gap: .5rem; margin: .55rem 0 .15rem; }
+    .cat-score { font-family: var(--font-display); font-weight: 400; font-size: 1.75rem; letter-spacing: .01em; color: var(--cat, var(--ink)); }
+    .cat-den { font-size: .78rem; font-weight: 600; color: var(--ink-faint); }
+    .cat-state { font-size: .66rem; font-weight: 800; letter-spacing: .07em; padding: .2rem .6rem; border-radius: 999px; color: #0a0a0b; background: var(--cat, #8b8b95); }
+    .cat-meter { display: block; height: 5px; border-radius: 999px; background: rgba(255,255,255,.08); margin: .6rem 0 .15rem; overflow: hidden; }
+    .cat-meter-fill { display: block; height: 100%; border-radius: 999px; background: var(--cat, #8b8b95); transition: width .25s ease; }
+    .cat-findings { display: block; font-size: .68rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-faint); margin-top: .35rem; }
+    .cat-findings-clean { color: var(--good); }
+    .cat-findings-problem { color: var(--worse); }
+    .cat-line { display: block; font-size: .82rem; color: var(--ink-dim); margin-top: .45rem; line-height: 1.5; }
+    /* --- Category detail sections (card targets) + state accent edges;
+       empty sections render as an intentional dashed panel, not a hole --- */
+    .cat-detail { border: 1px solid var(--line); border-radius: 16px; padding: 1rem 1.2rem 1.15rem; margin: 1.5rem 0; background: var(--surface); scroll-margin-top: 1.4rem; }
     .cat-detail-empty { background: rgba(255,255,255,.015); border-style: dashed; }
     .cat-detail-watch { border-left: 3px solid #facc15; }
     .cat-detail-needs-attention { border-left: 3px solid #fb923c; }
     .cat-detail-priority { border-left: 3px solid #f87171; }
     .cat-detail-neutral { border-left: 3px solid #8b8b95; }
-    .cat-empty { color: var(--ink-faint); font-size: .9rem; margin: .4rem 0 .5rem; }
-    /* --- Phase 2B finding cards: one card per negative finding, four
-       labeled zones. Left accent follows the category severity (semantic),
-       the fix zone uses the brand lime (action), receipts read like a
-       terminal transcript. Labels keep Phase 1 verbatim; case is CSS. --- */
-    .finding-card { border: 1px solid var(--line); border-left: 3px solid var(--fc, #f87171); border-radius: 14px; padding: 1.1rem 1.2rem 1rem; margin: 1.1rem 0; background: var(--surface); overflow-wrap: break-word; word-break: break-word; }
-    .finding-card + .finding-card { margin-top: 1.4rem; }
+    .cat-empty { color: var(--ink-faint); font-size: .9rem; margin: .4rem 0 .5rem; font-style: italic; }
+    /* --- Phase 2B finding cards: premium paid-audit cards, one per negative
+       finding, four labeled zones. The ROAST is the loudest block (band-tinted
+       evidence panel); the receipts drawer is a clear, bordered control with a
+       real line count; receipts render like terminal transcripts. --- */
+    .finding-card { border: 1px solid var(--line); border-left: 4px solid var(--fc, #f87171); border-radius: 16px; padding: 1.15rem 1.25rem 1.05rem; margin: 1.15rem 0; background: var(--surface); overflow-wrap: break-word; word-break: break-word; }
+    .finding-card + .finding-card { margin-top: 1.5rem; }
     .cat-detail-watch .finding-card { --fc: #facc15; }
     .cat-detail-needs-attention .finding-card { --fc: #fb923c; }
     .cat-detail-priority .finding-card { --fc: #f87171; }
-    .fc-head { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin-bottom: .8rem; }
+    .fc-head { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin-bottom: .9rem; padding-bottom: .75rem; border-bottom: 1px dashed var(--line); }
     .fc-count { font-size: .7rem; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; color: var(--ink-faint); }
     .fc-cat { font-size: .7rem; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: var(--ink-dim); background: rgba(255,255,255,.06); border: 1px solid var(--line); padding: .16rem .6rem; border-radius: 999px; }
     .fc-state { font-size: .64rem; font-weight: 800; letter-spacing: .07em; padding: .16rem .55rem; border-radius: 999px; color: #0a0a0b; background: #8b8b95; }
     .fc-state-watch { background: #facc15; }
     .fc-state-needs-attention { background: #fb923c; }
     .fc-state-priority { background: #f87171; }
-    .fc-body { display: flex; flex-direction: column; gap: .85rem; }
+    .fc-body { display: flex; flex-direction: column; gap: 1rem; }
     .fc-roast { max-width: 78ch; }
-    .fc-label { display: block; font-size: .66rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-faint); margin-bottom: .3rem; }
-    .fc-roast .ins-roast { font-size: 1.16rem; font-weight: 700; line-height: 1.42; color: var(--ink); margin: 0; font-style: normal; padding-left: .8rem; border-left: 3px solid var(--fc, #f87171); }
+    .fc-label { display: block; font-size: .66rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-faint); margin-bottom: .45rem; }
+    .fc-roast .ins-roast { font-size: 1.2rem; font-weight: 800; line-height: 1.45; color: var(--ink); margin: 0; font-style: normal; padding: 1rem 1.05rem; border: 1px solid var(--line); border-left: 4px solid var(--fc, #f87171); border-radius: 12px; background: rgba(255,255,255,.035); }
     .fc-roast .rec-note { margin: 0; font-style: italic; color: var(--ink-faint); font-size: .9rem; }
-    .fc-why, .fc-fix { max-width: 78ch; border-top: 1px solid var(--line); padding-top: .85rem; line-height: 1.65; color: var(--ink-dim); font-size: .93rem; }
-    .fc-why .ins-why, .fc-fix .ins-fix { display: block; font-weight: 800; text-transform: uppercase; letter-spacing: .07em; font-size: .66rem; color: var(--ink-faint); margin: 0 0 .25rem; }
-    .fc-fix { border-left: 3px solid var(--ass); padding-left: .85rem; background: rgba(212,240,0,.03); }
-    .fc-receipts { margin-top: .2rem; border-top: 1px dashed var(--line); padding-top: .8rem; }
-    .fc-receipts summary { cursor: pointer; color: var(--ink-dim); font-weight: 700; font-size: .82rem; list-style: none; user-select: none; }
+    .fc-why, .fc-fix { max-width: 78ch; border-top: 1px solid var(--line); padding-top: .9rem; line-height: 1.65; color: var(--ink-dim); font-size: .93rem; }
+    .fc-why .ins-why, .fc-fix .ins-fix { display: block; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; font-size: .66rem; color: var(--ink-faint); margin: 0 0 .3rem; }
+    .fc-fix { border-left: 3px solid var(--ass); padding-left: .9rem; background: rgba(212,240,0,.03); }
+    /* the receipts drawer: an obvious evidence control, not a footnote */
+    .fc-receipts { margin-top: .25rem; border-top: 1px dashed var(--line); padding-top: .95rem; }
+    .fc-receipts summary { display: flex; align-items: center; gap: .6rem; cursor: pointer; color: var(--ink-dim); font-weight: 700; font-size: .85rem; list-style: none; user-select: none; border: 1px solid var(--line-strong); border-radius: 10px; padding: .6rem .85rem; background: var(--surface-2); transition: border-color .15s ease, color .15s ease, background-color .15s ease; }
+    .fc-receipts summary:hover, .fc-receipts summary:focus-visible { border-color: var(--ass); color: var(--ink); background: var(--surface); }
+    .fc-receipts summary:focus-visible { outline: 2px solid var(--ass); outline-offset: 2px; }
     .fc-receipts summary::-webkit-details-marker { display: none; }
-    .fc-receipts summary::before { content: "▸  "; color: var(--ass); }
-    .fc-receipts[open] summary::before { content: "▾  "; color: var(--ass); }
-    .fc-receipts ul { margin: .6rem 0 0; padding: .7rem .9rem; list-style: none; background: #0d0d0f; border: 1px solid var(--line); border-radius: 10px; }
-    .fc-receipts li { margin-bottom: .35rem; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .84rem; color: #c9c9d1; overflow-wrap: anywhere; }
+    .fc-receipts summary::before { content: "▸"; color: var(--ass); font-size: .85rem; line-height: 1; }
+    .fc-receipts[open] summary::before { content: "▾"; }
+    .rec-count { margin-left: auto; font-size: .64rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--ass); background: rgba(212,240,0,.1); border: 1px solid rgba(212,240,0,.28); padding: .16rem .6rem; border-radius: 999px; }
+    .fc-receipts ul { margin: .7rem 0 0; padding: .85rem 1rem; list-style: none; background: #0d0d0f; border: 1px solid var(--line); border-left: 3px solid var(--fc, #f87171); border-radius: 10px; }
+    .fc-receipts li { margin: 0; font-family: var(--mono); font-size: .86rem; color: #cfcfd8; line-height: 1.6; overflow-wrap: anywhere; }
     .fc-receipts .rec-label { color: var(--ink-faint); font-family: var(--font-sans); }
+    /* neutral evidence blocks (duplicated-page pairs, metric measurements):
+       terminal-style panels inside the category sections */
+    .rec-block { margin: 1rem 0 0; padding: .85rem 1rem; background: #0d0d0f; border: 1px solid var(--line); border-left: 3px solid var(--neutral); border-radius: 10px; }
+    .rec-block .rec-label { display: block; color: var(--ink-faint); font-size: .68rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; margin-bottom: .35rem; }
+    .rec-block ul { margin: .2rem 0 0; padding-left: 1.1rem; }
+    .rec-block li, .rec-block em { font-family: var(--mono); font-size: .84rem; color: #c9c9d1; font-style: normal; overflow-wrap: anywhere; }
+    .rec-block a { color: var(--ass); text-decoration: none; border-bottom: 1px dotted rgba(212,240,0,.5); }
+    /* --- Positive results: real compliments render as rewarded, checkmarked
+       items; when a scan has no compliments, an intentional A.S.S.-voiced
+       empty panel. Compliments are never invented — only real scan
+       measurements render here. --- */
+    .working-list { list-style: none; padding: 0; margin: 1.1rem 0 .4rem; }
+    .working-item { position: relative; margin: .7rem 0; padding: .85rem 1rem .8rem 2.6rem; background: rgba(74,222,128,.05); border: 1px solid rgba(74,222,128,.22); border-left: 4px solid var(--good); border-radius: 12px; }
+    .working-item::before { content: "✓"; position: absolute; left: .9rem; top: .78rem; color: var(--good); font-weight: 800; font-size: 1.05rem; line-height: 1; }
+    .working-point { display: block; color: var(--ink); font-size: .93rem; line-height: 1.55; }
+    .working-point strong { color: var(--good); }
+    .working-receipt { display: block; margin-top: .4rem; font-size: .8rem; color: var(--ink-dim); }
+    .working-receipt em { font-family: var(--mono); font-size: .78rem; color: #c9c9d1; font-style: normal; overflow-wrap: anywhere; }
+    .working-empty { margin: 1.1rem 0 .4rem; padding: 1.05rem 1.15rem; border: 1px dashed var(--line-strong); border-left: 4px solid var(--neutral); border-radius: 12px; background: rgba(255,255,255,.015); }
+    .working-empty-line { margin: 0; color: var(--ink-dim); font-size: .92rem; font-style: italic; }
+    /* --- The scanner-selected worst page renders as a panel card --- */
+    .page-panel { margin: .4rem 0 1.2rem; padding: 1.05rem 1.15rem .95rem; border: 1px solid var(--line); border-left: 4px solid var(--pp, #f87171); border-radius: 14px; background: var(--surface); overflow-wrap: anywhere; }
+    .page-head { margin: 0 0 .55rem; }
+    .page-head a { color: var(--ink); text-decoration: none; border-bottom: 1px dotted var(--line-strong); }
+    .page-head a:hover { color: var(--ass); border-color: var(--ass); }
+    .page-list { margin: .25rem 0 0; }
+    /* --- Priority fixes: ranked cards. Rank = real priority order (category
+       severity desc); each card carries the category chip, state pill,
+       problem, specific action, receipt and a link to the full finding. --- */
+    .fix-list { list-style: none; counter-reset: fix; padding: 0; margin: 1.15rem 0 .4rem; }
+    .fix-item { position: relative; margin: .8rem 0; padding: 1rem 1.05rem .9rem 3.5rem; background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--fix, #f87171); border-radius: 14px; overflow-wrap: anywhere; }
+    .fix-item::before { counter-increment: fix; content: counter(fix); position: absolute; left: 1.1rem; top: .95rem; font-family: var(--font-display); font-size: 1.8rem; line-height: 1; color: var(--fix, #f87171); font-weight: 400; }
+    .fix-watch { --fix: #facc15; }
+    .fix-needs-attention { --fix: #fb923c; }
+    .fix-priority { --fix: #f87171; }
+    .fix-top { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin-bottom: .45rem; }
+    .fix-cat { font-size: .7rem; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: var(--ink-dim); background: rgba(255,255,255,.06); border: 1px solid var(--line); padding: .18rem .6rem; border-radius: 999px; }
+    .fix-pill { font-size: .64rem; font-weight: 800; letter-spacing: .07em; padding: .18rem .55rem; border-radius: 999px; color: #0a0a0b; background: var(--fix, #f87171); }
+    .fix-problem { margin: .15rem 0 .4rem; font-size: 1rem; font-weight: 700; line-height: 1.5; color: var(--ink); max-width: 78ch; }
+    .fix-action { margin: .35rem 0; padding: .55rem .8rem; border-left: 3px solid var(--ass); background: rgba(212,240,0,.035); border-radius: 0 8px 8px 0; color: var(--ink-dim); font-size: .9rem; line-height: 1.6; max-width: 78ch; }
+    .fix-action-label { display: block; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; font-size: .64rem; color: var(--ass); margin-bottom: .2rem; }
+    .fix-evidence { margin: .3rem 0 .6rem; font-size: .82rem; color: var(--ink-faint); }
+    .fix-evidence em { font-family: var(--mono); font-size: .78rem; color: #c9c9d1; font-style: normal; overflow-wrap: anywhere; }
+    .fix-link { font-size: .8rem; font-weight: 800; color: var(--ass); text-decoration: none; border-bottom: 1px dotted rgba(212,240,0,.55); }
+    .fix-link:hover { border-bottom-style: solid; }
+    .fix-link:focus-visible { outline: 2px solid var(--ass); outline-offset: 2px; border-radius: 2px; }
+    /* --- Closing verdict callout (band-tinted) --- */
+    .final-note { margin: .4rem 0 0; padding: .95rem 1.1rem; border: 1px solid var(--line); border-left: 4px solid var(--band, #f87171); border-radius: 12px; background: rgba(255,255,255,.03); font-size: 1.03rem; line-height: 1.6; max-width: 78ch; }
     .footer { color: var(--ink-faint); font-size: .9rem; border-top: 1px solid var(--line); padding-top: .8rem; margin-top: 1.5rem; }
     ul, ol { margin: .4rem 0 1rem; padding-left: 1.25rem; }
     li { margin-bottom: .45rem; }
-    /* The clean-compliments list (the good news) gets the green accent;
-       scoped to direct section children so receipts and view clones stay
-       neutral. */
-    #dashboard > h2 + ul > li { border-left: 3px solid #4ade80; background: rgba(74,222,128,.05); border-radius: 0 10px 10px 0; padding: .45rem .85rem; margin: .6rem 0; }
     .ins-roast { font-style: italic; color: var(--ink); font-weight: 600; margin: .3rem 0; font-size: .95rem; }
     .ins-why, .ins-fix { font-weight: 700; color: var(--ink-dim); margin-right: .25rem; }
     .rec-label { font-weight: 700; color: var(--ink-faint); font-size: .78rem; }
@@ -1073,16 +1211,22 @@ function renderHtmlReport(scan) {
     .cv-line { color: var(--ink-dim); font-size: .92rem; }
     .cv-clean { list-style: none; padding: 0; margin: .3rem 0 1.1rem; }
     .cv-clean li { border-left: 3px solid #4ade80; background: rgba(74,222,128,.05); border-radius: 0 10px 10px 0; padding: .45rem .85rem; margin: .5rem 0; }
+    .cv-clean .working-item { border-radius: 12px; margin: .5rem 0; }
     .cat-view-body .cat-detail { border: none; border-radius: 0; padding: 0; margin: 0; background: transparent; }
     .cat-view-body .cat-detail h3 { display: none; }
     /* --- Responsive: no horizontal overflow, nav intact at 390px --- */
     @media (max-width: 640px) {
       body { padding: 1.2rem .9rem 3rem; }
       .head-donkey { width: 44px; height: 44px; }
-      .hero { padding: 1.7rem .9rem 1.2rem; }
+      .hero { padding: 2rem .9rem 1.35rem; }
       .cat-grid { grid-template-columns: 1fr; }
-      .fc-why, .fc-fix, .fc-roast { max-width: none; }
+      .fc-roast, .fc-why, .fc-fix { max-width: none; }
+      .fix-item { padding-left: 2.9rem; }
+      .fix-item::before { left: .85rem; }
       .meta { font-size: .8rem; }
+      .finding-card { padding: 1rem .95rem .95rem; }
+      .fc-receipts summary { flex-wrap: wrap; }
+      .rec-count { margin-left: 0; }
     }
     /* --- Print: receipts and the whole report stay legible on paper --- */
     @media print {
@@ -1092,15 +1236,16 @@ function renderHtmlReport(scan) {
       h1 { color: #111; }
       .hero { background: #fafafa; border-color: #d4d4d8; }
       .hero .score { color: #111; }
-      .cat-card, .finding-card, .cat-detail { background: #fff; border-color: #d4d4d8; }
-      .fc-receipts ul { background: #f6f6f6; border-color: #d4d4d8; }
-      .cat-line, .fc-why, .fc-fix, .cv-line, .meta, .hint, .powered, .head-tag { color: #333; }
+      .cat-card, .finding-card, .cat-detail, .page-panel, .fix-item, .working-item { background: #fff; border-color: #d4d4d8; }
+      .fc-receipts ul, .rec-block { background: #f6f6f6; border-color: #d4d4d8; }
+      .cat-line, .fc-why, .fc-fix, .cv-line, .meta, .hint, .powered, .head-tag, .working-point, .fix-problem, .final-note { color: #333; }
       .fc-roast .ins-roast { color: #111; }
-      .fc-receipts li { color: #1a1a1e; }
+      .fc-receipts li, .rec-block li, .rec-block em, .working-receipt em, .fix-evidence em { color: #1a1a1e; }
+      .working-point strong, .working-item::before { color: #16a34a; }
       .disclaimer { color: #555; border-color: #d4d4d8; }
       a { color: #000; }
     }
-  </style>
+</style>
 </head>
 <body>
   <div id="dashboard">
@@ -1121,9 +1266,16 @@ function renderHtmlReport(scan) {
 
   <section class="hero" style="--band:${publicVerdict.color}">
     <p class="score"${scoreAccent}>A.S.S. Score: ${pubScore} / 100</p>
+    <p class="hero-num" aria-hidden="true">
+      <span class="hero-val">${pubScore}</span>
+      <span class="hero-den">/ 100</span>
+    </p>
     ${verdictLine}
-    ${pagesLine}
+    <div class="hero-gauge" aria-hidden="true">
+      <span class="hero-gauge-fill" style="width:${pubScore}%"> </span>
+    </div>
     <p class="hero-scale">0 = LEAST ASS / 100 = MAX ASS</p>
+    ${pagesLine}
   </section>
 
   ${verdictSection}
