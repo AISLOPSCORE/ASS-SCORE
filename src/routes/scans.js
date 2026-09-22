@@ -1040,7 +1040,7 @@ function renderHtmlReport(scan) {
     }
     * { box-sizing: border-box; }
     html { -webkit-text-size-adjust: 100%; }
-    body { font-family: var(--font-sans); background: var(--bg); color: var(--ink); max-width: 1024px; margin: 0 auto; padding: 2rem 1.25rem 4rem; line-height: 1.6; font-size: .95rem; overflow-x: clip; }
+    body { font-family: var(--font-sans); background: var(--bg); color: var(--ink); max-width: min(1280px, calc(100% - 2.5rem)); margin: 0 auto; padding: 2rem 1.25rem 4rem; line-height: 1.6; font-size: .95rem; overflow-x: clip; }
     /* --- Masthead (wordmark h1 kept verbatim for the branding contract;
        styled as the Anton wordmark, with the donkey as the brand moment) --- */
     .report-head { border-bottom: 1px solid var(--line); padding-bottom: 1.1rem; margin-bottom: 1rem; }
