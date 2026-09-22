@@ -126,15 +126,18 @@ test('P2D2.3: findings are premium cards with a receipts drawer; What To Fix Fir
     assert.equal((html.match(/class="rec-count">/g) ?? []).length, 6, 'every receipts drawer shows a real evidence-line count');
     assert.ok(html.includes('class="rec-count">1 line of evidence<'), 'drawer count is the actual line count');
     assert.ok(html.includes('class="fc-roast"'), 'roast blocks present');
-    // What To Fix First: ranked cards, capped at 5, each linked to a real finding anchor.
+    // What To Fix First: COMPACT ranked SUMMARY cards (dashboard final cleanup)
+    // — capped at 5, ranked by category severity, each linked to its category
+    // view anchor, never a repeat of the full roast/receipt.
     const fixItems = [...html.matchAll(/<li class="fix-item fix-([a-z-]+)">/g)].map((m) => m[1]);
     assert.equal(fixItems.length, 5, 'fix-first capped at top 5 ranked cards');
     assert.ok(fixItems.every((c) => ['priority', 'needs-attention', 'watch'].includes(c)), 'fix cards carry real state classes');
     const links = [...html.matchAll(/class="fix-link" href="#(cat-[a-z]+)"/g)].map((m) => m[1]);
     assert.equal(links.length, 5, 'each fix card links to its finding');
     for (const anchor of links) assert.ok(html.includes(`id="${anchor}"`), `fix link resolves to the real ${anchor} section`);
-    assert.ok(html.includes('class="fix-problem"') && html.includes('class="fix-action"') && html.includes('class="fix-evidence"'),
-      'fix cards carry problem + action + receipt');
+    assert.ok(html.includes('class="fix-action"'), 'fix cards carry the one-line what-to-fix summary');
+    assert.ok(!html.includes('class="fix-problem"') && !html.includes('class="fix-evidence"'),
+      'compact fix cards never repeat the full roast or the full receipt');
   } finally {
     app.server.close();
   }
@@ -170,8 +173,10 @@ test('P2D2.5: locked architecture unchanged under the polish — section order, 
     for (const [name, id] of [['clean', 'p2d2-clean'], ['sloppy', 'p2d2-sloppy']]) {
       const html = await paidHtml(app.base, id);
       const idx = (s) => html.indexOf(s);
-      const seq = ['A.S.S. Score: ', 'The Verdict', 'Your Breakdown', "What's Working",
-        'The Actual Findings', 'Page That Needs The Most Work', 'What To Fix First', 'Final Verdict', 'Methodology'];
+      // Dashboard final cleanup order: verdict → page → fix → breakdown →
+      // working → findings → final → methodology.
+      const seq = ['A.S.S. Score: ', 'The Verdict', 'Page That Needs The Most Work', 'What To Fix First',
+        'Your Breakdown', "What's Working", 'The Actual Findings', 'Final Verdict', 'Methodology'];
       let prev = -1;
       for (const marker of seq) {
         const at = idx(marker);

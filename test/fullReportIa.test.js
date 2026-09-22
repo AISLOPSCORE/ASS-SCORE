@@ -432,8 +432,10 @@ test('P2A.4: dashboard section hierarchy — hero → verdict → breakdown → 
   try {
     const html = await paidHtml(app.base, 'p2a-order');
     const idx = (s) => html.indexOf(s);
-    const seq = ['A.S.S. Score: 89 / 100', 'The Verdict', 'Your Breakdown', "What's Working",
-      'The Actual Findings', 'Page That Needs The Most Work', 'What To Fix First', 'Final Verdict', 'Methodology'];
+    // Dashboard final cleanup (2026-09-23): the action layer (page + fix)
+    // moved UP right after the verdict; findings moved to the detail position.
+    const seq = ['A.S.S. Score: 89 / 100', 'The Verdict', 'Page That Needs The Most Work', 'What To Fix First',
+      'Your Breakdown', "What's Working", 'The Actual Findings', 'Final Verdict', 'Methodology'];
     let prev = -1;
     for (const marker of seq) {
       const at = idx(marker);
@@ -618,10 +620,11 @@ test('P2B.4: Phase 2A assertions hold unchanged under the card redesign (hero, 7
       ['cat-filler', 'cat-boilerplate', 'cat-infodensity', 'cat-repetitive', 'cat-crosspage', 'cat-fingerprints', 'cat-assets'],
       'the 7 existing category cards remain');
     for (const anchor of hrefs) assert.ok(sloppy.includes(`id="${anchor}"`), `anchor ${anchor} still present`);
-    // Section hierarchy unchanged.
+    // Section hierarchy (dashboard final cleanup order: attention sections
+    // moved up after the verdict, findings moved to the detail position).
     const idx = (s) => sloppy.indexOf(s);
-    const seq = ['A.S.S. Score: 89 / 100', 'The Verdict', 'Your Breakdown', "What's Working",
-      'The Actual Findings', 'Page That Needs The Most Work', 'What To Fix First', 'Final Verdict', 'Methodology'];
+    const seq = ['A.S.S. Score: 89 / 100', 'The Verdict', 'Page That Needs The Most Work', 'What To Fix First',
+      'Your Breakdown', "What's Working", 'The Actual Findings', 'Final Verdict', 'Methodology'];
     let prev = -1;
     for (const marker of seq) {
       const at = idx(marker);
@@ -709,8 +712,10 @@ test('P2C.2: dashboard retains every existing section in order — views layer o
     for (const [name, id] of [['clean', 'p2c-clean'], ['sloppy', 'p2c-sloppy']]) {
       const html = await paidHtml(app.base, id);
       const idx = (s) => html.indexOf(s);
-      const seq = ['A.S.S. Score: ', 'The Verdict', 'Your Breakdown', "What's Working",
-        'The Actual Findings', 'Page That Needs The Most Work', 'What To Fix First', 'Final Verdict', 'Methodology'];
+      // Dashboard final cleanup order: verdict → page → fix → breakdown →
+      // working → findings → final → methodology.
+      const seq = ['A.S.S. Score: ', 'The Verdict', 'Page That Needs The Most Work', 'What To Fix First',
+        'Your Breakdown', "What's Working", 'The Actual Findings', 'Final Verdict', 'Methodology'];
       let prev = -1;
       for (const marker of seq) {
         const at = idx(marker);

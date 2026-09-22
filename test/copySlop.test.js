@@ -104,7 +104,7 @@ test('copySlop: hedge list is disjoint from boilerplate regexes — no same-sent
   }
   // The canonical overlap sentence counts once under one label per span.
   const r = boilerplate(ctx(`<html><body><p>We are committed to providing excellent service.</p></body></html>`));
-  assert.ok(r.findings.some((f) => f.startsWith('1 boilerplate signal(')), `single signal: ${r.findings[0]}`);
+  assert.ok(r.findings.some((f) => /^1 boilerplate signal in \d+ words/.test(f)), `single signal: ${r.findings[0]}`);
   assert.ok(r.findings.some((f) => /1× generic commitment claim/.test(f)), 'existing boilerplate signal fires');
 });
 

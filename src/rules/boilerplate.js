@@ -33,7 +33,7 @@ const SIGNALS = [
   { re: /\bpowered by\b/i, label: 'powered-by line' },
   { re: /\bleave a reply\b/i, label: 'comment boilerplate' },
   { re: /\bget in touch\b/i, label: 'generic contact CTA' },
-  { re: /\blearn more\b/i, label: 'generic "learn more" CTA' },
+  { re: /\blearn more\b/i, label: 'generic \u201Clearn more\u201D CTA' },
   { re: /\bwe are committed to\b/i, label: 'generic commitment claim' },
   { re: /\bour mission is to\b/i, label: 'generic mission statement' },
   { re: /\bcustomer-centric\b/i, label: 'marketing adjective' },
@@ -93,7 +93,7 @@ export function analyze({ text = '', words = [], sentences = [], paragraphs = []
   const score = Math.max(0, Math.min(100, Math.round(Math.min(density, 12) * (100 / 12))));
 
   const findings = [
-    `${totalSignals} boilerplate signal(s) in ${wordCount} words (${density.toFixed(1)} per ${NORMALIZATION_WORDS} words)`,
+    `${totalSignals} boilerplate signal${totalSignals === 1 ? '' : 's'} in ${wordCount} words (${density.toFixed(1)} per ${NORMALIZATION_WORDS} words)`,
     ...found.sort((a, b) => b.count - a.count).slice(0, MAX_FINDINGS).map((f) => `${f.count}× ${f.label}`),
     ...hedges.quotes.map((q) => `hedge evidence: "${q.sentence}"`),
     ...dupBlocks.slice(0, 3).map((d) => `${d.count}× repeated block: "${d.text.slice(0, 80)}${d.text.length > 80 ? '…' : ''}"`),

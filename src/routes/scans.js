@@ -517,10 +517,13 @@ function renderFreeHtmlReport(scan, shareBase = 'https://ass-score.com') {
 /**
  * Render the HTML report — the customer-facing Full Report (owner content/IA
  * rebuild 2026-09-17, Phase 1, wrapped by the Phase 2A dashboard shell).
- * Page order (target hierarchy, owner/lead 2026-09-17): SCORE HERO + THE
- * VERDICT → YOUR BREAKDOWN (category cards) → WHAT'S WORKING → THE ACTUAL
- * FINDINGS → PAGE THAT NEEDS THE MOST WORK → WHAT TO FIX FIRST → FINAL
- * VERDICT → METHODOLOGY + mandated DISCLAIMER. Phase 2A is presentation-only:
+ * Page order (dashboard final cleanup, owner/lead 2026-09-23 — hierarchy:
+ * Big Picture → Score/Verdict → What Needs Attention → Category Breakdown →
+ * What's Working → Findings/detail): SCORE HERO → THE VERDICT → PAGE THAT
+ * NEEDS THE MOST WORK → WHAT TO FIX FIRST (the "What Needs Attention" block,
+ * moved up so the action plan reads right after the verdict) → YOUR BREAKDOWN
+ * (category cards) → WHAT'S WORKING → THE ACTUAL FINDINGS → FINAL VERDICT →
+ * METHODOLOGY + mandated DISCLAIMER. Phase 2A is presentation-only:
  * every content string (roast copy, why/fix, receipts, methodology,
  * disclaimer) is emitted verbatim by the sections below.
  *
@@ -528,7 +531,12 @@ function renderFreeHtmlReport(scan, shareBase = 'https://ass-score.com') {
  *   - WHAT'S WORKING holds CLEAN/positive detector results ONLY (compliments
  *     + their receipts; "COPY — CLEAN: …").
  *   - THE ACTUAL FINDINGS holds NEGATIVE findings ONLY, each in the four-part
- *     form THE ROAST / WHY IT MATTERS / HOW TO FIX IT / THE RECEIPTS.
+ *     form THE ROAST / WHY IT MATTERS / HOW TO FIX IT / THE RECEIPTS; clean
+ *     and skipped categories render NO card inside it (they are represented
+ *     by the breakdown cards + WHAT'S WORKING) — they keep only an invisible
+ *     anchor target so the Phase 2A/2C wiring (cards + focused views + no-JS
+ *     hash scroll) still resolves. Metric-only categories keep their NEUTRAL
+ *     Measurements block (owner IA §4 — neutral evidence, never a finding).
  *   - Summary counts count NEGATIVE findings only — compliments and metric
  *     measurements are never "findings" and are never counted.
  *   - Diagnostic metric measurements (vocab diversity, stopword ratio, mean
@@ -539,7 +547,9 @@ function renderFreeHtmlReport(scan, shareBase = 'https://ass-score.com') {
  *     multi-page scans name the stored worst page with its actual-negative
  *     concentration (§8).
  *   - WHAT TO FIX FIRST lists actual negative findings only, prioritized by
- *     category severity, each as problem + specific action + evidence (§9).
+ *     category severity, each as a COMPACT ranked summary (rank/pill,
+ *     category + severity, one-line what-to-fix, link to the category view) —
+ *     never a repeat of the full Roast/Why/Fix/Receipts (§9, cleanup pass).
  *
  * Everything is deterministic: same scan id -> byte-identical HTML. This is
  * the PAID report — reachable ONLY via the token'd routes (see scansRouter).
@@ -613,7 +623,7 @@ function renderHtmlReport(scan) {
   <p class="roast">${roastInfo.emoji} ${esc(roastInfo.line)}</p>
   <p class="conclusion">${esc(verdictConclusion(scan, pubScore, publicVerdict, negativeTotal))}</p>`;
 
-  // --- 3. WHAT'S WORKING (clean/positive detector results only; rendered
+  // --- 5. WHAT'S WORKING (clean/positive detector results only; rendered
   // below the breakdown, per the Phase 2A target hierarchy) ------------------
   const cleanLis = classified
     .flatMap((g) => g.cleans.map((item) => renderCleanItem(CATEGORY_LABELS[g.key] ?? g.key, item)))
@@ -626,7 +636,7 @@ function renderHtmlReport(scan) {
   ${cleanLis}
   </ul>`}`;
 
-  // --- 2. YOUR BREAKDOWN (7 customer-facing CATEGORY CARDS, Phase 2A shell) ---
+  // --- 4. YOUR BREAKDOWN (7 customer-facing CATEGORY CARDS, Phase 2A shell) ---
   // Each category renders as a CLICKABLE card whose href="#cat-<key>" hash now
   // opens that category's FOCUSED view (Phase 2C) — the inline script shows the
   // matching #view-cat-<key> section. The dashboard's own id="cat-<key>"
@@ -687,7 +697,7 @@ function renderHtmlReport(scan) {
   ${breakdownCards}
   </div>`;
 
-  // --- 4. THE ACTUAL FINDINGS (negative findings only, four concepts) --------
+  // --- 6. THE ACTUAL FINDINGS (negative findings only, four concepts) --------
   const findingsIntro = negativeTotal === 0
     ? 'No findings this scan — nothing to roast, and nothing to hide.'
     : `${negativeTotal} finding${negativeTotal === 1 ? '' : 's'} across ${negativeCats.length} categor${negativeCats.length === 1 ? 'y' : 'ies'} — every roast points at the receipts below.`;
@@ -696,10 +706,12 @@ function renderHtmlReport(scan) {
   // stopword/sentence-length measurements) still shows its Measurements block.
   // negativeCats above stays strictly negative-only for the intro count, the
   // page summary, and What To Fix First (owner IA §4/§5/§8).
-  // Phase 2A shell: EVERY category gets an anchor section id="cat-<key>" here
-  // (the breakdown cards link to it). Categories without negative findings or
-  // metric measurements render a NEUTRAL placeholder using the same wording
-  // their breakdown card already shows — never a finding, never a count.
+  // Phase 2A shell: EVERY category gets an anchor target id="cat-<key>" here
+  // (the breakdown cards link to it). Categories with negative findings render
+  // their finding cards; metric-only categories render their NEUTRAL
+  // Measurements block; clean/skipped categories render ONLY an invisible
+  // anchor marker (dashboard final cleanup — no more "Nothing meaningful to
+  // roast here" placeholder cards inside THE ACTUAL FINDINGS).
   // Phase 2B: global finding ordinal across the whole report ("Finding 1, 2,
   // 3…" in owner spec), independent of the per-category insight-seeding index
   // which is deliberately left untouched for byte-determinism of derived copy.
@@ -707,14 +719,15 @@ function renderHtmlReport(scan) {
   const findingGroups = classified.map((g) => {
     const label = CATEGORY_LABELS[g.key] ?? g.key;
     if (!(g.negatives.length > 0 || g.metrics.length > 0)) {
-      const rule = g.rule ?? {};
-      const skipped = !(Number.isFinite(Number(rule?.score)) && rule.score !== null);
-      const note = skipped ? (rule.note ? esc(rule.note) : 'skipped') : 'Nothing meaningful to roast here.';
-      return `
-  <section class="cat-detail cat-detail-empty" id="cat-${g.key.toLowerCase()}">
-    <h3>${esc(label)}</h3>
-    <p class="cat-empty">${note}</p>
-  </section>`;
+      // Clean / skipped category (dashboard final cleanup 2026-09-23): render
+      // NO card inside THE ACTUAL FINDINGS — the breakdown card and WHAT'S
+      // WORKING already represent it, and a "Nothing meaningful to roast here"
+      // panel only reads as a fake finding. The Phase 2A/2C contract still
+      // needs an in-page anchor (the category cards link here; the focused
+      // Category View resolves its data-source here; no-JS hash scroll lands
+      // here), so emit an invisible marker element instead of a visible card.
+      return `\n  <span class="cat-anchor" aria-hidden="true" id="cat-${g.key.toLowerCase()}"
+></span>`;
     }
     // Phase 2B: each negative finding's severity badge comes from the SAME
     // existing category classification (categoryClass on the stored sub-score
@@ -764,7 +777,7 @@ function renderHtmlReport(scan) {
   <p>${findingsIntro}</p>
   ${findingGroups}`;
 
-  // --- 5. PAGE THAT NEEDS THE MOST WORK (owner IA §8) ------------------------
+  // --- 2. PAGE THAT NEEDS THE MOST WORK (owner IA §8) ------------------------
   // Single-page scan (no stored worstPage): name the homepage — the only page
   // scanned — and summarize what is actually wrong there. Multi-page scan:
   // the stored worst page (engine-picked combined score) plus its actual
@@ -800,12 +813,12 @@ function renderHtmlReport(scan) {
   </div>`;
   }
 
-  // --- 6. WHAT TO FIX FIRST (actual negative findings only, prioritized) -----
+  // --- 3. WHAT TO FIX FIRST (actual negative findings only, prioritized) -----
   // Owner IA §9: only NEGATIVE findings become to-dos (clean results and
   // metric measurements never do). Prioritized by category sub-score
   // descending (impact proxy; stable sort keeps finding order inside a
-  // category); each item = problem + specific action + supporting evidence.
-  // Cap at 5 for a scannable list.
+  // category); capped at 5 for a scannable list. Each item renders as a
+  // COMPACT summary (dashboard final cleanup) — see the map below.
   const fixItems = [];
   for (const g of classified) {
     if (g.negatives.length === 0) continue;
@@ -827,24 +840,29 @@ function renderHtmlReport(scan) {
     });
   }
   fixItems.sort((a, b) => (Number.isFinite(b.score) ? b.score : 0) - (Number.isFinite(a.score) ? a.score : 0));
-  // Each fix is a RANKED CARD (rank = real priority order, category severity
-  // desc): category + state pill, the problem, the specific action, the
-  // receipt, and a link to the underlying finding in the report.
+  // Each fix is a COMPACT RANKED SUMMARY (dashboard final cleanup 2026-09-23):
+  // rank (CSS counter) + state pill + category chip + ONE-LINE what-to-fix +
+  // a link into the category view — never a repeat of the full Roast / Why /
+  // How To Fix / Receipts (those live once, in THE ACTUAL FINDINGS). Rank =
+  // real priority order (category severity desc), links reuse the same
+  // #cat-<key> anchor pattern as the category cards, so the browser opens the
+  // focused Category View (JS) or scrolls the category section (no-JS).
   const fixLis = fixItems.slice(0, 5)
-    .map((it) => `\n  <li class="fix-item fix-${it.cls.toLowerCase().replace(/[^a-z0-9]+/g, '-')}">
+    .map((it) => {
+      const summary = it.action
+        ? short(String(it.action), 120)
+        : 'See the full finding for the concrete fix.';
+      return `\n  <li class="fix-item fix-${it.cls.toLowerCase().replace(/[^a-z0-9]+/g, '-')}">
     <div class="fix-top">
       <span class="fix-cat">${esc(it.label)}</span>
       <span class="fix-pill">${esc(it.cls)}</span>
     </div>
-    <p class="fix-problem">${esc(it.problem)}</p>
-    ${it.action ? `<p class="fix-action">
-      <span class="fix-action-label">Fix it:</span> ${esc(it.action)}
-    </p>` : ''}
-    <p class="fix-evidence">
-      <span class="rec-label">Receipt:</span> <em>${esc(short(it.evidence, 110))}</em>
+    <p class="fix-action">
+      <span class="fix-action-label">Fix it:</span> ${esc(summary)}
     </p>
     <a class="fix-link" href="#cat-${it.key.toLowerCase()}">See the full finding ↓</a>
-  </li>`)
+  </li>`;
+    })
     .join('');
   const fixSection = `
   <h2>What To Fix First</h2>
@@ -1104,6 +1122,11 @@ function renderHtmlReport(scan) {
     /* --- Category detail sections (card targets) + state accent edges;
        empty sections render as an intentional dashed panel, not a hole --- */
     .cat-detail { border: 1px solid var(--line); border-radius: 16px; padding: 1rem 1.2rem 1.15rem; margin: 1.5rem 0; background: var(--surface); scroll-margin-top: 1.4rem; }
+    /* invisible anchor markers for clean/skipped categories inside THE ACTUAL
+       FINDINGS: no card is rendered for them (dashboard final cleanup), but the
+       Phase 2A/2C wiring still needs an in-page anchor target — this marker
+       carries the id with zero visual footprint. */
+    .cat-anchor { display: block; height: 0; }
     .cat-detail-empty { background: rgba(255,255,255,.015); border-style: dashed; }
     .cat-detail-watch { border-left: 3px solid #facc15; }
     .cat-detail-needs-attention { border-left: 3px solid #fb923c; }
@@ -1302,11 +1325,11 @@ function renderHtmlReport(scan) {
   </section>
 
   ${verdictSection}
+  ${pageSection}
+  ${fixSection}
   ${breakdownSection}
   ${workingSection}
   ${findingsSection}
-  ${pageSection}
-  ${fixSection}
   ${finalSection}
   ${methodologySection}
   ${footerLine}

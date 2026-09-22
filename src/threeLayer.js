@@ -140,14 +140,14 @@ function firstDupPair(list) {
 
 const EVIDENCE_PARSERS = {
   filler(f) {
-    let m = /^(\d+) filler phrase occurrence\(s\) in (\d+) words \(([\d.]+) per \d+ words\)$/.exec(f);
+    let m = /^(\d+) filler phrase occurrence(?:\(s\)|s)? in (\d+) words \(([\d.]+) per \d+ words\)$/.exec(f);
     if (m) return { count: m[1], words: m[2], density: m[3] };
     m = /^(\d+)× "(.+)"$/.exec(f);
     if (m) return { count: m[1], phrase: m[2] };
     return {};
   },
   boilerplate(f) {
-    let m = /^(\d+) boilerplate signal\(s\) in (\d+) words \(([\d.]+) per \d+ words\)$/.exec(f);
+    let m = /^(\d+) boilerplate signal(?:\(s\)|s)? in (\d+) words \(([\d.]+) per \d+ words\)$/.exec(f);
     if (m) return { count: m[1], words: m[2], density: m[3] };
     m = /^(\d+)× repeated block: "(.+)"$/.exec(f);
     if (m) return { count: m[1], text: m[2] };
@@ -186,7 +186,7 @@ const EVIDENCE_PARSERS = {
     return {};
   },
   crossPage(f) {
-    let m = /^cross-page duplication: (\d+) flagged pair\(s\), max similarity ([\d.]+)%$/.exec(f);
+    let m = /^cross-page duplication: (\d+) flagged pair(?:\(s\)|s)?, max similarity ([\d.]+)%$/.exec(f);
     if (m) return { pairCount: m[1], maxSim: m[2] };
     m = /^near-identical page pair: (\S+) ~ (\S+) \(([\d.]+)% similar\)$/.exec(f);
     if (m) return { urlA: m[1], urlB: m[2], sim: m[3] };
@@ -226,7 +226,34 @@ const EVIDENCE_PARSERS = {
 export function parseEvidenceTokens(category, finding) {
   const parser = EVIDENCE_PARSERS[category];
   if (!parser) return {};
-  return parser(String(finding ?? ''));
+  const tokens = parser(String(finding ?? ''));
+  // Plural-noun tokens (dashboard final cleanup 2026-09-23 — presentation copy
+  // only, never scoring/classification): pool templates may reference
+  // {phrasesNoun} / {signalsNoun} / {specificsNoun} / {factsNoun} / {repeatsNoun}
+  // / {appearancesNoun} / {pairsNoun} instead of a hard-coded "(s)" placeholder.
+  // They carry the correct singular/plural form for the finding's own count
+  // token, so "1 boilerplate signal" and "7 boilerplate signals" both render
+  // cleanly. Derived deterministically from the parsed evidence itself — same
+  // (category, finding) -> identical tokens, exactly like every other token.
+  if ('count' in tokens) {
+    const n = Number(tokens.count);
+    if (category === 'filler') {
+      tokens.phrasesNoun = n === 1 ? 'phrase' : 'phrases';
+      tokens.buzzwordsNoun = n === 1 ? 'buzzword' : 'buzzwords';
+    } else if (category === 'boilerplate') {
+      tokens.signalsNoun = n === 1 ? 'signal' : 'signals';
+    } else if (category === 'infoDensity') {
+      tokens.specificsNoun = n === 1 ? 'specific' : 'specifics';
+      tokens.factsNoun = n === 1 ? 'fact' : 'facts';
+    } else if (category === 'repetitive') {
+      tokens.repeatsNoun = n === 1 ? 'repeat' : 'repeats';
+      tokens.appearancesNoun = n === 1 ? 'appearance' : 'appearances';
+    }
+  }
+  if (category === 'crossPage' && ('pairCount' in tokens || 'count' in tokens)) {
+    tokens.pairsNoun = Number(tokens.pairCount ?? tokens.count) === 1 ? 'pair' : 'pairs';
+  }
+  return tokens;
 }
 
 // ---------------------------------------------------------------------------
@@ -234,10 +261,13 @@ export function parseEvidenceTokens(category, finding) {
 // (owner rule 2026-09-16). A per-finding DETERMINISTIC judgment derived from
 // the rule modules' own evidence formats (mirrored byte-for-byte):
 //
-//   filler      "0 filler phrase occurrence(s) in N words (0.0 per 300 words)"
-//               — only emitted when the detector found zero hits.
-//   boilerplate "0 boilerplate signal(s) in N words (0.0 per 300 words)"
+//   filler      "0 filler phrase occurrences in N words (0.0 per 300 words)"
+//               — only emitted when the detector found zero hits. (Legacy rows
+//               wrote the pre-pluralization "occurrence(s)" form; the matcher
+//               below tolerates both so stored bytes never change meaning.)
+//   boilerplate "0 boilerplate signals in N words (0.0 per 300 words)"
 //               — same: zero signals across every regex + hedge + dup check.
+//               (Legacy "signal(s)" form also matched.)
 //   infoDensity the four metric lines are ALWAYS emitted; a line is clean only
 //               inside the rule's zero-penalty band (ttrSub/stopSub/sentSub/
 //               paraSub === 0): MATTR >= 0.85, stopwords <= 40%, mean sentence
@@ -262,10 +292,10 @@ export function parseEvidenceTokens(category, finding) {
 // ---------------------------------------------------------------------------
 const CLEAN_EVIDENCE = {
   filler(f) {
-    return /^0 filler phrase occurrence\(s\) in \d+ words \(0\.0 per \d+ words\)$/.test(f);
+    return /^0 filler phrase occurrence(?:\(s\)|s)? in \d+ words \(0\.0 per \d+ words\)$/.test(f);
   },
   boilerplate(f) {
-    return /^0 boilerplate signal\(s\) in \d+ words \(0\.0 per \d+ words\)$/.test(f);
+    return /^0 boilerplate signal(?:\(s\)|s)? in \d+ words \(0\.0 per \d+ words\)$/.test(f);
   },
   infoDensity(f) {
     let m = /^vocabulary diversity \(MATTR-\d+\): ([\d.]+) \(lower = more repetitive vocabulary\)$/.exec(f);
@@ -429,6 +459,8 @@ export function buildCategoryInsights({ category, findings = [], id }) {
   const usedKeepUps = new Set();
   return findings.slice(0, MAX_INSIGHTS_PER_CATEGORY).map((evidence, i) => {
     const tokens = parseEvidenceTokens(category, evidence);
+    // (Plural-noun tokens like {phrasesNoun}/{signalsNoun}/{pairsNoun} are
+    // synthesized inside parseEvidenceTokens above — presentation copy only.)
 
     // Owner rule: a clean measurement gets a compliment, never a roast. The
     // clean signal comes from the EVIDENCE ITSELF (deterministic, rule-shaped:

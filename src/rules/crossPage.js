@@ -55,7 +55,7 @@ export function analyzeCrossPage({ pages = [] } = {}) {
   const findings = [];
   if (flagged.length > 0) {
     const maxSim = Math.max(...flagged.map((p) => p.similarity));
-    findings.push(`cross-page duplication: ${flagged.length} flagged pair(s), max similarity ${(maxSim * 100).toFixed(1)}%`);
+    findings.push(`cross-page duplication: ${flagged.length} flagged pair${flagged.length === 1 ? '' : 's'}, max similarity ${(maxSim * 100).toFixed(1)}%`);
     for (const p of flagged) {
       findings.push(`near-identical page pair: ${p.pageA} ~ ${p.pageB} (${(p.similarity * 100).toFixed(1)}% similar)`);
     }
