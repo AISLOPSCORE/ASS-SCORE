@@ -5,6 +5,8 @@ import { validateUrl, resolveAndCheck } from './fetch/ssrf.js';
 import { scanRouter } from './routes/scan.js';
 import { scansRouter } from './routes/scans.js';
 import { webhookRouter } from './routes/webhook.js';
+import { trackRouter } from './routes/track.js';
+import { adminRouter } from './routes/admin.js';
 import { createEmailSender } from './email.js';
 import { reportSecret } from './paywall.js';
 import { createCors } from './cors.js';
@@ -36,6 +38,10 @@ const defaultCheckTarget = async (raw) => {
  *                     + additional fetches (default SCAN_BUDGET_MS; tests lower it)
  *   publicBaseUrl   — public origin used for share links and result pages
  *                     (default env PUBLIC_BASE_URL or https://ass-score.com)
+ *   adminPassword — password for the private GET /admin/stats page (default:
+ *                     env ADMIN_PASSWORD; unset => the route is disabled/403).
+ *                     Injectable so the test suite can pin a secret; never
+ *                     passed through the public API.
  *   now             — ISO timestamp provider (default new Date().toISOString())
  *   maxWebhooksPerDay — per-IP daily cap on POST /api/v1/webhook (default env
  *                     MAX_WEBHOOKS_PER_DAY or 10; 0 disables the cap)
@@ -56,11 +62,11 @@ const defaultCheckTarget = async (raw) => {
  *                     use the backend origin if the domain does not proxy
  *                     /api/v1/report to the service)
  *   runRetentionOnBoot — boolean; when true the daily retention sweep
- *                     (src/retention.js — purge scans/scan_events/webhook_events
- *                     older than 30 days) runs once at app creation and then
- *                     every 24h on an unref()'d timer. Default FALSE so test
- *                     app instances (created repeatedly by the suite) never
- *                     touch fixture rows; the production entrypoint
+ *                     (src/retention.js — purge scans/scan_events/webhook_events/
+ *                     page_views older than 30 days) runs once at app creation
+ *                     and then every 24h on an unref()'d timer. Default FALSE
+ *                     so test app instances (created repeatedly by the suite)
+ *                     never touch fixture rows; the production entrypoint
  *                     (src/server.js) sets it true.
  *
  * NOTE on client IPs: the app trusts ONE proxy hop (the platform edge, e.g.
@@ -70,7 +76,7 @@ const defaultCheckTarget = async (raw) => {
  * src/clientIp.js; without trust proxy, Express ignores X-Forwarded-For and
  * every request would look like the LB's IP, collapsing the per-IP caps.
  */
-export function createApp({ dbPath = './data/ass-score.db', fetcher, webhookDeliverer, emailSender, scanBudgetMs, publicBaseUrl = process.env.PUBLIC_BASE_URL || 'https://ass-score.com', now, maxWebhooksPerDay, maxScansPerDay, validateTarget, allowedOrigins, reportTokenSecret, reportBaseUrl, runRetentionOnBoot = false } = {}) {
+export function createApp({ dbPath = './data/ass-score.db', fetcher, webhookDeliverer, emailSender, scanBudgetMs, publicBaseUrl = process.env.PUBLIC_BASE_URL || 'https://ass-score.com', now, maxWebhooksPerDay, maxScansPerDay, validateTarget, allowedOrigins, reportTokenSecret, reportBaseUrl, adminPassword, runRetentionOnBoot = false } = {}) {
   const db = openDb(dbPath);
   const fetcherImpl = fetcher ?? new Fetcher();
   // PAYWALL secret: env REPORT_TOKEN_SECRET, or random per-boot (fail closed —
@@ -116,6 +122,11 @@ export function createApp({ dbPath = './data/ass-score.db', fetcher, webhookDeli
     validateTarget: checkTarget,
   }));
   app.use(scansRouter({ db, publicBaseUrl, reportTokenSecret: secret, reportBaseUrl: reportLinkBase }));
+  // Homepage view tracking + private admin stats (backlog db64a1c9 — owner
+  // lifted the hold 2026-09-23). track is a silent beacon; admin is gated on
+  // ADMIN_PASSWORD (disabled/403 until the owner sets it on Railway).
+  app.use(trackRouter({ db, now: nowImpl }));
+  app.use(adminRouter({ db, adminPassword, now: nowImpl }));
 
   app.use((_req, res) => {
     res.status(404).json({ error: { code: 'not_found', message: 'Route not found' } });

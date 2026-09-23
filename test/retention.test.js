@@ -48,7 +48,7 @@ test('retention: old scan row deleted, fresh scan row kept', () => {
     const res = runRetention({ db, now: () => NOW });
 
     assert.equal(res.cutoffIso, CUTOFF, 'cutoff is now minus exactly 30 days');
-    assert.deepEqual(res.deleted, { scans: 1, scanEvents: 0, webhookEvents: 0 });
+    assert.deepEqual(res.deleted, { scans: 1, scanEvents: 0, webhookEvents: 0, views: 0 });
     assert.equal(COUNTS.scans(db), 1);
     assert.ok(!hasScan(db, 'scan-old'), 'old scan purged');
     assert.ok(hasScan(db, 'scan-fresh'), 'fresh scan survives');
@@ -65,7 +65,7 @@ test('retention: old scan_events row deleted, fresh kept', () => {
 
     const res = runRetention({ db, now: () => NOW });
 
-    assert.deepEqual(res.deleted, { scans: 0, scanEvents: 1, webhookEvents: 0 });
+    assert.deepEqual(res.deleted, { scans: 0, scanEvents: 1, webhookEvents: 0, views: 0 });
     assert.equal(COUNTS.scanEvents(db), 1);
     assert.ok(!hasScanEvent(db, 'se-old'), 'old scan_events row purged');
     assert.ok(hasScanEvent(db, 'se-fresh'), 'fresh scan_events row survives');
@@ -82,7 +82,7 @@ test('retention: old webhook_events row deleted, fresh kept', () => {
 
     const res = runRetention({ db, now: () => NOW });
 
-    assert.deepEqual(res.deleted, { scans: 0, scanEvents: 0, webhookEvents: 1 });
+    assert.deepEqual(res.deleted, { scans: 0, scanEvents: 0, webhookEvents: 1, views: 0 });
     assert.equal(COUNTS.webhookEvents(db), 1);
     assert.ok(!hasWebhookEvent(db, 'we-old'), 'old webhook_events row purged');
     assert.ok(hasWebhookEvent(db, 'we-fresh'), 'fresh webhook_events row survives');
@@ -98,7 +98,7 @@ test('retention: only rows past the cutoff are touched — fresh rows in every t
 
     const res = runRetention({ db, now: () => NOW });
 
-    assert.deepEqual(res.deleted, { scans: 1, scanEvents: 1, webhookEvents: 1 }, 'exactly the 3 old rows deleted, nothing else');
+    assert.deepEqual(res.deleted, { scans: 1, scanEvents: 1, webhookEvents: 1, views: 0 }, 'exactly the 3 old rows deleted, nothing else');
     assert.equal(COUNTS.scans(db), 1);
     assert.equal(COUNTS.scanEvents(db), 1);
     assert.equal(COUNTS.webhookEvents(db), 1);
@@ -134,8 +134,8 @@ test('retention: a second run is harmless (idempotent)', () => {
     const first = runRetention({ db, now: () => NOW });
     const second = runRetention({ db, now: () => NOW });
 
-    assert.deepEqual(first.deleted, { scans: 1, scanEvents: 1, webhookEvents: 1 });
-    assert.deepEqual(second.deleted, { scans: 0, scanEvents: 0, webhookEvents: 0 }, 'second run deletes nothing');
+    assert.deepEqual(first.deleted, { scans: 1, scanEvents: 1, webhookEvents: 1, views: 0 });
+    assert.deepEqual(second.deleted, { scans: 0, scanEvents: 0, webhookEvents: 0, views: 0 }, 'second run deletes nothing');
     // Nothing new was touched: exactly the fresh rows remain after run 2.
     assert.equal(COUNTS.scans(db), 1);
     assert.equal(COUNTS.scanEvents(db), 1);
