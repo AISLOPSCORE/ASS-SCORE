@@ -8,6 +8,10 @@ import { webhookRouter } from './routes/webhook.js';
 import { createEmailSender } from './email.js';
 import { reportSecret } from './paywall.js';
 import { createCors } from './cors.js';
+import { runRetention } from './retention.js';
+
+/** Retention job cadence (owner-approved 2026-09-23): every 24h. */
+const RETENTION_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
 /** The full SSRF guard both routes run before their rate caps (validateUrl +
  *  resolveAndCheck — the Fetcher applies the same checks on every hop). */
@@ -51,6 +55,13 @@ const defaultCheckTarget = async (raw) => {
  *                     (default publicBaseUrl; env REPORT_BASE_URL when unset —
  *                     use the backend origin if the domain does not proxy
  *                     /api/v1/report to the service)
+ *   runRetentionOnBoot — boolean; when true the daily retention sweep
+ *                     (src/retention.js — purge scans/scan_events/webhook_events
+ *                     older than 30 days) runs once at app creation and then
+ *                     every 24h on an unref()'d timer. Default FALSE so test
+ *                     app instances (created repeatedly by the suite) never
+ *                     touch fixture rows; the production entrypoint
+ *                     (src/server.js) sets it true.
  *
  * NOTE on client IPs: the app trusts ONE proxy hop (the platform edge, e.g.
  * Railway's LB) and Express then derives the client IP from the last
@@ -59,7 +70,7 @@ const defaultCheckTarget = async (raw) => {
  * src/clientIp.js; without trust proxy, Express ignores X-Forwarded-For and
  * every request would look like the LB's IP, collapsing the per-IP caps.
  */
-export function createApp({ dbPath = './data/ass-score.db', fetcher, webhookDeliverer, emailSender, scanBudgetMs, publicBaseUrl = process.env.PUBLIC_BASE_URL || 'https://ass-score.com', now, maxWebhooksPerDay, maxScansPerDay, validateTarget, allowedOrigins, reportTokenSecret, reportBaseUrl } = {}) {
+export function createApp({ dbPath = './data/ass-score.db', fetcher, webhookDeliverer, emailSender, scanBudgetMs, publicBaseUrl = process.env.PUBLIC_BASE_URL || 'https://ass-score.com', now, maxWebhooksPerDay, maxScansPerDay, validateTarget, allowedOrigins, reportTokenSecret, reportBaseUrl, runRetentionOnBoot = false } = {}) {
   const db = openDb(dbPath);
   const fetcherImpl = fetcher ?? new Fetcher();
   // PAYWALL secret: env REPORT_TOKEN_SECRET, or random per-boot (fail closed —
@@ -119,6 +130,23 @@ export function createApp({ dbPath = './data/ass-score.db', fetcher, webhookDeli
     console.error('[ass-score] unhandled error:', err);
     res.status(500).json({ error: { code: 'internal_error', message: 'Internal server error' } });
   });
+
+  // Retention job (owner-approved 2026-09-23): purge rows older than 30 days
+  // from scans / scan_events / webhook_events. Runs once at boot and then
+  // every 24h; the timer is unref()'d so it never holds the process open.
+  // better-sqlite3 is synchronous, so the boot run completes before this
+  // function returns — listen() only starts after the first sweep.
+  // Gated on an explicit option (server.js sets it) so the test suite —
+  // which calls createApp() repeatedly — never runs a destructive sweep over
+  // fixtures with backdated created_at values.
+  app.locals.db = db; // openDb wrapper, for ops/tooling that needs the handle
+  if (runRetentionOnBoot) {
+    runRetention({ db, now: nowImpl });
+    const retentionTimer = setInterval(() => runRetention({ db, now: nowImpl }), RETENTION_INTERVAL_MS);
+    retentionTimer.unref();
+    // Any future teardown should clearInterval(this handle).
+    app.locals.retentionTimer = retentionTimer;
+  }
 
   return app;
 }

@@ -112,6 +112,10 @@ export function openDb(dbPath) {
   const countWebhookEventsStmt = db.prepare('SELECT COUNT(*) AS n FROM webhook_events WHERE day = ? AND ip = ?');
 
   return {
+    // Raw better-sqlite3 Database — used by the retention job (src/retention.js)
+    // and by tests that need direct queries. Additive; the wrapper methods are
+    // still the supported surface.
+    raw: db,
     /**
      * @param {{ id: string, url: string, score: number, breakdown: object,
      *           createdAt: string, partial?: boolean, note?: string,
