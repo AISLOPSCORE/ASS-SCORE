@@ -40,7 +40,7 @@ test('assets: clean page -> score 0 and zero findings', () => {
   assert.equal(r.score, 0);
   assert.ok(Array.isArray(r.findings));
   assert.equal(r.findings.length, 1);
-  assert.match(r.findings[0], /0 of 2 images flagged/);
+  assert.match(r.findings[0], /0 of 2 images look generic or placeholder/);
 });
 
 test('assets: no <img> tags -> score 0, empty findings', () => {
@@ -56,7 +56,7 @@ test('assets: every configured stock CDN origin is detected (config-driven, no c
     // Test both the bare origin and a subdomain CDN form (images.<origin>).
     const bare = analyzeAssets(page(img(`https://${origin}/photo-2026.jpg`, { alt: 'a stock scene' })));
     assert.equal(bare.score, 50, `${origin}: bare origin should give stockRatio 1.0 -> 50`);
-    assert.match(bare.findings[0], /^1 of 1 images from stock\/placeholder CDNs/);
+    assert.match(bare.findings[0], /^1 of 1 images come from stock photo sites/);
 
     const sub = analyzeAssets(page(img(`https://images.${origin}/photo-2026.jpg`, { alt: 'a stock scene' })));
     assert.equal(sub.score, 50, `${origin}: images.${origin} subdomain should also match`);
@@ -136,7 +136,7 @@ test('assets: findings detail cap keeps the report bounded', () => {
   assert.equal(r.score, 75);
   assert.ok(r.findings.length <= 3 + 8 * 3, `bounded findings (${r.findings.length})`);
   assert.equal(r.findings.length, 3 + 8 + 8, '3 summary lines + capped 8+8 details');
-  assert.match(r.findings[0], /^40 of 40 images from stock\/placeholder CDNs/);
+  assert.match(r.findings[0], /^40 of 40 images come from stock photo sites/);
 });
 
 // ------------------------------------------------------------------ unit: scoring
@@ -262,7 +262,7 @@ test('POST scan: breakdown has the assets key with a numeric score; findings per
   const stored = JSON.parse(row.breakdown);
   assert.equal(stored.assets.score, json.breakdown.assets.score, 'assets score equal at rest (no inversion)');
   assert.ok(Array.isArray(stored.assets.findings) && stored.assets.findings.length > 0, 'assets findings stored in the DB');
-  assert.match(stored.assets.findings[0], /^2 of 4 images from stock\/placeholder CDNs/);
+  assert.match(stored.assets.findings[0], /^2 of 4 images come from stock photo sites/);
   assert.ok(stored.assets.findings.some((f) => f.includes('generic alt "image"')));
   assert.ok(stored.assets.findings.some((f) => f.includes('generic filename "logo"')));
 
