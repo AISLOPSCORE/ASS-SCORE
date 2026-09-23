@@ -97,12 +97,41 @@ export function openDb(dbPath) {
     );
     CREATE INDEX IF NOT EXISTS idx_scan_events_day_ip ON scan_events (day, ip);
   `);
+  // Homepage view tracking (admin stats) — one row per accepted beacon hit
+  // (bots / empty-UA / per-IP 30s dedup are filtered by the route BEFORE the
+  // insert). ts is epoch milliseconds (the site beacon's timestamp); day
+  // bucketing happens in the admin route via SQLite's
+  // datetime(ts/1000, 'unixepoch') — the same UTC convention the scan and
+  // webhook ledgers use (created_at ISO strings, day = first 10 chars).
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS page_views (
+      id   INTEGER PRIMARY KEY AUTOINCREMENT,
+      ts   INTEGER NOT NULL,
+      ip   TEXT NOT NULL,
+      ua   TEXT NOT NULL DEFAULT '',
+      path TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_page_views_ts ON page_views (ts);
+  `);
 
   const insertScanEventStmt = db.prepare(
     'INSERT OR IGNORE INTO scan_events (event_key, ip, day, scan_id, status, created_at) VALUES (?, ?, ?, ?, ?, ?)'
   );
   const markScanEventStmt = db.prepare('UPDATE scan_events SET status = ?, scan_id = ? WHERE event_key = ?');
   const countScanEventsStmt = db.prepare('SELECT COUNT(*) AS n FROM scan_events WHERE day = ? AND ip = ?');
+  // Page-view + admin-stats queries (homepage view tracking).
+  const insertPageViewStmt = db.prepare('INSERT INTO page_views (ts, ip, ua, path) VALUES (?, ?, ?, ?)');
+  const countPageViewsStmt = db.prepare('SELECT COUNT(*) AS n FROM page_views');
+  const countPageViewsSinceStmt = db.prepare('SELECT COUNT(*) AS n FROM page_views WHERE ts >= ?');
+  const pageViewDayCountsStmt = db.prepare(
+    "SELECT substr(datetime(ts / 1000, 'unixepoch'), 1, 10) AS day, COUNT(*) AS n FROM page_views WHERE ts >= ? GROUP BY day"
+  );
+  const recentPageViewsStmt = db.prepare('SELECT ts, ip, ua, path FROM page_views ORDER BY ts DESC LIMIT 50');
+  const countScansTotalStmt = db.prepare('SELECT COUNT(*) AS n FROM scans');
+  const countScansTodayStmt = db.prepare('SELECT COUNT(*) AS n FROM scans WHERE substr(created_at, 1, 10) = ?');
+  const scanDayCountsStmt = db.prepare(
+    'SELECT substr(created_at, 1, 10) AS day, COUNT(*) AS n FROM scans WHERE created_at >= ? GROUP BY day'
+  );
 
   const insertWebhookEventStmt = db.prepare(
     'INSERT OR IGNORE INTO webhook_events (event_key, provider, event_id, ip, day, scan_id, status, business_name, payload, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
@@ -207,6 +236,43 @@ export function openDb(dbPath) {
     /** Update the ledger row once the scan completes ('completed' w/ scan id) or fails ('failed'). */
     markScanEvent(eventKey, { status, scanId = null }) {
       markScanEventStmt.run(status, scanId, eventKey);
+    },
+    // --- Homepage view tracking (admin stats) --------------------------------
+    /**
+     * Record one accepted beacon hit. The route filters bots / empty UAs /
+     * per-IP 30s dedup BEFORE calling this, so every insert is a real view.
+     * @param {{ ts: number, ip: string, ua: string, path: string }} view
+     */
+    insertPageView({ ts, ip, ua, path }) {
+      insertPageViewStmt.run(ts, ip, ua, path);
+    },
+    /** Total page-view rows (all time). */
+    countPageViews() {
+      return countPageViewsStmt.get().n;
+    },
+    /** Page-view rows with ts >= sinceTs (the 30-day window / 'today'). */
+    countPageViewsSince(sinceTs) {
+      return countPageViewsSinceStmt.get(sinceTs)?.n ?? 0;
+    },
+    /** Per-UTC-day page-view counts with ts >= sinceTs: [{ date, count }]. */
+    pageViewDayCounts(sinceTs) {
+      return pageViewDayCountsStmt.all(sinceTs).map((r) => ({ date: r.day, count: r.n }));
+    },
+    /** Latest 50 page views, newest first: [{ ts, ip, ua, path }]. */
+    recentPageViews() {
+      return recentPageViewsStmt.all().map((r) => ({ ts: r.ts, ip: r.ip, ua: r.ua, path: r.path }));
+    },
+    /** Total scan rows (all time). */
+    countScansTotal() {
+      return countScansTotalStmt.get().n;
+    },
+    /** Scan rows on the given UTC day (YYYY-MM-DD — the ledgers' day convention). */
+    countScansToday(day) {
+      return countScansTodayStmt.get(day)?.n ?? 0;
+    },
+    /** Per-UTC-day scan counts with created_at >= sinceIso: [{ date, count }]. */
+    scanDayCounts(sinceIso) {
+      return scanDayCountsStmt.all(sinceIso).map((r) => ({ date: r.day, count: r.n }));
     },
     close() {
       db.close();
