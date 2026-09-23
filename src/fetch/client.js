@@ -15,11 +15,31 @@ export class TooManyRedirectsError extends FetchError {
   constructor(message) { super(message); this.name = 'TooManyRedirectsError'; }
 }
 
+/** True when the host already carries a `www.` label (case-insensitive). */
+const hostStartsWithWww = (url) => url.hostname.toLowerCase().startsWith('www.');
+
+/** The same URL with the host prefixed by `www.` (scheme/port/path/query kept). */
+const withWwwPrefix = (url) => {
+  const u = new URL(url.href);
+  u.hostname = `www.${u.hostname}`;
+  return u.href;
+};
+
 /**
  * Fetch an HTML page with SSRF-safe redirect handling.
  * Every hop (initial URL + each redirect) is passed through validateUrl()
  * and resolveAndCheck() before the actual request is made, so a redirect can
  * never land us on a private/loopback/link-local address.
+ *
+ * The INITIAL fetch gets one best-effort retry with a `www.` host prefix when
+ * it fails at the network level (connection/TLS/DNS — not HTTP error statuses,
+ * which are returned as responses, and not timeouts, which are distinct error
+ * paths). Some hosts serve TLS only on `www.` while the bare apex rejects
+ * non-browser HTTP clients; the retry keeps the scan working deterministically
+ * without special-casing any particular site. Redirect hops are never retried
+ * (they are served by the site itself and may legitimately point anywhere),
+ * hosts that already start with `www.` are never retried, and if the `www.`
+ * retry fails for ANY reason the ORIGINAL error is returned unchanged.
  */
 export class Fetcher {
   constructor({
@@ -39,39 +59,13 @@ export class Fetcher {
   async fetchHtml(rawUrl, { signal } = {}) {
     let url = validateUrl(rawUrl);
     await resolveAndCheck(url);
+    // First hop: retried once with a `www.` host prefix on network-level failure.
+    let hop = await this._fetchHopWithWwwRetry(url, { signal });
+    url = hop.url; // the URL that actually succeeded (the www URL after a retry)
     let hopCount = 0;
 
     for (;;) {
-      if (signal?.aborted) {
-        throw new FetchError('Request aborted before it started (scan budget expired)');
-      }
-      const ctrl = new AbortController();
-      const onExternalAbort = () => ctrl.abort();
-      if (signal) signal.addEventListener('abort', onExternalAbort, { once: true });
-      const timer = setTimeout(() => ctrl.abort(), this.timeoutMs);
-
-      let response;
-      try {
-        response = await this.fetchImpl(url.href, {
-          redirect: 'manual', // we follow redirects ourselves so every hop is re-validated
-          signal: ctrl.signal,
-          headers: {
-            'user-agent': this.userAgent,
-            accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.1',
-          },
-        });
-      } catch (err) {
-        clearTimeout(timer);
-        signal?.removeEventListener('abort', onExternalAbort);
-        if (signal?.aborted) {
-          throw new FetchError('Request aborted (scan budget expired)');
-        }
-        if (ctrl.signal.aborted || err?.name === 'AbortError') {
-          throw new FetchError(`Request to ${url.hostname} timed out after ${this.timeoutMs}ms`);
-        }
-        throw new FetchError(`Network error fetching ${url.href}: ${err.message}`);
-      }
-
+      const { response, ctrl, timer, onExternalAbort } = hop;
       const status = response.status;
 
       // Redirect hop: cancel the body, re-validate the Location target, repeat.
@@ -86,6 +80,8 @@ export class Fetcher {
         }
         url = validateUrl(new URL(location, url).href);
         await resolveAndCheck(url);
+        // Redirect hops are NOT eligible for the www fallback (see class docs).
+        hop = await this._fetchHop(url, { signal });
         continue;
       }
 
@@ -140,6 +136,64 @@ export class Fetcher {
       }
 
       return { status, url: url.href, body };
+    }
+  }
+
+  /**
+   * Fetch one validated URL (one hop) with its own timeout + abort wiring.
+   * Returns the pieces the caller needs to keep the timeout alive through the
+   * body read and to detach the external-abort listener afterwards.
+   */
+  async _fetchHop(url, { signal }) {
+    if (signal?.aborted) {
+      throw new FetchError('Request aborted before it started (scan budget expired)');
+    }
+    const ctrl = new AbortController();
+    const onExternalAbort = () => ctrl.abort();
+    if (signal) signal.addEventListener('abort', onExternalAbort, { once: true });
+    const timer = setTimeout(() => ctrl.abort(), this.timeoutMs);
+
+    let response;
+    try {
+      response = await this.fetchImpl(url.href, {
+        redirect: 'manual', // we follow redirects ourselves so every hop is re-validated
+        signal: ctrl.signal,
+        headers: {
+          'user-agent': this.userAgent,
+          accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.1',
+        },
+      });
+    } catch (err) {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', onExternalAbort);
+      if (signal?.aborted) {
+        throw new FetchError('Request aborted (scan budget expired)');
+      }
+      if (ctrl.signal.aborted || err?.name === 'AbortError') {
+        throw new FetchError(`Request to ${url.hostname} timed out after ${this.timeoutMs}ms`);
+      }
+      const netErr = new FetchError(`Network error fetching ${url.href}: ${err.message}`);
+      netErr.networkLevel = true; // connection/TLS/DNS failure (NOT a timeout) — gates the www retry
+      throw netErr;
+    }
+    return { response, url, ctrl, timer, onExternalAbort };
+  }
+
+  /** Initial-hop fetch with one best-effort `www.` retry on network failure. */
+  async _fetchHopWithWwwRetry(url, { signal }) {
+    try {
+      return await this._fetchHop(url, { signal });
+    } catch (err) {
+      if (!(err instanceof FetchError) || err.networkLevel !== true || hostStartsWithWww(url)) {
+        throw err;
+      }
+      try {
+        const wwwUrl = validateUrl(withWwwPrefix(url));
+        await resolveAndCheck(wwwUrl);
+        return await this._fetchHop(wwwUrl, { signal });
+      } catch {
+        throw err; // any failure of the www retry returns the ORIGINAL error
+      }
     }
   }
 }
