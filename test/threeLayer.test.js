@@ -645,7 +645,7 @@ const CLEAN_PAGE = `<!doctype html><html><head><title>Acme Analytics Results</ti
 <img src="https://cdn.acme-example.net/office-map-2026.png" alt="Floor plan of the Acme Berlin office">
 </body></html>`;
 
-test('E2E (Case B): clean fixture -> compliments everywhere (free teasers + paid report), zero negative roast language', async () => {
+test('E2E (Case B): clean fixture -> no free teasers (problem-only rule), compliments stay paid-only, zero negative roast language', async () => {
   const dbPath = tmpDb();
   const app = startApp(dbPath, { fetcher: fakeFetcher(CLEAN_PAGE), reportTokenSecret: TL_SECRET });
   try {
@@ -661,20 +661,19 @@ test('E2E (Case B): clean fixture -> compliments everywhere (free teasers + paid
     assert.equal(json.score, 0, 'clean fixture scores 0 (engine unchanged)');
     assert.equal(json.verdict, 'CLEANEST');
 
-    // FREE JSON: every teaser is a clean compliment with the kind marker and
-    // its receipt; stable across repeated reads.
-    assert.ok(Array.isArray(json.teasers) && json.teasers.length >= 1 && json.teasers.length <= 2, '1-2 teasers');
-    for (const t of json.teasers) {
-      assert.equal(t.kind, 'clean', 'free teaser marked clean');
-      assert.ok(t.evidence.length > 0, 'receipt attached');
-    }
+    // FREE JSON: PROBLEM-ONLY teaser rule (owner) — a clean site has no
+    // problem findings, so the free teasers array is EMPTY. Compliment
+    // insights stay stored/paid-only and never surface as free samples.
+    assert.ok(Array.isArray(json.teasers), 'teasers key present');
+    assert.deepEqual(json.teasers, [], 'clean site -> NO teasers anywhere on free surfaces');
 
-    // FREE HTML teaser page: COMPLIMENT / WHY IT MATTERS / KEEP IT UP labels,
-    // never a "How to fix it:" on a clean finding.
+    // FREE HTML teaser page: the empty state renders (never a compliment
+    // sample under the "Free samples" heading, and no fix instruction).
     const freeRes = await fetch(`${app.base}/api/v1/scans/${json.id}`, { headers: { accept: 'text/html' } });
     const freeHtml = await freeRes.text();
-    assert.ok(freeHtml.includes('Compliment:'), 'free page renders the Compliment label');
-    assert.ok(freeHtml.includes('Keep it up:'), 'free page renders the Keep it up label');
+    assert.ok(freeHtml.includes('Nothing to roast this scan'), 'free page renders the no-samples empty state');
+    assert.ok(!freeHtml.includes('Compliment:'), 'free page never renders a compliment sample');
+    assert.ok(!freeHtml.includes('Keep it up:'), 'free page never renders a compliment fix line');
     assert.ok(!freeHtml.includes('How to fix it:'), 'free page never tells a clean finding to fix itself');
     assert.ok(freeHtml.includes('This tool identifies writing and design patterns commonly associated with generic or templated content.'),
       'mandated disclaimer verbatim on the free page');
@@ -718,9 +717,10 @@ test('E2E (Case B): clean fixture -> compliments everywhere (free teasers + paid
     assert.ok(!html.includes('The thesaurus is doing the heavy lifting'), 'no negative filler line reaches a clean page');
     assert.ok(!html.includes('every roast points at the receipts'), 'no roast framing when there are no findings');
 
-    // FREE JSON stable across repeated GETs (same id -> same teasers).
+    // FREE JSON stable across repeated GETs (same id -> same teasers — here,
+    // empty for a clean site).
     const got = await (await fetch(`${app.base}/api/v1/scans/${json.id}`, { headers: { accept: 'application/json' } })).json();
-    assert.deepEqual(got.teasers, json.teasers, 'clean teasers stable across reads');
+    assert.deepEqual(got.teasers, json.teasers, 'empty teasers stable across reads');
   } finally {
     app.server.close();
   }

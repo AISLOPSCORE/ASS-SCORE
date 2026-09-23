@@ -15,12 +15,16 @@
  * therefore cannot reconstruct either the token or the paid report: each
  * rescan has a fresh scan id and a fresh teaser selection.
  *
- * Teaser selection: deterministic for a given scan id (stable across repeated
- * GETs of the SAME scan — the buyer's teasers never drift), but seeded by the
- * scan id so DIFFERENT scans (rescans) select different teasers — repeated
- * free rescans can't reconstruct the paid report through the teasers either.
- * The paid report rendering never depends on teaser selection, so the paid
- * report stays byte-identical for a given scan id.
+ * Teaser selection: PROBLEM-ONLY (owner rule) — free samples are drawn only
+ * from WATCH-and-above categories (score >= 25) with non-clean insights, so a
+ * clean/praise finding NEVER appears in the free "WHAT'S ACTUALLY WRONG"
+ * preview; a site with no problem findings gets teasers: []. Selection stays
+ * deterministic for a given scan id (stable across repeated GETs of the SAME
+ * scan — the buyer's teasers never drift), but seeded by the scan id so
+ * DIFFERENT scans (rescans) select different teasers — repeated free rescans
+ * can't reconstruct the paid report through the teasers either. The paid
+ * report rendering never depends on teaser selection, so the paid report
+ * stays byte-identical for a given scan id.
  */
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { hashScanId } from './roast.js';
@@ -36,18 +40,30 @@ const SECOND_POOL = 4;  // second teaser from the top-4, excluding the first pic
 /**
  * Pick 1–2 teaser findings (full three-layer objects) from a breakdown.
  *
+ * PROBLEM-ONLY RULE (owner): free samples must NEVER be clean/praise findings —
+ * the free "WHAT'S ACTUALLY WRONG" preview only ever shows findings that
+ * represent actual problems. Concretely:
+ *   - a category is a candidate only when its numeric score >= 25 (WATCH and
+ *     above — every non-CLEAN severity counts as a problem);
+ *   - within a candidate, only insights that are NOT clean compliments may
+ *     enter the pool (`ins.kind !== 'clean'`; negative findings carry no
+ *     kind key);
+ *   - candidates left with zero problem insights drop out; if no candidates
+ *     remain, teasers are [] — a clean site shows NO teasers anywhere on the
+ *     free surfaces.
+ *
  * Deterministic per (breakdown, id): same scan id -> identical teasers, always.
  * Different scan ids -> different picks (seeded via hashScanId), which is what
  * makes repeated free rescans feel fresh without ever being random.
  *
- * Candidates: categories with findings AND three-layer insights AND a numeric
- * score (higher = worse), sorted by score desc (ties: category key asc) — the
- * funniest = most damning material is always in the pool.
+ * Candidates (score >= 25, non-metric insights, at least one problem insight)
+ * are sorted by score desc (ties: category key asc) — the funniest = most
+ * damning material is always in the pool.
  *
- * The teaser object mirrors its source insight one-for-one, including the
- * clean marker: a teaser from a `kind:'clean'` insight carries `kind:'clean'`
- * (the renderers then label it COMPLIMENT / WHY IT MATTERS / KEEP IT UP);
- * negative teasers carry no kind key, exactly like today.
+ * The teaser object mirrors its source insight one-for-one. Negative teasers
+ * carry no kind key; the clean-marker passthrough in teaserFrom is kept for
+ * safety but is inert under the problem-only rule (clean insights can never
+ * reach the pool).
  *
  * @param {Record<string, {score?: number, findings?: unknown[], insights?: any[]}>} breakdown
  * @param {string} id scan id (seed)
@@ -59,6 +75,9 @@ export function pickTeasers(breakdown, id) {
       r &&
       typeof r === 'object' &&
       Number.isFinite(Number(r.score)) && r.score !== null &&
+      // Problem-only rule: only WATCH-and-above categories (score >= 25) may
+      // supply free samples — CLEAN-band categories never do.
+      Number(r.score) >= 25 &&
       Array.isArray(r.findings) && r.findings.length > 0 &&
       Array.isArray(r.insights) && r.insights.length > 0)
     .map(([key, r]) => {
@@ -66,12 +85,15 @@ export function pickTeasers(breakdown, id) {
       // they can never be teasers (a raw "vocabulary diversity 0.766" line
       // must not be sold as one of the funniest/damning findings). The
       // teaser pool keeps only insights whose evidence is a real detector
-      // finding (a complement, or a genuine negative pattern). Deterministic:
-      // filtering happens before seeding, so the same (breakdown, id) still
-      // always yields identical teasers.
+      // finding. PROBLEM-ONLY rule (owner): a clean compliment (`kind:
+      // 'clean'`, i.e. praise) is also excluded — only actual problems may
+      // surface as free samples. Deterministic: filtering happens before
+      // seeding, so the same (breakdown, id) still always yields identical
+      // teasers.
       const insights = (r.insights ?? []).filter((ins) =>
         ins && typeof ins === 'object' &&
-        !isMetricFinding(key, String(ins.evidence ?? '')));
+        !isMetricFinding(key, String(ins.evidence ?? '')) &&
+        ins.kind !== 'clean');
       return { key, score: Number(r.score), findings: r.findings, insights };
     })
     .filter((c) => c.insights.length > 0)
@@ -106,8 +128,9 @@ function teaserFrom(candidate, id, slot) {
     why: String(ins.why ?? ''),
     fix: String(ins.fix ?? ''),
     evidence: String(ins.evidence ?? candidate.findings[0] ?? ''),
-    // Clean findings surface as compliments on every free surface (the paid
-    // report renders them from the stored insights directly).
+    // Clean-marker passthrough kept for safety: inert under the problem-only
+    // rule (clean insights can never reach the pool). If it ever does fire,
+    // renderers label the sample COMPLIMENT / WHY IT MATTERS / KEEP IT UP.
     ...(ins.kind === 'clean' ? { kind: 'clean' } : {}),
   };
 }

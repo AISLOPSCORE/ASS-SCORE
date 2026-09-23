@@ -254,6 +254,68 @@ test('teasers: stable for a scan id, seeded differently across ids, and never af
   assert.equal(p2, p1, 'paid report bytes are independent of teaser selection');
 });
 
+// ------------------------------------------------------------------ (e2) problem-only teasers
+
+/** Clean (compliment) insight — carries the kind marker. */
+const cleanIns = (i) => ({ kind: 'clean', roast: `nice roast ${i}`, why: `why ${i}`, fix: `fix ${i}`, evidence: `evidence ${i}` });
+/** Negative (problem) insight — NO kind key, exactly like real findings. */
+const negIns = (i) => ({ roast: `roast ${i}`, why: `why ${i}`, fix: `fix ${i}`, evidence: `evidence ${i}` });
+
+test('teasers are PROBLEM-ONLY: clean compliments never sampled; CLEAN-band categories never sampled; zero-problem site -> []', () => {
+  // (a) a category whose only insights are clean compliments is never a source.
+  const cleanOnly = {
+    filler: { score: 100, findings: ['c1', 'c2'], insights: [cleanIns(1), cleanIns(2)] },
+  };
+  assert.deepEqual(pickTeasers(cleanOnly, 'scan-clean-only'), [], 'only-clean category yields NO teasers');
+
+  // (b) a category with score < 25 is never a teaser source, even with
+  //     negative insights; a >= 25 category supplies them.
+  const mixedScores = {
+    low: { score: 12, findings: ['f1'], insights: [negIns(1)] },
+    high: { score: 88, findings: ['f2'], insights: [negIns(2)] },
+  };
+  const fromHigh = pickTeasers(mixedScores, 'scan-mixed-1');
+  assert.ok(fromHigh.length >= 1, 'the >= 25 category supplies teasers');
+  assert.ok(fromHigh.every((t) => t.key === 'high'), 'the sub-25 category is never a teaser source');
+
+  // (c) within a candidate, a clean compliment next to a negative insight is
+  //     never the pick — and the pick stays deterministic for the id.
+  const mixed = {
+    filler: { score: 90, findings: ['f1'], insights: [cleanIns(1), negIns(2)] },
+  };
+  const a1 = pickTeasers(mixed, 'scan-mix-a');
+  const a2 = pickTeasers(mixed, 'scan-mix-a');
+  assert.deepEqual(a2, a1, 'problem-only selection is deterministic for the same id');
+  assert.ok(a1.length >= 1);
+  for (const t of a1) {
+    assert.ok(!('kind' in t), 'a clean compliment is never selected as a teaser');
+    assert.equal(t.evidence, 'evidence 2', 'the negative insight is the one sampled');
+  }
+
+  // (d) a site with zero problem findings (no category >= 25 with a negative
+  //     insight) yields teasers: [] — on pickTeasers AND on the free payload
+  //     (the teasers KEY stays, empty array is the clean-site signal).
+  const zero = {
+    filler: { score: 8, findings: ['c1'], insights: [cleanIns(1)] },
+    boilerplate: { score: 15, findings: ['c2'], insights: [negIns(2)] }, // < 25 -> not a problem source
+  };
+  assert.deepEqual(pickTeasers(zero, 'scan-zero-1'), [], 'no problem candidates -> NO teasers');
+  const free = buildFreePayload({
+    id: 'scan-zero-1', url: 'https://clean.example/', score: 0, verdict: 'CLEANEST', breakdown: zero,
+  });
+  assert.deepEqual(free.teasers, [], 'free payload carries an EMPTY teasers array (key present)');
+
+  // (d2) mixed clean+problem across categories: teasers come only from the
+  //      problem category(ies), never from a clean-only category.
+  const zoo = {
+    filler: { score: 30, findings: ['c1'], insights: [cleanIns(1)] },
+    boilerplate: { score: 70, findings: ['b1'], insights: [negIns(1)] },
+  };
+  const teasers = pickTeasers(zoo, 'scan-zoo-1');
+  assert.ok(teasers.length >= 1, 'problem category supplies the teaser');
+  assert.ok(teasers.every((t) => t.key === 'boilerplate' && !('kind' in t)), 'only problem findings surface');
+});
+
 // ------------------------------------------------------------------ (f) fulfillment email link
 
 const stripeSession = (overrides = {}) => ({
