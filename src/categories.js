@@ -20,11 +20,11 @@ export const CATEGORY_LABELS = {
 
 /** Plain-English one-liner per category (Your Breakdown section). */
 export const CATEGORY_ONE_LINERS = {
-  filler: 'How much of your copy is filler phrasing — words that sound confident but say nothing.',
-  boilerplate: 'Generic marketing boilerplate that could describe any business in any industry.',
+  filler: 'How much of your copy is filler words — phrases that sound confident but say nothing.',
+  boilerplate: 'Generic wording that could describe any business in any industry.',
   infoDensity: 'Whether your content actually says something specific, or just fills the page.',
   repetitive: 'How often your page repeats itself — same sentence openings, same sentences, same paragraphs.',
-  crossPage: 'How much of your site is the same text repeated across different pages.',
-  fingerprints: 'Telltale template-built design and code fingerprints (AI-looking patterns, build-tool traces).',
-  assets: 'Stock and placeholder imagery where real, specific visuals would say more.',
+  crossPage: 'How often the same content shows up on multiple pages of your site.',
+  fingerprints: 'Signs your design came from a recognizable template nobody customized.',
+  assets: 'Generic images where real, specific photos of your work would say more.',
 };

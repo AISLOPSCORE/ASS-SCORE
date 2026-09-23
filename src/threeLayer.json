@@ -1,362 +1,362 @@
 {
-  "_comment": "A.S.S. Score three-layer finding copy pools (src/threeLayer.js). Config-driven like roasts.json / fingerprints.json: edit copy here, NO code changes needed. One pool per breakdown key (filler, boilerplate, infoDensity, repetitive, crossPage, fingerprints, assets). Every finding gets an insight { roast, why, fix, evidence } where evidence is the finding string itself. Roasts carry ONE OR MORE {tokens} interpolated ONLY from that finding's real parsed evidence (token names documented per group below); a roast variant is only eligible when EVERY token it references exists in the finding's parsed tokens, and when the finding carries verbatim-evidence tokens (phrase/sentence/text/label/urls/host/alt...) the variant must cite at least one of them — variants whose tokens are missing are dropped (absolute rule: never fabricate details; a roast that can cite the real trigger must cite it). Token-free roasts are the fallback for findings with no interpolatable token at all. whys/fixes are group-level business reasoning, applied to every finding of the group. Selection is deterministic: seeded by scan id + category + finding index via the same FNV-1a hashScanId the Slop Roast uses (same scan id -> identical insights, forever). Copy rules: loud/cheeky/meme tone, 1-2 sentences, pattern-based only — never assert AI authorship as fact (automated forbidden-phrase test). Token names per group: filler {count,words,density,phrase}; boilerplate {count,words,density,label,phrase,sentence,text,signalsNoun}; infoDensity {mattr,stopwordRatio,meanLen,sentences,shortPct,paragraphs,count,words,needed,examples,specificsNoun,factsNoun}; repetitive {kind,count,phrase,openings,sentences,paragraphs,repeatsNoun,appearancesNoun}; crossPage {pairCount,maxSim,urlA,urlB,sim,count,pages,pairsNoun}; filler additionally accepts {phrasesNoun,buzzwordsNoun} (plural-noun tokens filled from the finding count; no more \"(s)\" placeholders); fingerprints {scope,label,confidence}; assets {stockCount,fileCount,altCount,cleanCount,total,index,host,stem,alt,altKind,src}. CLEAN findings (zero/none measurements, healthy metric bands) render a compliment variant instead of a roast: { kind: 'clean', roast: compliment, why: cleanWhy, fix: keepUp, evidence } — pools compliments / cleanWhys / keepUps per category, same structural rules (1-2 sentences, <=220 chars, no AI-authorship claims, token-free by design; the evidence line carries the numbers). Negative findings keep roast/why/fix with no kind marker.",
-  "pools": {
-    "filler": {
-      "roasts": [
-        "\"{phrase}\" appears {count}× on this page. Bold words from a phrase that means nothing.",
-        "You said \"{phrase}\" {count}×. Every site in your niche says it too. Every. Single. One.",
-        "\"{phrase}\" — I checked, and that phrase is doing zero work. It just stands there, being confident.",
-        "{count} filler {phrasesNoun} in {words} words. That's {density} per 300 words — the spice budget of a beige website.",
-        "You squeezed {count} {buzzwordsNoun} into {words} words. The thesaurus is doing the heavy lifting here.",
-        "{count} filler {phrasesNoun}, {words} words, zero facts. That's an achievement of sorts.",
-        "Your copy has the substance of a motivational poster, and {count} {phrasesNoun} to prove it.",
-        "We counted {count} filler {phrasesNoun} so you don't have to. You're welcome. Now delete them.",
-        "This page runs on buzzwords and vibes — {count} of the former, and apparently none of the latter.",
-        "\"{phrase}\" — in this economy?",
-        "Your writing style is \"confidently nothing,\" and you committed to it {count}×.",
-        "Somewhere between the buzzwords there might be a sentence. We couldn't find it."
-      ],
-      "whys": [
-        "Filler phrases signal that the copy was written to sound impressive, not to inform — and visitors who smell vague marketing lose trust in seconds.",
-        "The web is saturated with this exact vocabulary. Every buzzword you reuse makes your site sound like everyone else's, not more credible.",
-        "Phrases like these add words without adding meaning — the page spends its word budget sounding important instead of saying what it does, and readers can't tell what you're offering.",
-        "Generic phrasing buries what you actually do: if the visitor can't tell from the first screen what the product is, they leave — and the site that says it plainly wins their attention.",
-        "When the copy sounds like a press release from 2014, the product behind it starts to feel just as dated — even if it isn't."
-      ],
-      "fixes": [
-        "Delete each flagged phrase and replace it with plain English that names a real outcome — \"elevate your brand\" becomes \"we redesign menus for restaurants.\"",
-        "Read the sentence out loud: if it would sound odd in a real conversation with a customer, rewrite it until it wouldn't.",
-        "Run a buzzword sweep with one rule: every claim must be backed by a fact, a number, or an example on the same page.",
-        "Before publishing, ask \"would a competitor with the same template say this?\" If yes, cut it or sharpen it.",
-        "Replace the filler with a specific differentiator: a number, a named feature, a customer outcome, or a deadline."
-      ],
-      "compliments": [
-        "Zero buzzwords across the whole page. Somebody actually put the thesaurus down — and the copy reads better for it.",
-        "Not a single filler phrase in the entire scan. Your copy says things because they're true, not because they sound important.",
-        "We scanned the whole page for corporate wind and found none. The words here are actually doing their jobs.",
-        "No \"game-changers,\" no \"seamless experiences,\" no \"unlock the potential.\" Just plain English doing real work.",
-        "Your page cleared the buzzword detector without even trying. The copy sounds like a human wrote it for humans."
-      ],
-      "cleanWhys": [
-        "Copy without buzzwords reads as confident, and confidence is the entire game: visitors who understand you in one pass are far more likely to trust you and stay.",
-        "Plain, specific language is a differentiator now — while competitors stack synonyms, this page says something real, and that is what actually stands out.",
-        "Clear copy earns trust instantly because it costs the reader nothing to parse; the faster a visitor understands you, the sooner they believe you exist.",
-        "Jargon-free writing also ages well: it never sounds like a trend, so the page still reads as fresh in five years instead of like a time capsule.",
-        "Every sentence that says something beats ten that sound important — this page already knows that, and visitors can feel the difference."
-      ],
-      "keepUps": [
-        "Keep writing the way you talk: specific, plain, and free of phrases that mean nothing.",
-        "Keep doing the buzzword sweep on new pages anyway — two minutes of hunting keeps the copy this clean.",
-        "Keep the thesaurus closed. Every plain sentence you publish is a differentiator while your competitors still sound like press releases.",
-        "Don't start decorating with \"world-class\" later. If it reads well today, it reads well tomorrow.",
-        "Keep holding every sentence to the standard that made this page clean: it must say something specific."
-      ]
-    },
-    "boilerplate": {
-      "roasts": [
-        "\"{phrase}\" — that exact sentence lives on 40,000 other sites. Yours says it {count}×.",
-        "\"{label}\" appears {count}×. Your site is a greatest-hits album of other people's templates.",
-        "\"{sentence}\" — we've seen this sentence on a dentist's site, a crypto app, and a 2013 bus shelter ad.",
-        "You reproduced \"{text}\" {count}×. We read it {count}×. We were bored both times.",
-        "{count} boilerplate {signalsNoun} in {words} words. That's {density} per 300 — a record for having nothing to say.",
-        "\"{phrase}\" — bold words from the most copy-pasted sentence in your industry.",
-        "{count} boilerplate {signalsNoun} in {words} words. Your footer has more personality than your homepage.",
-        "\"{sentence}\" is doing the exact same amount of work a parked car does.",
-        "\"{label}\" — {count} of them. This isn't a website, it's a checklist.",
-        "\"{text}\" — you wrote this block {count}×, which is {count}× too many.",
-        "Your page reads like the default template's default template.",
-        "Somewhere under all this boilerplate there's a business. We think. We squinted."
-      ],
-      "whys": [
-        "Generic boilerplate is the fastest way to look like everyone else: visitors have seen these exact sentences on a dozen competitor sites, so nothing about you sticks.",
-        "Sentences that live on thousands of other sites make yours interchangeable with them — the reader has already seen this line on a dozen competitor pages, so nothing about you registers.",
-        "Cookie banners, legal sprints and \"learn more\" CTAs are fine alone; in bulk they make the page read as assembled rather than written — and trust is the first casualty.",
-        "Every generic sentence is a wasted chance to say one specific thing about your product that a competitor cannot.",
-        "When the compliance text outweighs the pitch, the visitor's takeaway is \"this site is covering its ass,\" not \"this site solves my problem.\""
-      ],
-      "fixes": [
-        "Rewrite each flagged generic sentence with a concrete detail: swap \"we are committed to quality\" for \"every order is checked by a human before it ships.\"",
-        "Keep legal and cookie text in one tight, honest block at the bottom instead of sprinkling boilerplate through the page.",
-        "Replace \"learn more\" links with labels that say what the visitor will actually learn — \"see pricing\" or \"read the case study.\"",
-        "Cut any line a competitor with the same SaaS template could publish unchanged — that is the definition of the boilerplate to remove.",
-        "Do one pass where every sentence gets a fact check: if a sentence contains no verifiable claim, rewrite it until it does."
-      ],
-      "compliments": [
-        "Zero boilerplate signals in the scan — no cookie-banner copy-pasta, no generic \"learn more\" wallpaper. The page reads written, not assembled.",
-        "No default-template sentences found. Every line on this page looks like it was typed for this business, not pasted from 40,000 others.",
-        "We looked for the usual suspects — cookie notices, legal sprints, newsletter blocks — and came back empty-handed.",
-        "Your copy is refreshingly free of standard-issue boilerplate. This page says what it means instead of what templates mean.",
-        "Not a single generic \"we are committed to excellence\" in sight. The compliance is tucked away and the pitch does the talking."
-      ],
-      "cleanWhys": [
-        "A page free of boilerplate reads as written for the visitor rather than assembled from defaults — and that first impression is the whole credibility battle.",
-        "When nothing reads as filler, what you actually do becomes the only thing left to notice; every line earning its place gets the pitch full attention.",
-        "Original wording signals that the business behind the page is real — visitors have seen the template sentences so often that their absence is a genuine differentiator.",
-        "Readers have seen the same boilerplate repeated across the web; pages that skip it come across as the original, not the echo.",
-        "Visitors scan for the familiar template tell; when it isn't there, they spend that attention on your message instead of their skepticism."
-      ],
-      "keepUps": [
-        "Keep the legal and cookie text in one quiet corner, and keep writing the rest of the page like this: specific and human.",
-        "Keep generic CTAs off the page — if the visitor needs a button, name what it does.",
-        "Keep auditing for template sentences; the day one slips in, it will stand out more than it used to.",
-        "Keep your footer boring and your body interesting. That balance is exactly what this scan just rewarded.",
-        "Keep replacing \"learn more\" with real names for things — it's the habit that keeps boilerplate out."
-      ]
-    },
-    "infoDensity": {
-      "roasts": [
-        "Vocabulary diversity {mattr} — this page reuses words like a group project where one person did all the talking.",
-        "Vocabulary diversity of {mattr} means roughly one idea per paragraph, recycled. Impressive, in the worst way.",
-        "Your stopword ratio is {stopwordRatio}% — that's mostly \"the,\" \"and,\" and quiet desperation.",
-        "{stopwordRatio}% of your words are the verbal equivalent of elevator music. The rest is the chorus.",
-        "Average sentence length: {meanLen} words across {sentences} sentences. Your copy is either sprinting or napping.",
-        "Mean sentence: {meanLen} words. This page is either lecturing or whispering.",
-        "{count} concrete {specificsNoun} in {words} words. This page is furniture-free.",
-        "We found exactly {count} concrete {factsNoun} on this page. Examples: {examples}. That's the whole list.",
-        "In {words} words, we found exactly {count} concrete {factsNoun}: {examples}.",
-        "{shortPct}% of your {paragraphs} paragraphs are under 25 words. That's not pacing, that's not written yet.",
-        "{shortPct}% short paragraphs, {paragraphs} of them. Your content looks like a tweet thread with commitment issues.",
-        "This page describes a business the way a fortune cookie describes your future: vaguely, and with confidence."
-      ],
-      "whys": [
-        "Thin content gives visitors no reason to stay: if a page cannot answer \"what do you do, and why you,\" the back button wins.",
-        "Low information density leaves the visitor with nothing to believe in — specifics (prices, dates, numbers, examples) are what make a product sound real.",
-        "Pages made of generic words around few facts read as substance-free next to a competitor who shows prices, dates and numbers.",
-        "Vague copy forces the reader to do your selling for you, and readers don't volunteer for that.",
-        "Every missing fact — a number, a date, a name — is a question the visitor now has to ask someone else. Usually your competitor."
-      ],
-      "fixes": [
-        "Add at least one concrete fact per paragraph: a price, a date, a number, a named customer, or a measurable result.",
-        "Turn short placeholder-ish paragraphs into real sections: state the claim, show the evidence, name the outcome.",
-        "Run a \"would my competitor write this exact sentence\" pass, and replace every yes with a specific detail about your product.",
-        "If a page can't reach roughly one specific per 75 words, write more substance before you write more sentences.",
-        "Cut hedging words and add proof: swap \"we help teams scale\" for \"we helped 40 teams cut onboarding time by a week.\""
-      ],
-      "compliments": [
-        "Healthy vocabulary diversity, low stopword load, and substantial paragraphs — this content is actually carrying information.",
-        "Your copy reads specific: dates, numbers, names, details — the things that make a visitor believe the business is real.",
-        "Solid numbers across the board: varied vocabulary, human-length sentences, paragraphs with actual substance.",
-        "This page is dense with real content — facts per word well above the vague-copy line. The back button has no reason to fire.",
-        "Information density is doing its job: every sentence earns its place instead of padding the word count."
-      ],
-      "cleanWhys": [
-        "Specifics are what make a business credible: when the copy carries numbers, dates and named facts, the visitor stops wondering whether it's real and starts deciding whether it's for them.",
-        "Substantial content is the fastest way to look credible — pages that answer questions with real information read as the work of a real business, and this page already does.",
-        "Every concrete fact removes a doubt the visitor would otherwise take to a competitor; the less vague the page, the fewer questions you leave unanswered.",
-        "Dense, varied copy respects the reader's time, which reads as respect for the reader — and that impression carries straight into how seriously the visitor takes the business.",
-        "A page that informs as it pitches does two jobs at once: it proves the product exists and gives the visitor the ammunition to justify choosing it with confidence."
-      ],
-      "keepUps": [
-        "Keep the specifics coming: a number, a date, or a named customer per section is what kept this page off the vague list.",
-        "Keep writing paragraphs that hold at least one fact — it's the single habit that keeps density high and skimming easy.",
-        "Keep the vocabulary varied and the sentences human-length; both are free wins that pages like this one already banked.",
-        "When you expand the site, keep the same ratio — roughly one concrete fact per 75 words — or this category stops complimenting you.",
-        "Keep trimming anything that adds words without adding information. The page is in the healthy band right now; stay there."
-      ]
-    },
-    "repetitive": {
-      "roasts": [
-        "\"{phrase}\" — your {kind} repeat themselves {count}×. The first one was fine. This is number {count}.",
-        "Your {kind} repeat themselves: \"{phrase}\" appears {count}× on one page.",
-        "\"{phrase}\" — you made this point {count}×. We were there for all of them.",
-        "\"{phrase}\" is one of {count} duplicated {kind} on this page. Either you love this line, or your copy got stuck on repeat.",
-        "Your page says \"{phrase}\" so often it's basically your tagline now. You're welcome.",
-        "We found {count} {repeatsNoun} of \"{phrase}\". Ctrl+C was doing a lot of the writing.",
-        "{sentences} sentences, {paragraphs} paragraphs, and — get this — they're actually different. Respect.",
-        "\"{phrase}\" — the {kind} equivalent of a stuck record. We heard it {count}×.",
-        "Your {kind} feature \"{phrase}\" {count}×. Variety called. It left a message.",
-        "The line \"{phrase}\" does double (triple, quadruple) duty on this page: {count} {appearancesNoun}.",
-        "Your page structure is the website equivalent of a default screensaver.",
-        "This content has the variety of a diner menu: same words, same order, every time."
-      ],
-      "whys": [
-        "Repeated sentences and paragraphs waste the reader's time and make the page feel assembled from leftovers rather than written for them.",
-        "Repetition dilutes your message — the line that matters gets exactly the same weight as the line that was just there, so nothing stands out.",
-        "Visitors skim; repeated phrasing makes the page feel longer and emptier, which reads as low effort and lowers trust.",
-        "Duplicated text on one page splits the page's own signal, and repeated blocks across pages are exactly what duplication checks penalize.",
-        "Every repeat is a missed slot: that sentence could have said one new specific thing."
-      ],
-      "fixes": [
-        "Keep each sentence's first three words distinct — it's the fastest fix for \"everything starts the same.\"",
-        "Merge duplicated paragraphs into one, and use the freed space for a new point with a concrete example.",
-        "Draft once, then re-read with a highlighter: mark every sentence that restates an earlier sentence, and cut the second one.",
-        "After drafting, search the page for your top five phrases; if any appears more than twice, reword or delete the extras.",
-        "If a block genuinely must repeat (like a compliance line), move it to the footer once instead of restating it in the body."
-      ],
-      "compliments": [
-        "No repeated sentence openings, no cloned paragraphs — every line on this page actually differs from the one before it.",
-        "Your sentences don't all start the same, and your paragraphs don't repeat. Boring to detect, delightful to read.",
-        "Structure check: clean. No stuck-record phrasing, no copy-paste paragraphs. The page varies like a real writer wrote it.",
-        "Zero duplicated openings and zero near-identical sentences — you used the paste button about as much as a novel should.",
-        "This page has genuine structural variety — the same amount of repetition as a well-edited article, which is to say almost none."
-      ],
-      "cleanWhys": [
-        "Variety keeps attention: content that never repeats reads as shorter, sharper and more deliberate — the kind of page visitors actually finish.",
-        "Distinct sentences and paragraphs make the important lines stand out, so the message lands instead of blurring into a loop.",
-        "Fresh phrasing on every line reads as effort, and perceived effort is trust: pages that vary feel written for the reader, not recycled from a draft.",
-        "Structure variety also helps scanning — visitors who skim can find the new point in every block because no block is a repeat of the last.",
-        "A page that never repeats respects the reader's time, and nothing signals \"we know you're busy\" faster than not saying the same thing twice."
-      ],
-      "keepUps": [
-        "Keep starting sentences differently — it's the cheapest way to stay out of the repetitive-structure report.",
-        "Keep paragraphs that say new things. If one ever says what another said, merge them and write a new point.",
-        "Keep varying the rhythm: short sentence, long sentence, and never the same opening twice in a row.",
-        "When you publish new pages, give each section a different opening line — that alone keeps this detector quiet.",
-        "Keep treating repeat phrasing as a draft symptom. The absence of it is exactly what this scan just noticed."
-      ]
-    },
-    "crossPage": {
-      "roasts": [
-        "{urlA} and {urlB} are {sim}% the same page. At this point they're not pages, they're twins.",
-        "{pairCount} flagged {pairsNoun} of near-identical pages. Your site is one page with multiple addresses.",
-        "We found {pairCount} duplicated page {pairsNoun} at up to {maxSim}% similarity. That's not a site, that's a copy machine.",
-        "Content duplicated across {count} pages. Somewhere in there is one good page and {count} copies.",
-        "{urlB} is basically {urlA} wearing a different hat: {sim}% identical.",
-        "{pairCount} near-identical {pairsNoun} in this scan. Your site isn't multi-page, it's multi-tab of the same page.",
-        "Top similarity: {maxSim}%. At this point \"pages\" is doing a lot of heavy lifting.",
-        "No page pairs above 80% similarity across {pages} pages — a rarity worth mentioning. This is the compliment part.",
-        "{urlA} ~ {urlB}: {sim}% similar. The only difference is the URL bar.",
-        "You have {pairCount} {pairsNoun} of pages that are basically the same page. Google has seen this before. Everyone has seen this before.",
-        "Your site's pages are so alike they could share a wardrobe.",
-        "This site has the page diversity of a buffet that only serves one dish."
-      ],
-      "whys": [
-        "Near-duplicate pages split the effort you put into them: the work behind one version is repeated instead of extended, so the whole site reads thinner than it is.",
-        "Duplicated content across pages makes the whole site feel like a shell — visitors who land on the same text twice assume there's nothing behind it.",
-        "Every page should earn its URL with a distinct purpose; duplicated pages just dilute the one message you actually need people to remember.",
-        "A real site is a set of answers to different questions; when all your pages answer the same question, visitors with any other question find nothing new.",
-        "Repeated content also burns trust — the faster a visitor can predict your next page, the faster they leave."
-      ],
-      "fixes": [
-        "Give each page one job, and rewrite the main content so only that page says it.",
-        "Turn the duplicated sections into unique value: add per-page specifics — prices, examples, testimonials from that vertical.",
-        "If two pages must be similar, merge them into one page and redirect the other.",
-        "Keep shared boilerplate (nav, footer, legal) out of the main content, where duplication comparisons look.",
-        "Before publishing a new page, diff it against your other pages; if the main content is 80%+ the same, start over."
-      ],
-      "compliments": [
-        "No page pairs above the duplication threshold — every page on this site actually earns its URL.",
-        "Cross-page check came back flawless: each page we compared has its own distinct main content.",
-        "Your pages aren't clones. We compared every pair and found nothing near-duplicate — rarer than it should be.",
-        "Every URL on this site answers a different question. The duplication detector packed up and went home.",
-        "Distinct content per page, confirmed across every pair — this is what a multi-page site is supposed to look like."
-      ],
-      "cleanWhys": [
-        "Distinct pages mean the site answers more questions: every URL covers its own topic instead of repeating the same one, so the whole site feels bigger and more useful.",
-        "A visitor who lands on different, purposeful pages walks away thinking the business has depth — the exact flip side of a copy-paste site.",
-        "Unique content per page keeps every page worth its own visit — visitors find something new at each URL instead of the same page again.",
-        "Variety across pages makes the site feel bigger and more competent than any single-page clone ever can.",
-        "When each page earns its URL, the visitor's attention gets spent on new information every time — the best possible use of a visit."
-      ],
-      "keepUps": [
-        "Keep giving each page one job; when a new page's main content starts resembling an existing one, that's the signal to rewrite.",
-        "Keep the shared stuff (nav, footer, legal) out of the main copy — that's exactly where duplication checks look.",
-        "Before publishing, diff the new page against the others; if it's 80%+ the same, the compliment disappears.",
-        "Keep letting each page carry its own specifics — prices, examples, answers — so no two pages ever need to say the same thing.",
-        "Keep growing the site page by page with unique content; the detector only complains when pages start doing each other's jobs."
-      ]
-    },
-    "fingerprints": {
-      "roasts": [
-        "That's a {label} marker ({scope} match, {confidence} confidence). Your site is wearing the builder's default tuxedo.",
-        "We spotted {label} in the {scope}. Nothing says \"hand-crafted\" like an unmodified default.",
-        "{label} — {confidence} confidence, found in the {scope}. The template called. It wants its look back.",
-        "A {label} fingerprint in the page {scope}. Your site is a kit car with the sticker still on it.",
-        "{label} detected at {confidence} confidence. It's not a crime to use a builder — it's a crime to leave the tags on.",
-        "The {scope} says \"{label}\". This site was assembled, not designed.",
-        "{label} in the {scope} ({confidence}). The builder's signature is still on the painting.",
-        "We found {label} sitting in the {scope}. The easiest way to spot a template is the template telling you.",
-        "{scope} match: {label}. Your website has \"made from a kit\" energy, and the kit is proud of it.",
-        "{label} ({confidence} confidence) — the digital equivalent of a new car with the window sticker still on.",
-        "Your site is wearing its template like a Halloween costume it didn't choose.",
-        "If the design were any more off-the-shelf, it would come with assembly instructions."
-      ],
-      "whys": [
-        "Template fingerprints tell visitors the design is not yours — and if the design is borrowed, they start wondering what else might be.",
-        "A distinct look is a business asset; recognizable builder defaults make you blend into the 10,000 sites launched from the same kit this week.",
-        "The builder's defaults aren't tuned for your business — they're tuned for \"looks fine\" on any site, not for presenting your specific thing.",
-        "Design trust is earned in the first seconds; a stock look reads as low effort before the visitor has read a single word.",
-        "Even when the template is capable, unmodified defaults send the message that you shipped the draft."
-      ],
-      "fixes": [
-        "Replace at least the header, hero and button styles so the page doesn't carry the builder's default signature.",
-        "Customize the obvious fingerprints first: colors, fonts, spacing, and any leftover placeholder assets.",
-        "Remove or replace the default meta/script markers that identify the builder — the \"powered by\" tags and CDN references.",
-        "Put one distinctive, real element on the homepage — an original illustration, a messy fact, a specific number — that no template ships.",
-        "If a builder feature is unused (stock icon packs, demo blocks), delete it; leftovers are what make the kit visible."
-      ],
-      "compliments": [
-        "No builder fingerprints detected — no leftover default markers, no template tells. This design looks genuinely yours.",
-        "We scanned the page for the usual builder signatures and found none. The template is not showing.",
-        "Zero default-template fingerprints in the markup. Whatever you built this on, you made it your own.",
-        "No leftover builder assets, no default icon packs — the page is wearing its own clothes, not the workshop's.",
-        "Clean fingerprint check: the markup doesn't announce a template, because there isn't one on display."
-      ],
-      "cleanWhys": [
-        "A design with no template tells reads as owned and finished — visitors transfer that impression to the product or service behind it.",
-        "Original design is a differentiator that no amount of copy can fake; keeping the defaults buried keeps the site feeling built, not assembled.",
-        "When nothing on the page announces a kit, the visitor's mind goes to the work itself — and that's where you want it.",
-        "Unmarked builds also avoid the subconscious \"10,000 sites launched from this template last week\" reaction that erodes credibility.",
-        "A distinctive-looking site is remembered; the absence of the builder's signature is exactly the kind of detail that makes the difference."
-      ],
-      "keepUps": [
-        "Keep customizing past the defaults — headers, styles, real assets — so the builder never shows its face again.",
-        "If you ever use a builder again, strip its markers before launch; that's the whole trick this scan looks for.",
-        "Keep the distinctive elements coming: original visuals and honest details are what push a site out of template territory.",
-        "Keep deleting unused demo blocks and default icon packs — leftovers are what make a kit visible.",
-        "Keep the hand-built touches; the absence of fingerprints is exactly what this category is here to notice."
-      ]
-    },
-    "assets": {
-      "roasts": [
-        "{stockCount} of your {total} images come from a stock CDN. Your page has the emotional range of a hotel brochure.",
-        "{stockCount} of {total} images load from a stock CDN — the same ones powering 400,000 About pages just like yours.",
-        "{fileCount} of {total} images have placeholder filenames. \"img3.jpg\" is not a brand.",
-        "{altCount} of {total} images are missing or generic alt text. Screen readers narrate your site as \"image, image, image.\"",
-        "{altCount} of your {total} images fail the accessibility test before a single word is read.",
-        "{cleanCount} of {total} images flagged for stock/placeholder signals — your imagery actually looks like it belongs to you. Refreshing.",
-        "{cleanCount} of {total} images flagged for stock/placeholder signals. A clean image library. We genuinely didn't see that coming.",
-        "Image #{index} loads from {host}. Nothing says \"we, a business\" like a stock photo booth.",
-        "\"{stem}\" at {src} is doing its best impression of a real image.",
-        "Image #{index} has {altKind} alt text. The blind community experiences your site as a series of dramatic pauses.",
-        "\"{alt}\" — that's the alt text on image #{index}. \"Image\" is not a description, it's a confession.",
-        "These photos say \"business\" the way a stock photo of a handshake says \"business.\""
-      ],
-      "whys": [
-        "Stock imagery is instantly recognizable and instantly forgettable — it tells visitors nothing about your actual product, team, or customers.",
-        "Placeholder filenames and generic alt text are small signals that compound: together they read as \"this site was never finished.\"",
-        "Alt text is accessibility: empty or generic alts lock out screen-reader users, who experience the page as \"image, image, image\" instead of a description.",
-        "Real photos of your product, team or workspace are the cheapest credibility upgrade a website can buy; stock photos cannot do that job.",
-        "Generic imagery makes your page interchangeable with every competitor who picked the same CDN's bestseller."
-      ],
-      "fixes": [
-        "Replace stock/placeholder images with real ones: your product on a desk, your team in the office, your work in the wild.",
-        "Rename uploaded files descriptively (\"menu-redesign-2026.png\") instead of image1, photo2, or logo.",
-        "Write real alt text for every image: what the picture shows and why it's on the page — not just \"image\" or the filename.",
-        "If an image is purely decorative, mark it as such instead of leaving empty or generic alt text.",
-        "Do a visual audit for the stock look (boardroom handshakes, fake smiles, floating laptops) and swap the top three offenders first."
-      ],
-      "compliments": [
-        "None of your images are stock or placeholder — your imagery actually looks like it belongs to this business. Refreshing.",
-        "Every image passed: real filenames, real alt text, no stock CDNs. The visual side of this page is genuinely yours.",
-        "A completely clean image library — no \"img3.jpg,\" no unsplash, no generic \"image\" alts. We didn't see that coming.",
-        "Zero stock signals, and every image carries real alt text. Screen readers thank you.",
-        "Your images look like your own: named descriptively, described properly, hosted on your turf. That's how it's done."
-      ],
-      "cleanWhys": [
-        "Real, descriptive imagery builds credibility faster than any headline: visitors read \"this is genuinely ours\" before they read a single word.",
-        "Descriptive filenames and real alt text are free accessibility wins — every image works twice as hard when it's genuinely described.",
-        "Original visuals give visitors a concrete, memorable picture of who you are — exactly what stock photos can never provide.",
-        "Alt text that describes the image keeps screen-reader users in the conversation instead of narrating \"image, image, image\" at them.",
-        "An image library with no placeholder tells says the site was finished, not shipped — a small signal with outsized credibility value."
-      ],
-      "keepUps": [
-        "Keep naming files like \"menu-redesign-2026.png\" instead of image1 — that habit keeps the placeholder flags off.",
-        "Keep writing real alt text: what the picture shows and why it's on the page. You're already doing it.",
-        "If you add photos later, keep them yours: product shots, team, real work — not the stock CDN bestseller.",
-        "Keep the visual library this clean and it stays a strength; the detector only flags what looks unfinished.",
-        "Keep the descriptive filenames and honest alts — they cost five seconds per image and they're two flags you'll never see."
-      ]
-    }
+ "_comment": "A.S.S. Score three-layer finding copy pools (src/threeLayer.js). Config-driven like roasts.json / fingerprints.json: edit copy here, NO code changes needed. One pool per breakdown key (filler, boilerplate, infoDensity, repetitive, crossPage, fingerprints, assets). Every finding gets an insight { roast, why, fix, evidence } where evidence is the finding string itself. Roasts carry ONE OR MORE {tokens} interpolated ONLY from that finding's real parsed evidence (token names documented per group below); a roast variant is only eligible when EVERY token it references exists in the finding's parsed tokens, and when the finding carries verbatim-evidence tokens (phrase/sentence/text/label/urls/host/alt...) the variant must cite at least one of them — variants whose tokens are missing are dropped (absolute rule: never fabricate details; a roast that can cite the real trigger must cite it). Token-free roasts are the fallback for findings with no interpolatable token at all. whys/fixes are group-level business reasoning, applied to every finding of the group. Selection is deterministic: seeded by scan id + category + finding index via the same FNV-1a hashScanId the Slop Roast uses (same scan id -> identical insights, forever). Copy rules: loud/cheeky/meme tone, 1-2 sentences, pattern-based only — never assert AI authorship as fact (automated forbidden-phrase test). Token names per group: filler {count,words,density,phrase}; boilerplate {count,words,density,label,phrase,sentence,text,signalsNoun}; infoDensity {mattr,stopwordRatio,meanLen,sentences,shortPct,paragraphs,count,words,needed,examples,specificsNoun,factsNoun}; repetitive {kind,count,phrase,openings,sentences,paragraphs,repeatsNoun,appearancesNoun}; crossPage {pairCount,maxSim,urlA,urlB,sim,count,pages,pairsNoun}; filler additionally accepts {phrasesNoun,buzzwordsNoun} (plural-noun tokens filled from the finding count; no more \"(s)\" placeholders); fingerprints {scope,label,confidence}; assets {stockCount,fileCount,altCount,cleanCount,total,index,host,stem,alt,altKind,src}. CLEAN findings (zero/none measurements, healthy metric bands) render a compliment variant instead of a roast: { kind: 'clean', roast: compliment, why: cleanWhy, fix: keepUp, evidence } — pools compliments / cleanWhys / keepUps per category, same structural rules (1-2 sentences, <=220 chars, no AI-authorship claims, token-free by design; the evidence line carries the numbers). Negative findings keep roast/why/fix with no kind marker.",
+ "pools": {
+  "filler": {
+   "roasts": [
+    "\"{phrase}\" appears {count}× on this page. Bold words from a phrase that means nothing.",
+    "You said \"{phrase}\" {count}×. Every site in your niche says it too. Every. Single. One.",
+    "\"{phrase}\" — I checked, and that phrase is doing zero work. It just stands there, being confident.",
+    "{count} filler {phrasesNoun} in {words} words. That's {density} per 300 words — the spice budget of a beige website.",
+    "You squeezed {count} {buzzwordsNoun} into {words} words. The thesaurus is doing the heavy lifting here.",
+    "{count} filler {phrasesNoun}, {words} words, zero facts. That's an achievement of sorts.",
+    "Your copy has the substance of a motivational poster, and {count} {phrasesNoun} to prove it.",
+    "We counted {count} filler {phrasesNoun} so you don't have to. You're welcome. Now delete them.",
+    "This page runs on buzzwords and vibes — {count} of the former, and apparently none of the latter.",
+    "\"{phrase}\" — in this economy?",
+    "Your writing style is \"confidently nothing,\" and you committed to it {count}×.",
+    "Somewhere between the buzzwords there might be a sentence. We couldn't find it."
+   ],
+   "whys": [
+    "Filler phrases signal that the copy was written to sound impressive, not to inform — and visitors who smell vague marketing lose trust in seconds.",
+    "The web is saturated with these exact same phrases. Every buzzword you reuse makes your site sound like everyone else's, not more credible.",
+    "Phrases like these add words without adding meaning — the page spends its word budget sounding important instead of saying what it does, and readers can't tell what you're offering.",
+    "Generic phrasing buries what you actually do: if the visitor can't tell from the first screen what the product is, they leave — and the site that says it plainly wins their attention.",
+    "When the copy sounds like a press release from 2014, the product behind it starts to feel just as dated — even if it isn't."
+   ],
+   "fixes": [
+    "Delete each flagged phrase and replace it with plain English that names a real outcome — \"elevate your brand\" becomes \"we redesign menus for restaurants.\"",
+    "Read the sentence out loud: if it would sound odd in a real conversation with a customer, rewrite it until it wouldn't.",
+    "Run a buzzword sweep with one rule: every claim must be backed by a fact, a number, or an example on the same page.",
+    "Before publishing, ask \"would a competitor with the same template say this?\" If yes, cut it or sharpen it.",
+    "Replace the filler with a specific differentiator: a number, a named feature, a customer outcome, or a deadline."
+   ],
+   "compliments": [
+    "Zero buzzwords across the whole page. Somebody actually put the thesaurus down — and the copy reads better for it.",
+    "Not a single filler phrase in the entire scan. Your copy says things because they're true, not because they sound important.",
+    "We scanned the whole page for corporate wind and found none. The words here are actually doing their jobs.",
+    "No \"game-changers,\" no \"seamless experiences,\" no \"unlock the potential.\" Just plain English doing real work.",
+    "Your page cleared the buzzword detector without even trying. The copy sounds like a human wrote it for humans."
+   ],
+   "cleanWhys": [
+    "Copy without buzzwords reads as confident, and confidence is the entire game: visitors who understand you in one pass are far more likely to trust you and stay.",
+    "Plain, specific language is a differentiator now — while competitors stack synonyms, this page says something real, and that is what actually stands out.",
+    "Clear copy earns trust instantly because it costs the reader nothing to parse; the faster a visitor understands you, the sooner they believe you exist.",
+    "Jargon-free writing also ages well: it never sounds like a trend, so the page still reads as fresh in five years instead of like a time capsule.",
+    "Every sentence that says something beats ten that sound important — this page already knows that, and visitors can feel the difference."
+   ],
+   "keepUps": [
+    "Keep writing the way you talk: specific, plain, and free of phrases that mean nothing.",
+    "Keep doing the buzzword sweep on new pages anyway — two minutes of hunting keeps the copy this clean.",
+    "Keep the thesaurus closed. Every plain sentence you publish is a differentiator while your competitors still sound like press releases.",
+    "Don't start decorating with \"world-class\" later. If it reads well today, it reads well tomorrow.",
+    "Keep holding every sentence to the standard that made this page clean: it must say something specific."
+   ]
+  },
+  "boilerplate": {
+   "roasts": [
+    "\"{phrase}\" — that exact sentence lives on 40,000 other sites. Yours says it {count}×.",
+    "\"{label}\" appears {count}×. Your site is a greatest-hits album of other people's templates.",
+    "\"{sentence}\" — we've seen this sentence on a dentist's site, a crypto app, and a 2013 bus shelter ad.",
+    "You reproduced \"{text}\" {count}×. We read it {count}×. We were bored both times.",
+    "{count} generic {signalsNoun} in {words} words. That's {density} per 300 — a record for having nothing to say.",
+    "\"{phrase}\" — bold words from the most copy-pasted sentence in your industry.",
+    "{count} generic {signalsNoun} in {words} words. Your footer has more personality than your homepage.",
+    "\"{sentence}\" is doing the exact same amount of work a parked car does.",
+    "\"{label}\" — {count} of them. This isn't a website, it's a checklist.",
+    "\"{text}\" — you wrote this block {count}×, which is {count}× too many.",
+    "Your page reads like the default template's default template.",
+    "Somewhere under all this generic wording there's a business. We think. We squinted."
+   ],
+   "whys": [
+    "Generic wording is the fastest way to look like everyone else: visitors have seen these exact sentences on a dozen competitor sites, so nothing about you sticks.",
+    "Sentences that live on thousands of other sites make yours interchangeable with them — the reader has already seen this line on a dozen competitor pages, so nothing about you registers.",
+    "Cookie banners, legal text and \"learn more\" links are fine alone; in bulk they make the page read as assembled rather than written — and trust is the first casualty.",
+    "Every generic sentence is a wasted chance to say one specific thing about your product that a competitor cannot.",
+    "When the compliance text outweighs the pitch, the visitor's takeaway is \"this site is covering its ass,\" not \"this site solves my problem.\""
+   ],
+   "fixes": [
+    "Rewrite each flagged generic sentence with a concrete detail: swap \"we are committed to quality\" for \"every order is checked by a human before it ships.\"",
+    "Keep legal and cookie text in one tight, honest block at the bottom instead of sprinkling generic wording through the page.",
+    "Replace \"learn more\" links with labels that say what the visitor will actually learn — \"see pricing\" or \"read the case study.\"",
+    "Cut any line a competitor with the same website template could publish unchanged — that is exactly the kind of generic line to remove.",
+    "Do one pass where every sentence gets a fact check: if a sentence contains no verifiable claim, rewrite it until it does."
+   ],
+   "compliments": [
+    "Zero generic wording in the scan — no cookie-banner copy-pasta, no generic \"learn more\" wallpaper. The page reads written, not assembled.",
+    "No default-template sentences found. Every line on this page looks like it was typed for this business, not pasted from 40,000 others.",
+    "We looked for the usual suspects — cookie notices, legal text, newsletter blocks — and came back empty-handed.",
+    "Your copy is refreshingly free of standard-issue generic wording. This page says what it means instead of what templates mean.",
+    "Not a single generic \"we are committed to excellence\" in sight. The compliance is tucked away and the pitch does the talking."
+   ],
+   "cleanWhys": [
+    "A page free of generic wording reads as written for the visitor rather than assembled from defaults — and that first impression is the whole credibility battle.",
+    "When nothing reads as filler, what you actually do becomes the only thing left to notice; every line earning its place gets the pitch full attention.",
+    "Original wording signals that the business behind the page is real — visitors have seen the template sentences so often that their absence is a genuine differentiator.",
+    "Readers have seen the same generic wording repeated across the web; pages that skip it come across as the original, not the echo.",
+    "Visitors scan for the usual template signs; when they aren't there, they spend that attention on your message instead of their skepticism."
+   ],
+   "keepUps": [
+    "Keep the legal and cookie text in one quiet corner, and keep writing the rest of the page like this: specific and human.",
+    "Keep generic button labels off the page — if the visitor needs a button, name what it does.",
+    "Keep auditing for template sentences; the day one slips in, it will stand out more than it used to.",
+    "Keep your footer boring and your body interesting. That balance is exactly what this scan just rewarded.",
+    "Keep replacing \"learn more\" with real names for things — it's the habit that keeps generic wording out."
+   ]
+  },
+  "infoDensity": {
+   "roasts": [
+    "Word variety: {mattr} — this page reuses words like a group project where one person did all the talking.",
+    "A word variety of {mattr} means roughly one idea per paragraph, recycled. Impressive, in the worst way.",
+    "Your common-word share is {stopwordRatio}% — that's mostly \"the,\" \"and,\" and quiet desperation.",
+    "{stopwordRatio}% of your words are the verbal equivalent of elevator music. The rest is the chorus.",
+    "Average sentence length: {meanLen} words across {sentences} sentences. Your copy is either sprinting or napping.",
+    "The average sentence runs {meanLen} words. This page is either lecturing or whispering.",
+    "{count} specific {specificsNoun} in {words} words. This page is furniture-free.",
+    "We found exactly {count} specific {factsNoun} on this page. Examples: {examples}. That's the whole list.",
+    "In {words} words, we found exactly {count} specific {factsNoun}: {examples}.",
+    "{shortPct}% of your {paragraphs} paragraphs are under 25 words. That's not pacing, that's not written yet.",
+    "{shortPct}% short paragraphs, {paragraphs} of them. Your content looks like a tweet thread with commitment issues.",
+    "This page describes a business the way a fortune cookie describes your future: vaguely, and with confidence."
+   ],
+   "whys": [
+    "Thin content gives visitors no reason to stay: if a page cannot answer \"what do you do, and why you,\" the back button wins.",
+    "Thin content leaves the visitor with nothing to believe in — specific details (prices, dates, numbers, examples) are what make a product sound real.",
+    "Pages made of generic words around few facts read as substance-free next to a competitor who shows prices, dates and numbers.",
+    "Vague copy forces the reader to do your selling for you, and readers don't volunteer for that.",
+    "Every missing fact — a number, a date, a name — is a question the visitor now has to ask someone else. Usually your competitor."
+   ],
+   "fixes": [
+    "Add at least one specific detail per paragraph: a price, a date, a number, a named customer, or a measurable result.",
+    "Turn short placeholder-ish paragraphs into real sections: state the claim, show the evidence, name the outcome.",
+    "Run a \"would my competitor write this exact sentence\" pass, and replace every yes with a specific detail about your product.",
+    "If a page can't reach roughly one specific detail per 75 words, write more substance before you write more sentences.",
+    "Cut hedging words and add proof: swap \"we help teams scale\" for \"we helped 40 teams cut onboarding time by a week.\""
+   ],
+   "compliments": [
+    "Strong word variety, few little filler words, and substantial paragraphs — this content is actually carrying information.",
+    "Your copy reads specific: dates, numbers, names, details — the things that make a visitor believe the business is real.",
+    "Solid numbers across the board: varied word choice, human-length sentences, paragraphs with actual substance.",
+    "This page is dense with real content — specific details per word well above the vague-copy line. The back button has no reason to fire.",
+    "The page is dense with useful content: every sentence earns its place instead of padding the word count."
+   ],
+   "cleanWhys": [
+    "Specific details are what make a business credible: when the copy carries numbers, dates and named facts, the visitor stops wondering whether it's real and starts deciding whether it's for them.",
+    "Substantial content is the fastest way to look credible — pages that answer questions with real information read as the work of a real business, and this page already does.",
+    "Every specific detail removes a doubt the visitor would otherwise take to a competitor; the less vague the page, the fewer questions you leave unanswered.",
+    "Dense, varied copy respects the reader's time, which reads as respect for the reader — and that impression carries straight into how seriously the visitor takes the business.",
+    "A page that informs as it pitches does two jobs at once: it proves the product exists and gives the visitor the ammunition to justify choosing it with confidence."
+   ],
+   "keepUps": [
+    "Keep the specific details coming: a number, a date, or a named customer per section is what kept this page off the vague list.",
+    "Keep writing paragraphs that hold at least one fact — it's the single habit that keeps content useful and skimming easy.",
+    "Keep the word variety up and the sentences human-length; both are free wins that pages like this one already banked.",
+    "When you expand the site, keep the same ratio — roughly one specific detail per 75 words — or this category stops complimenting you.",
+    "Keep trimming anything that adds words without adding information. The page is in the healthy band right now; stay there."
+   ]
+  },
+  "repetitive": {
+   "roasts": [
+    "\"{phrase}\" — your {kind} repeat themselves {count}×. The first one was fine. This is number {count}.",
+    "Your {kind} repeat themselves: \"{phrase}\" appears {count}× on one page.",
+    "\"{phrase}\" — you made this point {count}×. We were there for all of them.",
+    "\"{phrase}\" is one of {count} {kind} on this page. Either you love this line, or your copy got stuck on repeat.",
+    "Your page says \"{phrase}\" so often it's basically your tagline now. You're welcome.",
+    "We found {count} {repeatsNoun} of \"{phrase}\". Ctrl+C was doing a lot of the writing.",
+    "{sentences} sentences, {paragraphs} paragraphs, and — get this — they're actually different. Respect.",
+    "\"{phrase}\" — the {kind} equivalent of a stuck record. We heard it {count}×.",
+    "Your {kind} feature \"{phrase}\" {count}×. Variety called. It left a message.",
+    "The line \"{phrase}\" does double (triple, quadruple) duty on this page: {count} {appearancesNoun}.",
+    "Your page structure is the website equivalent of a default screensaver.",
+    "This content has the variety of a diner menu: same words, same order, every time."
+   ],
+   "whys": [
+    "Repeated sentences and paragraphs waste the reader's time and make the page feel assembled from leftovers rather than written for them.",
+    "Repetition dilutes your message — the line that matters gets exactly the same weight as the line that was just there, so nothing stands out.",
+    "Visitors skim; repeated phrasing makes the page feel longer and emptier, which reads as low effort and lowers trust.",
+    "Repeated text on one page splits the page's own signal, and repeated blocks across pages are exactly what repetition checks penalize.",
+    "Every repeat is a missed slot: that sentence could have said one new specific thing."
+   ],
+   "fixes": [
+    "Keep each sentence's first three words distinct — it's the fastest fix for \"everything starts the same.\"",
+    "Merge duplicated paragraphs into one, and use the freed space for a new point with a concrete example.",
+    "Draft once, then re-read with a highlighter: mark every sentence that restates an earlier sentence, and cut the second one.",
+    "After drafting, search the page for your top five phrases; if any appears more than twice, reword or delete the extras.",
+    "If a block genuinely must repeat (like a compliance line), move it to the footer once instead of restating it in the body."
+   ],
+   "compliments": [
+    "No repeated sentence openings, no cloned paragraphs — every line on this page actually differs from the one before it.",
+    "Your sentences don't all start the same, and your paragraphs don't repeat. Boring to detect, delightful to read.",
+    "Structure check: clean. No stuck-record phrasing, no copy-paste paragraphs. The page varies like a real writer wrote it.",
+    "Zero duplicated openings and zero near-identical sentences — you used the paste button about as much as a novel should.",
+    "This page has genuine variety — the same amount of repetition as a well-edited article, which is to say almost none."
+   ],
+   "cleanWhys": [
+    "Variety keeps attention: content that never repeats reads as shorter, sharper and more deliberate — the kind of page visitors actually finish.",
+    "Distinct sentences and paragraphs make the important lines stand out, so the message lands instead of blurring into a loop.",
+    "Fresh phrasing on every line reads as effort, and perceived effort is trust: pages that vary feel written for the reader, not recycled from a draft.",
+    "Variety also helps scanning — visitors who skim can find the new point in every block because no block is a repeat of the last.",
+    "A page that never repeats respects the reader's time, and nothing signals \"we know you're busy\" faster than not saying the same thing twice."
+   ],
+   "keepUps": [
+    "Keep starting sentences differently — it's the cheapest way to stay out of the repetition report.",
+    "Keep paragraphs that say new things. If one ever says what another said, merge them and write a new point.",
+    "Keep varying the rhythm: short sentence, long sentence, and never the same opening twice in a row.",
+    "When you publish new pages, give each section a different opening line — that alone keeps this detector quiet.",
+    "Keep treating repeat phrasing as a draft symptom. The absence of it is exactly what this scan just noticed."
+   ]
+  },
+  "crossPage": {
+   "roasts": [
+    "{urlA} and {urlB} are {sim}% the same page. At this point they're not pages, they're twins.",
+    "{pairCount} flagged {pairsNoun} of near-identical pages. Your site is one page with multiple addresses.",
+    "We found {pairCount} page {pairsNoun} where up to {maxSim}% of the content is the same. That's not a site, that's a copy machine.",
+    "The same content appears on {count} pages. Somewhere in there is one good page and {count} copies.",
+    "{urlB} is basically {urlA} wearing a different hat: {sim}% identical.",
+    "{pairCount} near-identical page {pairsNoun} in this scan. Your site isn't multi-page, it's multi-tab of the same page.",
+    "Top match: {maxSim}% the same. At this point \"pages\" is doing a lot of heavy lifting.",
+    "No page pairs above 80% the same across {pages} pages — a rarity worth mentioning. This is the compliment part.",
+    "{urlA} ~ {urlB}: {sim}% the same. The only difference is the URL bar.",
+    "You have {pairCount} page {pairsNoun} that are basically the same page. Google has seen this before. Everyone has seen this before.",
+    "Your site's pages are so alike they could share a wardrobe.",
+    "This site has the page variety of a buffet that only serves one dish."
+   ],
+   "whys": [
+    "Near-duplicate pages split the effort you put into them: the work behind one version is repeated instead of extended, so the whole site reads thinner than it is.",
+    "Repeated content across pages makes the whole site feel like a shell — visitors who land on the same text twice assume there's nothing behind it.",
+    "Every page should earn its URL with a distinct purpose; pages that repeat just dilute the one message you actually need people to remember.",
+    "A real site is a set of answers to different questions; when all your pages answer the same question, visitors with any other question find nothing new.",
+    "Repeated content also burns trust — the faster a visitor can predict your next page, the faster they leave."
+   ],
+   "fixes": [
+    "Give each page one job, and rewrite the main content so only that page says it.",
+    "Turn the repeated sections into unique value: add per-page specifics — prices, examples, testimonials from that vertical.",
+    "If two pages must be similar, merge them into one page and redirect the other.",
+    "Keep shared text (nav, footer, legal) out of the main content, where repetition checks look.",
+    "Before publishing a new page, diff it against your other pages; if the main content is 80%+ the same, start over."
+   ],
+   "compliments": [
+    "No two pages are more than 80% the same — every page on this site actually earns its URL.",
+    "Cross-page check came back flawless: each page we compared has its own distinct main content.",
+    "Your pages aren't clones. We compared every pair and found nothing near-duplicate — rarer than it should be.",
+    "Every URL on this site answers a different question. The repetition detector packed up and went home.",
+    "Distinct content per page, confirmed across every pair — this is what a multi-page site is supposed to look like."
+   ],
+   "cleanWhys": [
+    "Distinct pages mean the site answers more questions: every URL covers its own topic instead of repeating the same one, so the whole site feels bigger and more useful.",
+    "A visitor who lands on different, purposeful pages walks away thinking the business has depth — the exact flip side of a copy-paste site.",
+    "Unique content per page keeps every page worth its own visit — visitors find something new at each URL instead of the same page again.",
+    "Variety across pages makes the site feel bigger and more competent than any single-page clone ever can.",
+    "When each page earns its URL, the visitor's attention gets spent on new information every time — the best possible use of a visit."
+   ],
+   "keepUps": [
+    "Keep giving each page one job; when a new page's main content starts resembling an existing one, that's the signal to rewrite.",
+    "Keep the shared stuff (nav, footer, legal) out of the main copy — that's exactly where repetition checks look.",
+    "Before publishing, diff the new page against the others; if it's 80%+ the same, the compliment disappears.",
+    "Keep letting each page carry its own specifics — prices, examples, answers — so no two pages ever need to say the same thing.",
+    "Keep growing the site page by page with unique content; the detector only complains when pages start doing each other's jobs."
+   ]
+  },
+  "fingerprints": {
+   "roasts": [
+    "That's a {label} sign in the page {scope} ({confidence} confidence). Your site is wearing the builder's default tuxedo.",
+    "We spotted {label} in the page {scope}. Nothing says \"hand-crafted\" like an unmodified default.",
+    "{label} — {confidence} confidence, found in the page {scope}. The template called. It wants its look back.",
+    "A {label} sign in the page {scope}. Your site is a kit car with the sticker still on it.",
+    "{label} detected at {confidence} confidence. It's not a crime to use a builder — it's a crime to leave the tags on.",
+    "The page {scope} says \"{label}\". This site was assembled, not designed.",
+    "{label} in the page {scope} ({confidence}). The builder's signature is still on the painting.",
+    "We found {label} sitting in the page {scope}. The easiest way to spot a template is the template telling you.",
+    "Page {scope} match: {label}. Your website has \"made from a kit\" energy, and the kit is proud of it.",
+    "{label} ({confidence} confidence) — the digital equivalent of a new car with the window sticker still on.",
+    "Your site is wearing its template like a Halloween costume it didn't choose.",
+    "If the design were any more off-the-shelf, it would come with assembly instructions."
+   ],
+   "whys": [
+    "Recognizable template signs tell visitors the design is not yours — and if the design is borrowed, they start wondering what else might be.",
+    "A distinct look is a business asset; recognizable builder defaults make you blend into the 10,000 sites launched from the same kit this week.",
+    "The builder's defaults aren't tuned for your business — they're tuned for \"looks fine\" on any site, not for presenting your specific thing.",
+    "Design trust is earned in the first seconds; a generic look reads as low effort before the visitor has read a single word.",
+    "Even when the template is capable, unmodified defaults send the message that you shipped the draft."
+   ],
+   "fixes": [
+    "Replace at least the header, hero and button styles so the page doesn't carry the builder's default signature.",
+    "Customize the obvious giveaways first: colors, fonts, spacing, and any leftover placeholder assets.",
+    "Remove or replace the default tags and scripts that identify the builder — the \"powered by\" footers and CDN references.",
+    "Put one distinctive, real element on the homepage — an original illustration, a messy fact, a specific number — that no template ships.",
+    "If a builder feature is unused (stock icon packs, demo blocks), delete it; leftovers are what make the kit visible."
+   ],
+   "compliments": [
+    "No recognizable template signs — no leftover defaults, no off-the-shelf giveaways. This design looks genuinely yours.",
+    "We scanned the page for the usual builder signatures and found none. The template is not showing.",
+    "Zero default-template signs in the markup. Whatever you built this on, you made it your own.",
+    "No leftover builder assets, no default icon packs — the page is wearing its own clothes, not the workshop's.",
+    "Clean template check: the markup doesn't announce a template, because there isn't one on display."
+   ],
+   "cleanWhys": [
+    "A design with no template signs reads as owned and finished — visitors transfer that impression to the product or service behind it.",
+    "Original design is a differentiator that no amount of copy can fake; keeping the defaults buried keeps the site feeling built, not assembled.",
+    "When nothing on the page announces a kit, the visitor's mind goes to the work itself — and that's where you want it.",
+    "Unmarked builds also avoid the subconscious \"10,000 sites launched from this template last week\" reaction that erodes credibility.",
+    "A distinctive-looking site is remembered; the absence of the builder's signature is exactly the kind of detail that makes the difference."
+   ],
+   "keepUps": [
+    "Keep customizing past the defaults — headers, styles, real assets — so the builder never shows its face again.",
+    "If you ever use a builder again, strip its markers before launch; that's the whole trick this scan looks for.",
+    "Keep the distinctive elements coming: original visuals and honest details are what push a site out of template territory.",
+    "Keep deleting unused demo blocks and default icon packs — leftovers are what make a kit visible.",
+    "Keep the hand-built touches; the absence of template signs is exactly what this category is here to notice."
+   ]
+  },
+  "assets": {
+   "roasts": [
+    "{stockCount} of your {total} images come from a stock photo library. Your page has the emotional range of a hotel brochure.",
+    "{stockCount} of {total} images load from a stock photo library — the same ones powering 400,000 About pages just like yours.",
+    "{fileCount} of {total} images have placeholder filenames. \"img3.jpg\" is not a brand.",
+    "{altCount} of {total} images are missing or generic alt text. Screen readers narrate your site as \"image, image, image.\"",
+    "{altCount} of your {total} images fail the accessibility test before a single word is read.",
+    "{cleanCount} of {total} images look generic or placeholder — your imagery actually looks like it belongs to you. Refreshing.",
+    "{cleanCount} of {total} images look generic or placeholder. A clean image library. We genuinely didn't see that coming.",
+    "Image #{index} loads from {host}. Nothing says \"we, a business\" like a stock photo booth.",
+    "\"{stem}\" at {src} is doing its best impression of a real image.",
+    "Image #{index} has {altKind} alt text. The blind community experiences your site as a series of dramatic pauses.",
+    "\"{alt}\" — that's the alt text on image #{index}. \"Image\" is not a description, it's a confession.",
+    "These photos say \"business\" the way a stock photo of a handshake says \"business.\""
+   ],
+   "whys": [
+    "Stock imagery is instantly recognizable and instantly forgettable — it tells visitors nothing about your actual product, team, or customers.",
+    "Placeholder filenames and generic alt text are small clues that add up: together they read as \"this site was never finished.\"",
+    "Alt text is accessibility: empty or generic alts lock out screen-reader users, who experience the page as \"image, image, image\" instead of a description.",
+    "Real photos of your product, team or workspace are the cheapest credibility upgrade a website can buy; stock photos cannot do that job.",
+    "Generic imagery makes your page interchangeable with every competitor who picked the same stock library's bestseller."
+   ],
+   "fixes": [
+    "Replace stock and placeholder images with real ones: your product on a desk, your team in the office, your work in the wild.",
+    "Rename uploaded files descriptively (\"menu-redesign-2026.png\") instead of image1, photo2, or logo.",
+    "Write real alt text for every image: what the picture shows and why it's on the page — not just \"image\" or the filename.",
+    "If an image is purely decorative, mark it as such instead of leaving empty or generic alt text.",
+    "Do a visual audit for the stock look (boardroom handshakes, fake smiles, floating laptops) and swap the top three offenders first."
+   ],
+   "compliments": [
+    "None of your images are stock or placeholder — your imagery actually looks like it belongs to this business. Refreshing.",
+    "Every image passed: real filenames, real alt text, no stock libraries. The visual side of this page is genuinely yours.",
+    "A completely clean image library — no \"img3.jpg,\" no unsplash, no generic \"image\" alts. We didn't see that coming.",
+    "Zero generic-image signs, and every image carries real alt text. Screen readers thank you.",
+    "Your images look like your own: named descriptively, described properly, hosted on your turf. That's how it's done."
+   ],
+   "cleanWhys": [
+    "Real, descriptive imagery builds credibility faster than any headline: visitors read \"this is genuinely ours\" before they read a single word.",
+    "Descriptive filenames and real alt text are free accessibility wins — every image works twice as hard when it's genuinely described.",
+    "Original visuals give visitors a concrete, memorable picture of who you are — exactly what stock photos can never provide.",
+    "Alt text that describes the image keeps screen-reader users in the conversation instead of narrating \"image, image, image\" at them.",
+    "An image library with no placeholder flags says the site was finished, not shipped — a small signal with outsized credibility value."
+   ],
+   "keepUps": [
+    "Keep naming files like \"menu-redesign-2026.png\" instead of image1 — that habit keeps the placeholder flags off.",
+    "Keep writing real alt text: what the picture shows and why it's on the page. You're already doing it.",
+    "If you add photos later, keep them yours: product shots, team, real work — not the stock library's bestseller.",
+    "Keep the visual library this clean and it stays a strength; the detector only flags what looks unfinished.",
+    "Keep the descriptive filenames and honest alt text — they cost five seconds per image and they're two flags you'll never see."
+   ]
   }
+ }
 }

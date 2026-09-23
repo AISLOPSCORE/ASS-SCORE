@@ -255,7 +255,7 @@ function verdictConclusion(scan, pubScore, band, negativeTotal) {
   if (negativeTotal === 0) {
     return band.shortLabel === 'CLEANEST'
       ? `${pubScore}/100 — CLEANEST is rare, and this site earned it with zero negative findings across the whole report.`
-      : `${pubScore}/100 — no specific problems flagged this scan: the score is driven by the diagnostic measurements below, and every category line reads clean or neutral.`;
+      : `${pubScore}/100 — no specific problems flagged this scan: the score comes from the detailed measurements below, and every category line reads clean or neutral.`;
   }
   const n = negativeTotal;
   const byBand = {
@@ -884,7 +884,7 @@ function renderHtmlReport(scan) {
   const partialNote = scan.partial && scan.note ? ` Some pages could not be scanned this run: ${esc(scan.note)}.` : '';
   const methodologySection = `
   <h2>Methodology</h2>
-  <p>Every finding in this report comes from a deterministic, rule-based analysis of the pages we fetched — the same URL always produces the same score. The seven categories look for concrete, documented patterns: filler phrasing, generic marketing boilerplate, vague content, repeated text, duplicated language across pages, template-built design fingerprints, and stock or placeholder imagery. Every finding lists the verbatim evidence behind it, and the overall A.S.S. Score is the weighted rollup of the seven category scores.${partialNote}</p>
+  <p>Every finding in this report comes from a deterministic, rule-based analysis of the pages we fetched — the same URL always produces the same score. The seven categories look for concrete, documented patterns: filler words, generic marketing wording, thin content that pads the page, repeated text, the same content on multiple pages, recognizable website templates, and generic images. Every finding lists the verbatim evidence behind it, and the overall A.S.S. Score is the weighted rollup of the seven category scores.${partialNote}</p>
   <p class="disclaimer">${DISCLAIMER}</p>`;
 
   // --- Phase 2C: focused Category Views (navigation/presentation only) ------

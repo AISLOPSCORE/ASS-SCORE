@@ -22,7 +22,7 @@ const SIGNALS = [
   { re: /\bmanage (your )?consent\b/i, label: 'consent manager' },
   { re: /\bprivacy policy\b/i, label: 'privacy policy' },
   { re: /\bterms of (use|service)\b/i, label: 'terms of service' },
-  { re: /\ball rights reserved\b/i, label: 'copyright boilerplate' },
+  { re: /\ball rights reserved\b/i, label: 'copyright notice' },
   { re: /©\s*\d{4}/i, label: 'copyright line' },
   { re: /\bsubscribe to our newsletter\b/i, label: 'newsletter subscribe block' },
   { re: /\bsign up (for|to) our newsletter\b/i, label: 'newsletter signup' },
@@ -31,9 +31,9 @@ const SIGNALS = [
   { re: /\bplaceholder text\b/i, label: 'placeholder text' },
   { re: /\bfollow us on (twitter|facebook|linkedin|instagram|tiktok|youtube)\b/i, label: 'social-follow block' },
   { re: /\bpowered by\b/i, label: 'powered-by line' },
-  { re: /\bleave a reply\b/i, label: 'comment boilerplate' },
-  { re: /\bget in touch\b/i, label: 'generic contact CTA' },
-  { re: /\blearn more\b/i, label: 'generic \u201Clearn more\u201D CTA' },
+  { re: /\bleave a reply\b/i, label: 'comment form text' },
+  { re: /\bget in touch\b/i, label: 'generic \u201Ccontact us\u201D link' },
+  { re: /\blearn more\b/i, label: 'generic \u201Clearn more\u201D link' },
   { re: /\bwe are committed to\b/i, label: 'generic commitment claim' },
   { re: /\bour mission is to\b/i, label: 'generic mission statement' },
   { re: /\bcustomer-centric\b/i, label: 'marketing adjective' },
@@ -75,7 +75,7 @@ export function analyze({ text = '', words = [], sentences = [], paragraphs = []
   // boilerplate-family signals; quote the exact sentence as evidence.
   const hedges = analyzeHedges(text, sentences);
   for (const h of hedges.hits) {
-    found.push({ label: `hedge phrase "${h.phrase}"`, count: h.count });
+    found.push({ label: `vague phrase "${h.phrase}"`, count: h.count });
   }
 
   // Repeated low-variation blocks: exact duplicate paragraphs (normalized).
@@ -93,9 +93,9 @@ export function analyze({ text = '', words = [], sentences = [], paragraphs = []
   const score = Math.max(0, Math.min(100, Math.round(Math.min(density, 12) * (100 / 12))));
 
   const findings = [
-    `${totalSignals} boilerplate signal${totalSignals === 1 ? '' : 's'} in ${wordCount} words (${density.toFixed(1)} per ${NORMALIZATION_WORDS} words)`,
+    `${totalSignals} generic wording match${totalSignals === 1 ? '' : 'es'} in ${wordCount} words (${density.toFixed(1)} per ${NORMALIZATION_WORDS} words)`,
     ...found.sort((a, b) => b.count - a.count).slice(0, MAX_FINDINGS).map((f) => `${f.count}× ${f.label}`),
-    ...hedges.quotes.map((q) => `hedge evidence: "${q.sentence}"`),
+    ...hedges.quotes.map((q) => `vague sentence: "${q.sentence}"`),
     ...dupBlocks.slice(0, 3).map((d) => `${d.count}× repeated block: "${d.text.slice(0, 80)}${d.text.length > 80 ? '…' : ''}"`),
   ];
 

@@ -3,7 +3,7 @@
   "pools": {
     "filler": {
       "emoji": "🤖",
-      "label": "AI-like copy",
+      "label": "AI-style wording",
       "lines": [
         "Your copy is 60% buzzwords and 40% confidence in absolutely nothing. Honestly? Impressive.",
         "'Revolutionize the landscape' — bold words from a page that has said nothing yet.",
@@ -12,7 +12,7 @@
         "Your text is so generic it politely introduced itself and then left without saying anything.",
         "Cutting-edge. Seamless. Empower. That's not a paragraph, that's a bingo card.",
         "'In today's fast-paced world' — did you time-travel here from 2014?",
-        "Your copy says 'innovative' more often than it says anything else, and the algorithm senses this.",
+        "Your copy says 'innovative' more often than it says anything else, and we noticed..",
         "Unlock, unleash, elevate — your thesaurus is doing all the writing.",
         "This reads like a mission statement written by a very confident vending machine.",
         "Fifty words of content, forty of them verbs corporate culture told us to love.",
@@ -25,14 +25,14 @@
     },
     "boilerplate": {
       "emoji": "🥱",
-      "label": "Generic marketing language",
+      "label": "Generic marketing wording",
       "lines": [
         "We use cookies to enhance your browsing experience. We also use them because every site says that.",
         "Your legal page has more personality than your homepage, and that is a problem.",
         "Subscribe to our newsletter. Follow us on Twitter. All rights reserved. Copy, paste, and scene.",
         "'We are committed to excellence' — a sentence with the originality of a default printer font.",
         "Your banner says 'your privacy matters to us'. Does it? Or did a template say it first?",
-        "This site has boilerplate so thick you could build a house out of it.",
+        "This site has generic wording so thick you could build a house out of it.",
         "'Terms and conditions apply' — they always do. Especially to original content, which you've skipped.",
         "The cookie pop-up is the most emotionally expressive part of this website.",
         "Standard legal text, standard marketing text, and in between: nothing custom at all.",
@@ -47,11 +47,11 @@
     },
     "infoDensity": {
       "emoji": "📋",
-      "label": "Thin, low-information content",
+      "label": "Thin content — more fluff than facts",
       "lines": [
         "Your content is so thin we can see the next page through it.",
         "Every paragraph is two lines long and one of them is a heading. Bold strategy.",
-        "This page has the information density of a fortune cookie, minus the enlightenment.",
+        "This page has the substance of a fortune cookie, minus the enlightenment.",
         "Your site says a lot of words, and none of them are carrying any luggage.",
         "Word salad with extra dressing — and the dressing is also words.",
         "Your about page has the depth of a parking-lot puddle in a drought.",
@@ -69,7 +69,7 @@
     },
     "repetitive": {
       "emoji": "🧱",
-      "label": "Repetitive structure",
+      "label": "Repeated wording and layouts",
       "lines": [
         "Every paragraph starts like the last one. It's a very committed website.",
         "Your page has one idea, and it reintroduces itself at the start of every sentence.",
@@ -91,7 +91,7 @@
     },
     "crossPage": {
       "emoji": "🔁",
-      "label": "Duplicate language across pages",
+      "label": "Same content on multiple pages",
       "lines": [
         "Your pages are so similar they should start a podcast called 'We're Basically the Same Site'.",
         "Every page on your site is the same page in a slightly different coat.",
@@ -113,7 +113,7 @@
     },
     "fingerprints": {
       "emoji": "🎨",
-      "label": "AI-looking design patterns",
+      "label": "Recognizable template design",
       "lines": [
         "Your site is wearing a very recognizable template. Fashion-forward? We guess.",
         "A builder's signature is all over this. The autograph is hard to miss.",
@@ -135,12 +135,12 @@
     },
     "assets": {
       "emoji": "🖼️",
-      "label": "Stock/placeholder imagery",
+      "label": "Generic images",
       "lines": [
         "Your hero image has appeared on forty thousand other websites. Introduce yourself to it.",
         "The filename says it all: image2.png is doing its best.",
         "That 'photo' is so generic it's basically a word, not a picture.",
-        "Every image on this page came from a stock CDN, and the CDN is tired of it.",
+        "Every image on this page came from a stock photo library, and the library is tired of it.",
         "Your alt-text department filed exactly one report: 'image'. Great work, team.",
         "This gallery was assembled from a folder called 'Free Templates'. We peeked.",
         "spacer.gif is the most honest thing on this page.",

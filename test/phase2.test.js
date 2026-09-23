@@ -247,7 +247,7 @@ test('scorer: crossPage skipped (null) -> renormalized 4-cat weights EQUAL v1 we
   assert.equal(withCross.components.crossPage.weight, FULL_RULE_WEIGHTS.crossPage);
   assert.equal(withCross.components.fingerprints.weight, FULL_RULE_WEIGHTS.fingerprints);
 
-  const skipped = { ...six, crossPage: { score: null, findings: [], note: 'insufficient pages for cross-page analysis' } };
+  const skipped = { ...six, crossPage: { score: null, findings: [], note: 'needs at least 2 pages to compare' } };
   const renorm = computeSlopScore(skipped);
   // The four v1 categories hold EXACTLY their v1 weights (single-page scans
   // reproduce v1 scoring bit-identically).
@@ -306,7 +306,7 @@ test('fingerprints: known builder marker hit + wording rule', () => {
   assert.ok(ids.includes('v0.dev'), `hits: ${ids.join(', ')}`);
   assert.ok(ids.includes('named-builder-generator'), `hits: ${ids.join(', ')}`);
   for (const f of r.findings) {
-    assert.match(f, /template-like|AI-builder-associated|unmodified-template marker/, `wording: ${f}`);
+    assert.match(f, /recognizable template sign|template-like|AI-builder-associated|unmodified-template marker/, `wording: ${f}`);
     assert.ok(!/AI-?generated/i.test(f), 'never asserts AI authorship');
   }
   // confidence weight ordering: high > medium > low
@@ -468,7 +468,7 @@ test('crossPage: <2 pages -> score null + note (graceful skip)', () => {
   const r = analyzeCrossPage({ pages: [{ url: 'http://x/', main: { words: 'a b c d e'.split(' ') } }] });
   assert.equal(r.score, null);
   assert.deepEqual(r.findings, []);
-  assert.equal(r.note, 'insufficient pages for cross-page analysis');
+  assert.equal(r.note, 'needs at least 2 pages to compare');
   const r0 = analyzeCrossPage({ pages: [] });
   assert.equal(r0.score, null);
 });
@@ -573,7 +573,7 @@ test('integration: single-page fixture -> graceful crossPage skip + 4-cat scorin
 
   const cross = json.breakdown.crossPage;
   assert.equal(cross.score, null);
-  assert.equal(cross.note, 'insufficient pages for cross-page analysis');
+  assert.equal(cross.note, 'needs at least 2 pages to compare');
   assert.equal(json.pages, undefined, 'no pages key for single-page scans (v1 shape preserved)');
 
   // public score == pure v1 computation (same direction — higher = worse)

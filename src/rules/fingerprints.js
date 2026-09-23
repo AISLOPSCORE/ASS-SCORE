@@ -77,7 +77,7 @@ export function analyzeFingerprints({ html = '', head = '', text = '' } = {}) {
     : 0;
 
   const findings = hits.map(
-    (h) => `pattern evidence in ${h.scope}: ${h.label} (${h.confidence} confidence, template-like signal)`,
+    (h) => `recognizable template sign in the page ${h.scope}: ${h.label} (${h.confidence} confidence)`,
   );
 
   return { score, findings, hits };

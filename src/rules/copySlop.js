@@ -222,10 +222,10 @@ export function specificsFinding(text = '', wordCount = 0) {
   const s = analyzeSpecifics(text, wordCount);
   if (!s.gap) return null;
   if (s.count === 0) {
-    return `concrete specifics: 0 found in ${wordCount} words — no dates, numbers, prices, percentages, or named references (need at least ${s.needed} per ${SPECIFICS_PER_WORDS} words)`;
+    return `specific details: 0 found in ${wordCount} words — no dates, numbers, prices, percentages, or named references (need at least ${s.needed} per ${SPECIFICS_PER_WORDS} words)`;
   }
   const ex = s.examples.length > 0 ? ` — e.g. ${s.examples.join(', ')}` : '';
-  return `concrete specifics: only ${s.count} in ${wordCount} words (need at least ${s.needed} per ${SPECIFICS_PER_WORDS} words)${ex}`;
+  return `specific details: only ${s.count} in ${wordCount} words (need at least ${s.needed} per ${SPECIFICS_PER_WORDS} words)${ex}`;
 }
 
 /** 0 when specifics are plentiful; 0–100 gap severity (100 = zero specifics). */

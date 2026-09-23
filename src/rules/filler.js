@@ -45,7 +45,7 @@ export function analyze({ text = '', words = [] } = {}) {
   const score = Math.max(0, Math.min(100, Math.round(Math.min(density, 12) * (100 / 12))));
 
   const findings = [
-    `${totalHits} filler phrase occurrence${totalHits === 1 ? '' : 's'} in ${wordCount} words (${density.toFixed(1)} per ${NORMALIZATION_WORDS} words)`,
+    `${totalHits} filler phrase${totalHits === 1 ? '' : 's'} in ${wordCount} words (${density.toFixed(1)} per ${NORMALIZATION_WORDS} words)`,
     ...hits.sort((a, b) => b.count - a.count)
       .slice(0, MAX_FINDINGS)
       .map((h) => `${h.count}× "${h.phrase}"`),

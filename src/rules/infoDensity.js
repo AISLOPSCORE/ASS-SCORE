@@ -98,9 +98,9 @@ export function analyze({ text = '', words = [], sentences = [], paragraphs = []
   const specFinding = specificsFinding(text, wordCount);
 
   const findings = [
-    `vocabulary diversity (MATTR-${MATTR_WINDOW}): ${ttr.toFixed(3)} (lower = more repetitive vocabulary)`,
-    `stopword ratio: ${(stopwordRatio * 100).toFixed(1)}%`,
-    `mean sentence length: ${sentences.length > 0 ? (wordCount / sentences.length).toFixed(1) : 'n/a'} words (${sentences.length} sentences)`,
+    `word variety: ${ttr.toFixed(3)} (lower = more repetitive vocabulary)`,
+    `common words: ${(stopwordRatio * 100).toFixed(1)}% (little words like "the" and "and" — more means less substance)`,
+    `average sentence length: ${sentences.length > 0 ? (wordCount / sentences.length).toFixed(1) : 'n/a'} words (${sentences.length} sentences)`,
     `short paragraphs (<25 words): ${paragraphs.length > 0 ? Math.round((paragraphs.filter((p) => tokenCount(p) < 25).length / paragraphs.length) * 100) : 'n/a'}% (${paragraphs.length} paragraphs)`,
     ...(specFinding ? [specFinding] : []),
   ];

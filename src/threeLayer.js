@@ -140,19 +140,23 @@ function firstDupPair(list) {
 
 const EVIDENCE_PARSERS = {
   filler(f) {
-    let m = /^(\d+) filler phrase occurrence(?:\(s\)|s)? in (\d+) words \(([\d.]+) per \d+ words\)$/.exec(f);
+    let m = /^(\d+) filler phrase(?:s| occurrence(?:\(s\)|s)?)? in (\d+) words \(([\d.]+) per \d+ words\)$/.exec(f);
     if (m) return { count: m[1], words: m[2], density: m[3] };
     m = /^(\d+)× "(.+)"$/.exec(f);
     if (m) return { count: m[1], phrase: m[2] };
     return {};
   },
   boilerplate(f) {
-    let m = /^(\d+) boilerplate signal(?:\(s\)|s)? in (\d+) words \(([\d.]+) per \d+ words\)$/.exec(f);
+    let m = /^(\d+) (?:generic wording match(?:es)?|boilerplate signal(?:\(s\)|s)?) in (\d+) words \(([\d.]+) per \d+ words\)$/.exec(f);
     if (m) return { count: m[1], words: m[2], density: m[3] };
     m = /^(\d+)× repeated block: "(.+)"$/.exec(f);
     if (m) return { count: m[1], text: m[2] };
+    m = /^vague sentence: "(.+)"$/.exec(f);
+    if (m) return { sentence: m[1] };
     m = /^hedge evidence: "(.+)"$/.exec(f);
     if (m) return { sentence: m[1] };
+    m = /^(\d+)× vague phrase "(.+)"$/.exec(f);
+    if (m) return { count: m[1], phrase: m[2] };
     m = /^(\d+)× hedge phrase "(.+)"$/.exec(f);
     if (m) return { count: m[1], phrase: m[2] };
     m = /^(\d+)× (.+)$/.exec(f);
@@ -160,14 +164,20 @@ const EVIDENCE_PARSERS = {
     return {};
   },
   infoDensity(f) {
-    let m = /^vocabulary diversity \(MATTR-\d+\): ([\d.]+) \(lower = more repetitive vocabulary\)$/.exec(f);
+    let m = /^(?:word variety|vocabulary diversity \(MATTR-\d+\)): ([\d.]+) \(lower = more repetitive vocabulary\)$/.exec(f);
     if (m) return { mattr: m[1] };
+    m = /^common words: ([\d.]+)%/.exec(f);
+    if (m) return { stopwordRatio: m[1] };
     m = /^stopword ratio: ([\d.]+)%$/.exec(f);
     if (m) return { stopwordRatio: m[1] };
-    m = /^mean sentence length: ([\d.]+) words \((\d+) sentences\)$/.exec(f);
+    m = /^(?:average sentence length|mean sentence length): ([\d.]+) words \((\d+) sentences\)$/.exec(f);
     if (m) return { meanLen: m[1], sentences: m[2] };
     m = /^short paragraphs \(<25 words\): ([\d.]+)% \((\d+) paragraphs\)$/.exec(f);
     if (m) return { shortPct: m[1], paragraphs: m[2] };
+    m = /^specific details: only (\d+) in (\d+) words \(need at least (\d+) per \d+ words\)(?: — (.+))?$/.exec(f);
+    if (m) return { count: m[1], words: m[2], needed: m[3], ...(m[4] ? { examples: m[4].replace(/^e\.g\.\s*/i, '') } : {}) };
+    m = /^specific details: 0 found in (\d+) words — no dates, numbers, prices, percentages, or named references \(need at least (\d+) per \d+ words\)$/.exec(f);
+    if (m) return { count: '0', words: m[1], needed: m[2] };
     m = /^concrete specifics: only (\d+) in (\d+) words \(need at least (\d+) per \d+ words\)(?: — (.+))?$/.exec(f);
     if (m) return { count: m[1], words: m[2], needed: m[3], ...(m[4] ? { examples: m[4].replace(/^e\.g\.\s*/i, '') } : {}) };
     m = /^concrete specifics: 0 found in (\d+) words — no dates, numbers, prices, percentages, or named references \(need at least (\d+) per \d+ words\)$/.exec(f);
@@ -186,35 +196,35 @@ const EVIDENCE_PARSERS = {
     return {};
   },
   crossPage(f) {
-    let m = /^cross-page duplication: (\d+) flagged pair(?:\(s\)|s)?, max similarity ([\d.]+)%$/.exec(f);
-    if (m) return { pairCount: m[1], maxSim: m[2] };
+    let m = /^(?:same content on multiple pages: (\d+) page pair(?:\(s\)|s)?, most similar at ([\d.]+)%|cross-page duplication: (\d+) flagged pair(?:\(s\)|s)?, max similarity ([\d.]+)%)$/.exec(f);
+    if (m) return { pairCount: m[1] ?? m[3], maxSim: m[2] ?? m[4] };
     m = /^near-identical page pair: (\S+) ~ (\S+) \(([\d.]+)% similar\)$/.exec(f);
     if (m) return { urlA: m[1], urlB: m[2], sim: m[3] };
-    m = /^content duplicated across (\d+) pages \(fully-connected cluster\)$/.exec(f);
-    if (m) return { count: m[1] };
-    m = /^no page pairs above \d+% similarity \((\d+) pages compared\)$/.exec(f);
-    if (m) return { pages: m[1] };
+    m = /^(?:the same content appears on (\d+) pages \(they're essentially the same page\)|content duplicated across (\d+) pages \(fully-connected cluster\))$/.exec(f);
+    if (m) return { count: m[1] ?? m[2] };
+    m = /^(?:no two pages are more than \d+% the same \((\d+) pages compared\)|no page pairs above \d+% similarity \((\d+) pages compared\))$/.exec(f);
+    if (m) return { pages: m[1] ?? m[2] };
     return {};
   },
   fingerprints(f) {
-    const m = /^pattern evidence in (\w+): (.+) \((\w+) confidence, template-like signal\)$/.exec(f);
-    if (m) return { scope: m[1], label: m[2], confidence: m[3] };
+    const m = /^(?:recognizable template sign in the page (\w+): (.+) \((\w+) confidence\)|pattern evidence in (\w+): (.+) \((\w+) confidence, template-like signal\))$/.exec(f);
+    if (m) return { scope: m[1] ?? m[4], label: m[2] ?? m[5], confidence: m[3] ?? m[6] };
     return {};
   },
   assets(f) {
-    let m = /^(\d+) of (\d+) images from stock\/placeholder CDNs$/.exec(f);
-    if (m) return { stockCount: m[1], total: m[2] };
+    let m = /^(?:(\d+) of (\d+) images come from stock photo sites|(\d+) of (\d+) images from stock\/placeholder CDNs)$/.exec(f);
+    if (m) return { stockCount: m[1] ?? m[3], total: m[2] ?? m[4] };
     m = /^(\d+) of (\d+) images with placeholder\/generic filenames$/.exec(f);
     if (m) return { fileCount: m[1], total: m[2] };
     m = /^(\d+) of (\d+) images with missing or generic alt text$/.exec(f);
     if (m) return { altCount: m[1], total: m[2] };
-    m = /^(\d+) of (\d+) images flagged for stock\/placeholder signals$/.exec(f);
-    if (m) return { cleanCount: m[1], total: m[2] };
-    m = /^img\[(\d+)\] stock\/placeholder CDN «([^»]+)» \((.*)\)$/.exec(f);
+    m = /^(?:(\d+) of (\d+) images look generic or placeholder|(\d+) of (\d+) images flagged for stock\/placeholder signals)$/.exec(f);
+    if (m) return { cleanCount: m[1] ?? m[3], total: m[2] ?? m[4] };
+    m = /^img\[(\d+)\] (?:stock photo host|stock\/placeholder CDN) «([^»]+)» \((.*)\)$/.exec(f);
     if (m) return { index: m[1], host: m[2], src: m[3] };
     m = /^img\[(\d+)\] generic filename "(.+)" \((.*)\)$/.exec(f);
     if (m) return { index: m[1], stem: m[2], src: m[3] };
-    m = /^img\[(\d+)\] (missing|empty) alt attribute$/.exec(f);
+    m = /^img\[(\d+)\] (missing|empty) alt (?:text|attribute)$/.exec(f);
     if (m) return { index: m[1], altKind: m[2] };
     m = /^img\[(\d+)\] generic alt "(.+)"$/.exec(f);
     if (m) return { index: m[1], alt: m[2] };
@@ -232,18 +242,18 @@ export function parseEvidenceTokens(category, finding) {
   // {phrasesNoun} / {signalsNoun} / {specificsNoun} / {factsNoun} / {repeatsNoun}
   // / {appearancesNoun} / {pairsNoun} instead of a hard-coded "(s)" placeholder.
   // They carry the correct singular/plural form for the finding's own count
-  // token, so "1 boilerplate signal" and "7 boilerplate signals" both render
-  // cleanly. Derived deterministically from the parsed evidence itself — same
-  // (category, finding) -> identical tokens, exactly like every other token.
+  // token, so "1 generic phrase" and "7 generic phrases" both render cleanly.
+  // (Plain-English pass 2026-09-23: signalsNoun pluralizes "phrase(s)",
+  // specificsNoun pluralizes "detail(s)" — no jargon nouns in output copy.)
   if ('count' in tokens) {
     const n = Number(tokens.count);
     if (category === 'filler') {
       tokens.phrasesNoun = n === 1 ? 'phrase' : 'phrases';
       tokens.buzzwordsNoun = n === 1 ? 'buzzword' : 'buzzwords';
     } else if (category === 'boilerplate') {
-      tokens.signalsNoun = n === 1 ? 'signal' : 'signals';
+      tokens.signalsNoun = n === 1 ? 'phrase' : 'phrases';
     } else if (category === 'infoDensity') {
-      tokens.specificsNoun = n === 1 ? 'specific' : 'specifics';
+      tokens.specificsNoun = n === 1 ? 'detail' : 'details';
       tokens.factsNoun = n === 1 ? 'fact' : 'facts';
     } else if (category === 'repetitive') {
       tokens.repeatsNoun = n === 1 ? 'repeat' : 'repeats';
@@ -292,33 +302,37 @@ export function parseEvidenceTokens(category, finding) {
 // ---------------------------------------------------------------------------
 const CLEAN_EVIDENCE = {
   filler(f) {
-    return /^0 filler phrase occurrence(?:\(s\)|s)? in \d+ words \(0\.0 per \d+ words\)$/.test(f);
+    return /^0 filler phrase(?:s| occurrence(?:\(s\)|s)?)? in \d+ words \(0\.0 per \d+ words\)$/.test(f);
   },
   boilerplate(f) {
-    return /^0 boilerplate signal(?:\(s\)|s)? in \d+ words \(0\.0 per \d+ words\)$/.test(f);
+    return /^0 (?:generic wording match(?:es)?|boilerplate signal(?:\(s\)|s)?) in \d+ words \(0\.0 per \d+ words\)$/.test(f);
   },
   infoDensity(f) {
-    let m = /^vocabulary diversity \(MATTR-\d+\): ([\d.]+) \(lower = more repetitive vocabulary\)$/.exec(f);
-    if (m) return Number(m[1]) >= 0.85; // MATTR zero-penalty band (ttrSub = 0)
+    let m = /^(?:word variety|vocabulary diversity \(MATTR-\d+\)): ([\d.]+) \(lower = more repetitive vocabulary\)$/.exec(f);
+    if (m) return Number(m[1]) >= 0.85; // word-variety zero-penalty band (word-variety sub = 0)
+    m = /^common words: ([\d.]+)%/.exec(f);
+    if (m) return Number(m[1]) <= 40.0; // common-word sub = 0 at/below the 40% floor
     m = /^stopword ratio: ([\d.]+)%$/.exec(f);
-    if (m) return Number(m[1]) <= 40.0; // stopSub = 0 at/below the 40% floor
-    m = /^mean sentence length: ([\d.]+) words \(\d+ sentences\)$/.exec(f);
-    if (m) return Number(m[1]) >= 12 && Number(m[1]) <= 26; // sentSub = 0 in the sweet spot
+    if (m) return Number(m[1]) <= 40.0; // legacy label, same band
+    m = /^(?:average sentence length|mean sentence length): ([\d.]+) words \(\d+ sentences\)$/.exec(f);
+    if (m) return Number(m[1]) >= 12 && Number(m[1]) <= 26; // average-length sub = 0 in the sweet spot
     m = /^short paragraphs \(<25 words\): (\d+)% \(\d+ paragraphs\)$/.exec(f);
-    if (m) return Number(m[1]) === 0; // paraSub = 0 only at zero short paragraphs
-    return false; // "concrete specifics: 0 found / only N …" are gap (negative) lines
+    if (m) return Number(m[1]) === 0; // short-paragraph sub = 0 only at zero short paragraphs
+    return false; // "specific details: 0 found / only N …" are gap (negative) lines
   },
   repetitive(f) {
     return /^no notable repetitive structure \(\d+ sentences, \d+ paragraphs\)$/.test(f);
   },
   crossPage(f) {
-    return /^no page pairs above \d+% similarity \(\d+ pages compared\)$/.test(f);
+    return /^(?:no two pages are more than \d+% the same \(\d+ pages compared\)|no page pairs above \d+% similarity \(\d+ pages compared\))$/.test(f);
   },
   fingerprints() {
     return false; // no clean evidence format exists; clean scans have no findings
   },
   assets(f) {
+    if (/^0 of \d+ images look generic or placeholder$/.test(f)) return true;
     if (/^0 of \d+ images flagged for stock\/placeholder signals$/.test(f)) return true;
+    if (/^0 of \d+ images come from stock photo sites$/.test(f)) return true;
     if (/^0 of \d+ images from stock\/placeholder CDNs$/.test(f)) return true;
     if (/^0 of \d+ images with placeholder\/generic filenames$/.test(f)) return true;
     return /^0 of \d+ images with missing or generic alt text$/.test(f);
@@ -359,9 +373,9 @@ export function isMetricFinding(category, finding) {
   if (category !== 'infoDensity') return false;
   const f = String(finding ?? '');
   return (
-    /^vocabulary diversity \(MATTR-\d+\): [\d.]+ \(lower = more repetitive vocabulary\)$/.test(f) ||
-    /^stopword ratio: [\d.]+%$/.test(f) ||
-    /^mean sentence length: [\d.]+ words \(\d+ sentences\)$/.test(f) ||
+    /^(?:word variety|vocabulary diversity \(MATTR-\d+\)): [\d.]+ \(lower = more repetitive vocabulary\)$/.test(f) ||
+    /^(?:common words|stopword ratio): [\d.]+%$/.test(f) ||
+    /^(?:average sentence length|mean sentence length): [\d.]+ words \(\d+ sentences\)$/.test(f) ||
     /^short paragraphs \(<25 words\): \d+% \(\d+ paragraphs\)$/.test(f)
   );
 }

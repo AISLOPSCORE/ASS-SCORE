@@ -112,7 +112,7 @@ test('assets: missing / empty / generic alt text is flagged (decorative logic de
   assert.match(r.findings[2], /^5 of 6 images with missing or generic alt text/);
   // score = round(100 * 0.25 * (5/6)) = round(20.83) = 21
   assert.equal(r.score, 21, 'round(100 * 0.25 * 5/6) = 21');
-  for (const f of ['missing alt attribute', 'empty alt attribute', 'generic alt "image"', 'generic alt "photo"']) {
+  for (const f of ['missing alt text', 'empty alt text', 'generic alt "image"', 'generic alt "photo"']) {
     assert.ok(r.findings.some((x) => x.includes(f)), `finding: ${f}`);
   }
 });
@@ -272,7 +272,7 @@ test('POST scan: breakdown has the assets key with a numeric score; findings per
 
   // The actual asset findings surface ONLY inside the token'd paid report.
   const paid = await paidHtml(api.base, json.id);
-  assert.ok(paid.includes('2 of 4 images from stock/placeholder CDNs'), 'stock finding rendered in the paid report');
+  assert.ok(paid.includes('2 of 4 images come from stock photo sites'), 'stock finding rendered in the paid report');
   assert.ok(paid.includes('generic alt'), 'alt finding rendered in the paid report');
 });
 
@@ -297,7 +297,7 @@ test('GET HTML: free page shows the IMAGERY number; paid report renders findings
   // classification, values unchanged (50/100 NEEDS ATTENTION).
   assert.ok(html.includes('<span class="cat-score">50<span class="cat-den">/100</span></span>'), 'IMAGERY card shows the existing 50/100');
   assert.ok(html.includes('<span class="cat-state">NEEDS ATTENTION</span>'), 'IMAGERY card shows the existing NEEDS ATTENTION classification');
-  assert.ok(html.includes('2 of 4 images from stock/placeholder CDNs'), 'stock finding rendered as a receipt');
+  assert.ok(html.includes('2 of 4 images come from stock photo sites'), 'stock finding rendered as a receipt');
   assert.ok(html.includes('generic alt'), 'alt finding rendered as a receipt');
   assert.ok(html.includes('Nothing meaningful to roast here.'), 'clean category line rendered (single-page scan leaves REPETITION skipped)');
   assert.ok(html.includes('this is the only page scanned.'), 'single-page worst-page line rendered');

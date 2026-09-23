@@ -37,7 +37,7 @@ const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
  */
 export function analyzeCrossPage({ pages = [] } = {}) {
   if (pages.length < 2) {
-    return { score: null, findings: [], note: 'insufficient pages for cross-page analysis' };
+    return { score: null, findings: [], note: 'needs at least 2 pages to compare' };
   }
 
   const pairs = [];
@@ -55,7 +55,7 @@ export function analyzeCrossPage({ pages = [] } = {}) {
   const findings = [];
   if (flagged.length > 0) {
     const maxSim = Math.max(...flagged.map((p) => p.similarity));
-    findings.push(`cross-page duplication: ${flagged.length} flagged pair${flagged.length === 1 ? '' : 's'}, max similarity ${(maxSim * 100).toFixed(1)}%`);
+    findings.push(`same content on multiple pages: ${flagged.length} page pair${flagged.length === 1 ? '' : 's'}, most similar at ${(maxSim * 100).toFixed(1)}%`);
     for (const p of flagged) {
       findings.push(`near-identical page pair: ${p.pageA} ~ ${p.pageB} (${(p.similarity * 100).toFixed(1)}% similar)`);
     }
@@ -68,7 +68,7 @@ export function analyzeCrossPage({ pages = [] } = {}) {
     }
     const biggest = [...byUrl.entries()].reduce((n, [, s]) => Math.max(n, s.size + 1), 1);
     if (biggest >= 3) {
-      findings.push(`content duplicated across ${biggest} pages (fully-connected cluster)`);
+      findings.push(`the same content appears on ${biggest} pages (they're essentially the same page)`);
     }
     const score = clamp(Math.round(((maxSim - DUPLICATION_THRESHOLD) / (1 - DUPLICATION_THRESHOLD)) * 100), 0, 100);
     return { score, findings, pairs, pages: pages.map((p) => p.url) };
@@ -76,7 +76,7 @@ export function analyzeCrossPage({ pages = [] } = {}) {
 
   return {
     score: 0,
-    findings: [`no page pairs above ${(DUPLICATION_THRESHOLD * 100).toFixed(0)}% similarity (${pages.length} pages compared)`],
+    findings: [`no two pages are more than ${(DUPLICATION_THRESHOLD * 100).toFixed(0)}% the same (${pages.length} pages compared)`],
     pairs,
     pages: pages.map((p) => p.url),
   };

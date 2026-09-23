@@ -122,7 +122,7 @@ export function analyzeAssets(html = '') {
         if (matched) {
           stockCount += 1;
           if (stockDetail.length < MAX_DETAIL_FINDINGS) {
-            stockDetail.push(`img[${i}] stock/placeholder CDN «${matched}» (${src.length > 70 ? `${src.slice(0, 70)}…` : src})`);
+            stockDetail.push(`img[${i}] stock photo host «${matched}» (${src.length > 70 ? `${src.slice(0, 70)}…` : src})`);
           }
         }
       } catch {
@@ -143,12 +143,12 @@ export function analyzeAssets(html = '') {
     const altRaw = $(el).attr('alt');
     if (altRaw === undefined) {
       altCount += 1;
-      if (altDetail.length < MAX_DETAIL_FINDINGS) altDetail.push(`img[${i}] missing alt attribute`);
+      if (altDetail.length < MAX_DETAIL_FINDINGS) altDetail.push(`img[${i}] missing alt text`);
     } else {
       const alt = altRaw.trim().toLowerCase();
       if (alt === '') {
         altCount += 1;
-        if (altDetail.length < MAX_DETAIL_FINDINGS) altDetail.push(`img[${i}] empty alt attribute`);
+        if (altDetail.length < MAX_DETAIL_FINDINGS) altDetail.push(`img[${i}] empty alt text`);
       } else if (GENERIC_ALT_SET.has(alt)) {
         altCount += 1;
         if (altDetail.length < MAX_DETAIL_FINDINGS) altDetail.push(`img[${i}] generic alt "${alt}"`);
@@ -163,10 +163,10 @@ export function analyzeAssets(html = '') {
 
   const findings = [];
   if (stockCount === 0 && filenameCount === 0 && altCount === 0) {
-    findings.push(`0 of ${total} images flagged for stock/placeholder signals`);
+    findings.push(`0 of ${total} images look generic or placeholder`);
     return { score, findings };
   }
-  findings.push(`${stockCount} of ${total} images from stock/placeholder CDNs`);
+  findings.push(`${stockCount} of ${total} images come from stock photo sites`);
   findings.push(`${filenameCount} of ${total} images with placeholder/generic filenames`);
   findings.push(`${altCount} of ${total} images with missing or generic alt text`);
   findings.push(...stockDetail, ...fileDetail, ...altDetail);

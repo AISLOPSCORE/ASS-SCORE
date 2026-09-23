@@ -104,14 +104,14 @@ test('copySlop: hedge list is disjoint from boilerplate regexes — no same-sent
   }
   // The canonical overlap sentence counts once under one label per span.
   const r = boilerplate(ctx(`<html><body><p>We are committed to providing excellent service.</p></body></html>`));
-  assert.ok(r.findings.some((f) => /^1 boilerplate signal in \d+ words/.test(f)), `single signal: ${r.findings[0]}`);
+  assert.ok(r.findings.some((f) => /^1 generic wording match in \d+ words/.test(f)), `single signal: ${r.findings[0]}`);
   assert.ok(r.findings.some((f) => /1× generic commitment claim/.test(f)), 'existing boilerplate signal fires');
 });
 
 test('copySlop: hedge evidence folds into boilerplate category (labels + quotes + density)', () => {
   const rule = boilerplate(ctx(HEDGE_PAGE));
-  assert.ok(rule.findings.some((f) => /× hedge phrase/.test(f)), 'hedge label findings present');
-  assert.ok(rule.findings.some((f) => f.startsWith('hedge evidence: "')), 'quoted sentence evidence present');
+  assert.ok(rule.findings.some((f) => /× vague phrase/.test(f)), 'hedge label findings present');
+  assert.ok(rule.findings.some((f) => f.startsWith('vague sentence: "')), 'quoted sentence evidence present');
   // Score contribution: hedge hits raise the density (a vague page scores high).
   assert.ok(rule.score >= 60, `boilerplate score ${rule.score} on the hedge page`);
 });
@@ -127,7 +127,7 @@ test('copySlop: specifics — rich copy produces NO gap finding and zero score c
   assert.equal(specificsFinding(text, words.length), null, 'no finding emitted');
 
   const rule = infoDensity(ctx(SPECIFIC_PAGE));
-  assert.ok(!rule.findings.some((f) => f.startsWith('concrete specifics:')), 'infoDensity has no gap finding');
+  assert.ok(!rule.findings.some((f) => f.startsWith('specific details:')), 'infoDensity has no gap finding');
 });
 
 test('copySlop: specifics — zero specifics emits the full no-dates/numbers/prices finding', () => {
@@ -146,7 +146,7 @@ test('copySlop: specifics — thin copy emits the count variant with examples', 
   assert.equal(s.gap, true, '2 specifics in ~270 words is below the ~1/75 threshold');
   assert.equal(s.needed, Math.ceil(words.length / 75));
   const finding = specificsFinding(text, words.length);
-  assert.match(finding, /concrete specifics: only 2 in \d+ words \(need at least \d+ per 75 words\)/);
+  assert.match(finding, /specific details: only 2 in \d+ words \(need at least \d+ per 75 words\)/);
   assert.ok(finding.includes('2022') && finding.includes('3'), `examples quoted: ${finding}`);
   // Penalty is proportionate to the gap, never 100 for a "few specifics" page.
   const penalty = specificsGapPenalty(text, words.length);
@@ -154,7 +154,7 @@ test('copySlop: specifics — thin copy emits the count variant with examples', 
 
   // The finding reaches the infoDensity category.
   const rule = infoDensity(ctx(`<html><body><p>${THIN_WITH_2}</p></body></html>`));
-  assert.ok(rule.findings.some((f) => f.startsWith('concrete specifics: only 2')), 'infoDensity carries the count variant');
+  assert.ok(rule.findings.some((f) => f.startsWith('specific details: only 2')), 'infoDensity carries the count variant');
 });
 
 test('copySlop: specifics — overlapping spans are deduped (year/number, currency/number, percent/number)', () => {
@@ -259,9 +259,9 @@ test('E2E: hedge-y fixture -> free JSON carries scores + teasers; findings persi
     .prepare('SELECT breakdown FROM scans WHERE id = ?').get(json.id);
   const stored = JSON.parse(row.breakdown);
   assert.equal(stored.boilerplate.score, bp.score, 'stored boilerplate == public');
-  assert.ok(stored.boilerplate.findings.some((f) => /× hedge phrase/.test(f)), 'hedge label findings in the DB');
-  assert.ok(stored.boilerplate.findings.some((f) => f.startsWith('hedge evidence: "We aim to empower your journey."')), 'exact quoted evidence in the DB');
-  assert.ok(stored.infoDensity.findings.some((f) => f.startsWith('concrete specifics:')), 'specifics gap finding in the DB');
+  assert.ok(stored.boilerplate.findings.some((f) => /× vague phrase/.test(f)), 'hedge label findings in the DB');
+  assert.ok(stored.boilerplate.findings.some((f) => f.startsWith('vague sentence: "We aim to empower your journey."')), 'exact quoted evidence in the DB');
+  assert.ok(stored.infoDensity.findings.some((f) => f.startsWith('specific details:')), 'specifics gap finding in the DB');
 
   // Determinism across rescans: same public score, same numeric breakdown.
   // Teasers are seeded PER SCAN id — a fresh rescan may pick different (still
@@ -278,17 +278,17 @@ test('E2E: hedge-y fixture -> free JSON carries scores + teasers; findings persi
 
   // The hedge + specifics findings surface ONLY in the paid report.
   const paid = await paidHtml(hedgeApi.base, json.id);
-  assert.ok(paid.includes('hedge phrase'), 'hedge finding rendered in the paid report');
-  assert.ok(paid.includes('concrete specifics:'), 'specifics gap finding rendered in the paid report');
+  assert.ok(paid.includes('vague phrase'), 'hedge finding rendered in the paid report');
+  assert.ok(paid.includes('specific details:'), 'specifics gap finding rendered in the paid report');
 });
 
 test('E2E: hedge-y fixture -> HTML report (token) renders the hedge + specifics findings under the right category', async () => {
   const created = await (await postScan(hedgeApi.base, 'https://acme.example/')).json();
   const html = await paidHtml(hedgeApi.base, created.id);
   assert.ok(html.includes('MESSAGING'), 'boilerplate renders under its customer name MESSAGING');
-  assert.ok(html.includes('hedge phrase'), 'hedge finding rendered in HTML');
-  assert.ok(html.includes('hedge evidence: &quot;We aim to empower your journey.&quot;'), 'quoted evidence rendered (HTML-escaped)');
-  assert.ok(html.includes('concrete specifics:'), 'specifics gap finding rendered');
+  assert.ok(html.includes('vague phrase'), 'hedge finding rendered in HTML');
+  assert.ok(html.includes('vague sentence: &quot;We aim to empower your journey.&quot;'), 'quoted evidence rendered (HTML-escaped)');
+  assert.ok(html.includes('specific details:'), 'specifics gap finding rendered');
   assert.ok(html.includes('Show the receipts:'), 'findings carry a labeled receipts block');
   assert.ok(html.includes('This tool identifies writing and design patterns commonly associated with generic or templated content.'), 'mandated disclaimer intact');
   // New narrative structure: no legacy evidence table; all 7 customer names present.
@@ -314,18 +314,18 @@ test('E2E: specifics-rich fixture -> no gap finding anywhere; clean-copy page un
       assert.ok(!('findings' in entry) && !('insights' in entry), 'free breakdown numeric only');
     }
 
-    // Correctness check at rest: the DB row has NO 'concrete specifics:' gap
+    // Correctness check at rest: the DB row has NO 'specific details:' gap
     // finding and NO hedge findings for this page.
     const row = new (await import('better-sqlite3')).default(dbPath)
       .prepare('SELECT breakdown FROM scans WHERE id = ?').get(json.id);
     const stored = JSON.parse(row.breakdown);
-    assert.ok(!stored.infoDensity.findings.some((f) => f.startsWith('concrete specifics:')), 'no gap finding for specific copy');
-    assert.ok(stored.boilerplate.findings.every((f) => !f.includes('hedge phrase')), 'no hedge findings on a specific, hedge-free page');
+    assert.ok(!stored.infoDensity.findings.some((f) => f.startsWith('specific details:')), 'no gap finding for specific copy');
+    assert.ok(stored.boilerplate.findings.every((f) => !f.includes('vague phrase')), 'no hedge findings on a specific, hedge-free page');
 
     // The paid report confirms: no gap finding, no hedge receipts.
     const paid = await paidHtml(api.base, json.id);
-    assert.ok(!paid.includes('concrete specifics: 0 found'), 'no gap finding in the paid report');
-    assert.ok(!paid.includes('hedge phrase'), 'no hedge findings in the paid report');
+    assert.ok(!paid.includes('specific details: 0 found'), 'no gap finding in the paid report');
+    assert.ok(!paid.includes('vague phrase'), 'no hedge findings in the paid report');
 
     // GET JSON carries the same free breakdown.
     const got = await (await fetch(`${api.base}/api/v1/scans/${json.id}`, { headers: { accept: 'application/json' } })).json();
