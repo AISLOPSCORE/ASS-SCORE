@@ -184,7 +184,7 @@ export function scansRouter({ db, publicBaseUrl, reportTokenSecret, reportBaseUr
     const shareUrl = `${shareBase.replace(/\/+$/, '')}/scan/${scan.id}`;
     res.json({
       url: shareUrl,
-      text: `My website scored ${publicScore(scan.score)}/100 on the A.S.S. Score (AI Slop Score). Check yours: ${shareUrl}`,
+      text: `My website got an A.S.S. Score of ${publicScore(scan.score)}/100. Check yours at ass-score.com`,
     });
   });
 

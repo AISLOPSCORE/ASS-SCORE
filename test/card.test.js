@@ -227,10 +227,13 @@ test('POST scan -> GET /share: pre-filled text + public result URL (public score
   assert.equal(res.status, 200);
   const json = await res.json();
   assert.equal(json.url, `https://ass-score.com/scan/${created.id}`);
-  assert.ok(json.text.includes(`${created.score}/100`), 'text carries the PUBLIC score');
-  assert.ok(json.text.includes('A.S.S. Score (AI Slop Score)'), 'text carries the branded metric name');
-  assert.ok(json.text.includes(json.url), 'text carries the public share URL');
-  assert.ok(json.text.startsWith('My website scored '), 'pre-filled social post shape');
+  // Share text is the bare-homepage sentence with the PUBLIC score — no deep link.
+  assert.equal(
+    json.text,
+    `My website got an A.S.S. Score of ${created.score}/100. Check yours at ass-score.com`,
+  );
+  assert.ok(!json.text.includes(json.url), 'share text carries NO /scan deep link');
+  assert.ok(!json.text.includes('https://'), 'share text is the bare homepage, no scheme');
 });
 
 test('POST scan -> GET /card: pixel check — the poster shows the score in its band color', async () => {
@@ -274,7 +277,12 @@ test('publicBaseUrl option overrides the share-link base', async () => {
     const created = await (await post(app.base, { url: 'https://example.com/' })).json();
     const json = await (await fetch(`${app.base}/api/v1/scans/${created.id}/share`)).json();
     assert.equal(json.url, `https://results.example.com/scan/${created.id}`);
-    assert.ok(json.text.includes('https://results.example.com/scan/'));
+    // The share text is the fixed bare-homepage sentence (public score) — the
+    // publicBaseUrl override affects the url field, not the social post copy.
+    assert.equal(
+      json.text,
+      `My website got an A.S.S. Score of ${created.score}/100. Check yours at ass-score.com`,
+    );
   } finally {
     app.server.close();
   }
