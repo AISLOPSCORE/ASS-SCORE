@@ -1,5 +1,7 @@
 import crypto from 'node:crypto';
 import { Router } from 'express';
+import { validateEmail } from '../email.js';
+import { toPublicScan } from '../serialize.js';
 
 /**
  * Private admin stats page — GET /admin/stats (backend origin only, NOT under
@@ -199,7 +201,7 @@ footer{margin-top:28px;color:${'#5b6b84'};font-size:12px;text-align:center;lette
 </html>`;
 }
 
-export function adminRouter({ db, adminPassword, now = () => new Date().toISOString() } = {}) {
+export function adminRouter({ db, adminPassword, emailSender, now = () => new Date().toISOString() } = {}) {
   const secret = adminPassword ?? process.env.ADMIN_PASSWORD;
   const r = Router();
   const forbidden = (res) => res.status(403).json({ error: { code: 'forbidden' } });
@@ -262,5 +264,70 @@ export function adminRouter({ db, adminPassword, now = () => new Date().toISOStr
     }
     return res.json(stats);
   });
+
+  /**
+   * POST /admin/deliver — manual report fulfillment (built 2026-09-25).
+   *
+   * Sends the token'd full-report email for an EXISTING scan to a given
+   * address, using the SAME delivery path the webhook fulfillment uses
+   * (emailSender builds the HMAC report link internally). This is how
+   * bare-link purchases recorded in `unmatched_orders` get fulfilled once the
+   * customer names their site — the owner's own 09-24 purchase, for example.
+   *
+   * Same password gate as GET /admin/stats (x-admin-password header or ?pw=,
+   * timingSafeEqual); disabled (always 403) until ADMIN_PASSWORD is set.
+   *
+   * Contract (all gated):
+   *   200 { delivered: boolean, scanId, email, note? } — email attempt made;
+   *      delivery itself is best-effort like every other sender call, so a
+   *      not-configured email transport still resolves 200 with note
+   *   404 not_found — scanId does not exist
+   *   400 invalid_scan_id / invalid_email — bad input
+   *   403 forbidden — missing/wrong admin password
+   */
+  r.post('/admin/deliver', async (req, res) => {
+    if (!secret) return forbidden(res);
+    const candidate = req.get('x-admin-password') ?? req.query.pw;
+    if (!secretOk(candidate)) return forbidden(res);
+
+    const body = req.body ?? {};
+    const scanId = typeof body.scanId === 'string' ? body.scanId : '';
+    if (scanId.trim() === '') {
+      return res.status(400).json({ error: { code: 'invalid_scan_id', message: 'scanId is required' } });
+    }
+    const scan = db.getScan(scanId);
+    if (!scan) {
+      return res.status(404).json({ error: { code: 'not_found', message: `No scan found with id "${scanId}"` } });
+    }
+    const mail = validateEmail(body.email);
+    if (!mail.ok || mail.email === null) {
+      return res.status(400).json({
+        error: { code: 'invalid_email', message: mail.email === null ? 'email is required' : mail.message },
+      });
+    }
+
+    // Best-effort delivery, exact same soft-fail semantics as the webhook:
+    // the sender never rejects, so the response is always 200 once input
+    // validation passed. reportTokenSecret is bound inside emailSender
+    // (createApp builds it with the configured secret).
+    let delivered = false;
+    let note = null;
+    try {
+      if (emailSender) {
+        const result = await emailSender(toPublicScan(scan), mail.email);
+        delivered = result?.ok === true;
+        if (!delivered) note = 'email transport did not confirm delivery (see logs)';
+      } else {
+        note = 'email not configured';
+      }
+    } catch (err) {
+      // Defensive: senders are built to never reject, but a broken injected
+      // stub must not 500 the admin endpoint either.
+      note = `delivery crashed: ${err?.message ?? err}`;
+      console.error(`[admin] deliver to ${mail.email} for scan ${scanId} crashed:`, err);
+    }
+    return res.status(200).json({ delivered, scanId: scan.id, email: mail.email, ...(note ? { note } : {}) });
+  });
+
   return r;
 }

@@ -120,6 +120,29 @@ export function normalizeStripe(raw) {
   });
 }
 
+/**
+ * Detect + extract a Stripe checkout session WITHOUT requiring
+ * metadata.target_url — the payment-link flow ('collect email before checkout',
+ * built 2026-09-25) creates sessions that carry no metadata, so
+ * normalizeStripe() deliberately fails on them. The webhook route uses this to
+ * route those events to order-based fulfillment (orders table) instead of a 400.
+ *
+ * @param {unknown} raw - parsed webhook body
+ * @returns {null} when the payload is not a Stripe checkout.session.completed
+ *   event (callers then fall through to normalizeOrder for the other providers)
+ * @returns {{ ok: true, session: object }} the checkout session object
+ * @returns {{ ok: false, message: string }} a Stripe event malformed below
+ *   data.object (400-worthy; normalizeStripe would fail the same way)
+ */
+export function extractStripeSession(raw) {
+  if (!isObj(raw)) return null;
+  if (str(raw.type) !== 'checkout.session.completed') return null;
+  if (!isObj(raw.data) || !isObj(raw.data.object)) {
+    return { ok: false, message: 'stripe checkout.session.completed event is missing data.object (the checkout session)' };
+  }
+  return { ok: true, session: raw.data.object };
+}
+
 // ----------------------------------------------------------- LemonSqueezy
 /**
  * LemonSqueezy order webhook. Marker: `meta.event_name` like "order_created"

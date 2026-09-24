@@ -247,6 +247,79 @@ returns `200 already_processed` (with the original `scanId` once completed)
 and **never creates a second scan**. Events without an id are processed
 normally (rate limit still applies) but cannot be deduplicated.
 
+### `POST /api/v1/order-intent` — collect email before checkout
+
+The static Stripe payment link (ass-score.com catalog product, $12) collects
+**no email** and its checkout sessions carry **no metadata**, so a
+`checkout.session.completed` event from it cannot be normalized into a scan
+order. The fix (built 2026-09-25): the site asks for the buyer's email and
+records an order BEFORE redirecting to Stripe.
+
+```bash
+curl -s -X POST http://localhost:4000/api/v1/order-intent \
+  -H 'content-type: application/json' \
+  -d '{ "scanId": "<scan-id>", "email": "buyer@example.com" }'
+# -> 200 { "orderId": "<uuid>", "redirectUrl": "https://buy.stripe.com/...?prefilled_email=buyer%40example.com&client_reference_id=<orderId>" }
+```
+
+- **`scanId`** (alias `scan_id`) must reference an existing scan row — `404
+  not_found` otherwise. **`email`** is required and validated with the same
+  rule the scan/webhook routes use — `400 invalid_email` otherwise.
+- Response `redirectUrl` is the Stripe payment link, pre-filled with the
+  (lowercased) email via `?prefilled_email=` and tagged with the order id via
+  `?client_reference_id=`. Base link = env `STRIPE_PAYMENT_LINK`, falling back
+  to the current static buy link (`https://buy.stripe.com/cNi00j7zs1P49ju5B9abK00`).
+- Each call inserts one **`orders`** row (`id` uuid, `scan_id`, `email`,
+  `status 'pending'`, `created_at`) — the pending-order ledger the webhook
+  correlates against.
+
+**Payment-link webhook flow.** A `checkout.session.completed` event whose
+session carries NO `metadata.target_url` (i.e. `normalizeStripe()` cannot
+extract a scan target) is handled by order correlation instead of the legacy
+scan+email path:
+
+1. **Correlation** — FIRST `client_reference_id` → the `orders` row with that
+   id must be `pending`; an already-fulfilled ref match returns
+   `200 { status: 'already_fulfilled' }` (a Stripe retry — it never falls
+   through to email matching, which could fulfill a different pending order).
+   No ref (or unknown ref) → fallback to the session's customer email
+   (`customer_details.email` ?? `customer_email`, lowercased) against a
+   `pending` order created within the last **24 h**.
+2. **Fulfill** — the order is flipped to `status 'fulfilled'` with
+   `checkout_session_id` + `paid_at` (race-safe: only the first event for the
+   order flips it, so Stripe retries are idempotent), and the token'd
+   full-report email is sent to the **order's** email through the same
+   `emailSender` the legacy path uses.
+3. **No match** — the event is recorded in the **`unmatched_orders`** table
+   (`session_id` PK, `email`, `received_at`; retries via `INSERT OR IGNORE`)
+   and the route still returns `200 { status: 'unmatched' }` so Stripe never
+   retries a failure into the ledger. Support fulfills these manually via
+   `POST /admin/deliver` once the customer names their site.
+
+**Signature verification.** When env `STRIPE_WEBHOOK_SECRET` is set, every
+Stripe event must carry a valid `Stripe-Signature` header (HMAC-SHA256 over
+`<t>.<raw-body>`, 5-minute timestamp tolerance) — failure is `401
+invalid_signature`. Until the webhook endpoint is registered with Stripe and
+the secret is set, a one-line warning is logged at boot and events are still
+processed (local tests / staged deploy). Fiverr/LemonSqueezy payloads are
+unaffected. The raw body is captured by the JSON body-parser's `verify`
+callback (`req.rawBody`), so signature checks run against byte-exact payloads.
+
+### `POST /admin/deliver` — manual report fulfillment
+
+Same admin-password gate as `GET /admin/stats` (`x-admin-password` header or
+`?pw=`, `403` until `ADMIN_PASSWORD` is set). Body `{ scanId, email }` sends
+the token'd full-report email for an existing scan via the exact same delivery
+path as webhook fulfillment — the tool for fulfilling `unmatched_orders`
+(including the owner's own 09-24 bare-link purchase, once the site is named).
+
+| Outcome | HTTP | Body |
+| --- | --- | --- |
+| Email attempt made | `200` | `{ delivered: boolean, scanId, email, note? }` |
+| Unknown scan | `404` | `error.code "not_found"` |
+| Bad / missing email or scanId | `400` | `error.code "invalid_email" / "invalid_scan_id"` |
+| Wrong / missing admin password | `403` | `error.code "forbidden"` |
+
 ### Rate limiting
 
 Both endpoints carry per-IP per-UTC-day caps backed by
