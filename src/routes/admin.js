@@ -23,10 +23,14 @@ import { Router } from 'express';
  *
  * Response (200, password correct):
  *   { views: { total, today, last30d: [{date, count} x30], recent: [{ts, ip,
- *     ua, path} x latest 50] }, scans: { total, today, last30d: x30 } }
- * (the JSON shape is unchanged; the HTML page is a rendering of that object)
+ *     ua, path} x latest 50] }, scans: { total, today, last30d: x30 },
+ *     purchases: { total, today, last30d: x30 } }
+ * (the JSON shape is additive — views/scans untouched; the HTML page is a
+ * rendering of that object)
  *
- * Date bucketing uses the app's UTC-day convention (the ledgers derive day =
+ * `purchases` is the paid-order ledger (webhook_events — one row per accepted
+ * full-report order, any status), the same source of truth the webhook route
+ * writes to; nothing is fetched from Stripe. Date bucketing uses the app's UTC-day convention (the ledgers derive day =
  * first 10 chars of the ISO timestamp; page_views ts is epoch ms, bucketed
  * via SQLite datetime(ts/1000,'unixepoch') = the same UTC view).
  * last30d is oldest-first (29 days ago .. today) so the table reads naturally
@@ -65,23 +69,26 @@ const truncate = (s, n) => (s.length <= n ? s : `${s.slice(0, n - 1)}…`);
 
 /** Pure-CSS grouped bar chart + recent-views table, fully server-rendered. */
 function renderAdminPage(stats, generatedAt) {
-  const { views, scans } = stats;
+  const { views, scans, purchases } = stats;
   const hasViews = views.total > 0 || views.recent.length > 0 || views.last30d.some((d) => d.count > 0);
 
   // Normalize each series to its own max; min 1px so zero days show a hairline.
   const scanMax = Math.max(0, ...scans.last30d.map((d) => d.count));
   const viewMax = Math.max(0, ...views.last30d.map((d) => d.count));
+  const purchaseMax = Math.max(0, ...purchases.last30d.map((d) => d.count));
   const barHeight = (count, max) => (max > 0 ? Math.max(1, Math.round((count / max) * CHART_HEIGHT_PX)) : 1);
 
   const chartCells = scans.last30d
     .map((scanDay, i) => {
       const viewDay = views.last30d[i];
+      const purchaseDay = purchases.last30d[i];
       const tick = i % 5 === 0 ? `<span class="tick">${esc(scanDay.date.slice(5))}</span>` : '';
       return [
-        `<div class="day" title="${esc(`${scanDay.date} — scans ${scanDay.count}, views ${viewDay.count}`)}">`,
+        `<div class="day" title="${esc(`${scanDay.date} — scans ${scanDay.count}, views ${viewDay.count}, reports ${purchaseDay.count}`)}">`,
         `<div class="bars">`,
         `<div class="bar bar-scans" style="height:${barHeight(scanDay.count, scanMax)}px" title="${esc(`${scanDay.date} · ${scanDay.count} scans`)}"></div>`,
         `<div class="bar bar-views" style="height:${barHeight(viewDay.count, viewMax)}px" title="${esc(`${viewDay.date} · ${viewDay.count} views`)}"></div>`,
+        `<div class="bar bar-reports" style="height:${barHeight(purchaseDay.count, purchaseMax)}px" title="${esc(`${purchaseDay.date} · ${purchaseDay.count} reports`)}"></div>`,
         `</div>`,
         tick,
         `</div>`,
@@ -141,12 +148,12 @@ body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 -apple-system
 .card h2{margin:0 0 14px;font-size:13px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--text)}
 .legend{display:flex;gap:18px;align-items:center;color:var(--muted);font-size:12px;margin-bottom:10px}
 .sw{width:10px;height:10px;border-radius:2px;display:inline-block;margin-right:6px;vertical-align:-1px}
-.sw-scans{background:var(--orange)}.sw-views{background:var(--green)}
+.sw-scans{background:var(--orange)}.sw-views{background:var(--green)}.sw-reports{background:var(--red)}
 .chart{display:flex;align-items:flex-end;gap:2px}
 .day{flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;min-width:0}
 .bars{height:${CHART_HEIGHT_PX}px;width:100%;display:flex;align-items:flex-end;justify-content:center;gap:2px}
 .bar{width:100%;max-width:10px;border-radius:2px 2px 0 0}
-.bar-scans{background:var(--orange)}.bar-views{background:var(--green)}
+.bar-scans{background:var(--orange)}.bar-views{background:var(--green)}.bar-reports{background:var(--red)}
 .tick{font-size:9px;color:var(--muted);margin-top:4px;white-space:nowrap}
 .tablewrap{overflow-x:auto}
 table{width:100%;border-collapse:collapse;font-size:13px}
@@ -174,10 +181,12 @@ footer{margin-top:28px;color:${'#5b6b84'};font-size:12px;text-align:center;lette
     ${kpi('SCANS TODAY', scans.today, BANDS.deepOrange)}
     ${kpi('VIEWS TOTAL', views.total, BANDS.orange)}
     ${kpi('VIEWS TODAY', views.today, BANDS.green)}
+    ${kpi('FULL REPORTS PURCHASED', purchases.total, BANDS.red)}
+    ${kpi('REPORTS TODAY', purchases.today, BANDS.red)}
   </section>
   <section class="card">
     <h2>Last 30 days</h2>
-    <div class="legend"><span class="sw sw-scans"></span>Scans&nbsp;<span class="sw sw-views"></span>Views</div>
+    <div class="legend"><span class="sw sw-scans"></span>Scans&nbsp;<span class="sw sw-views"></span>Views&nbsp;<span class="sw sw-reports"></span>Reports</div>
     ${chartBlock}
   </section>
   <section class="card">
@@ -216,15 +225,18 @@ export function adminRouter({ db, adminPassword, now = () => new Date().toISOStr
     const today = now().slice(0, 10); // UTC day
     const todayStartMs = Date.parse(`${today}T00:00:00.000Z`);
     const sinceTs = todayStartMs - (DAYS_IN_WINDOW - 1) * DAY_MS;
-    const sinceIso = new Date(sinceTs).toISOString().slice(0, 10); // scans.created_at >= date
+    const sinceIso = new Date(sinceTs).toISOString().slice(0, 10); // scans/webhook_events created_at >= date
     const viewCounts = new Map(db.pageViewDayCounts(sinceTs).map((d) => [d.date, d.count]));
     const scanCounts = new Map(db.scanDayCounts(sinceIso).map((d) => [d.date, d.count]));
+    const purchaseCounts = new Map(db.webhookDayCounts(sinceIso).map((d) => [d.date, d.count]));
     const last30dViews = [];
     const last30dScans = [];
+    const last30dPurchases = [];
     for (let i = DAYS_IN_WINDOW - 1; i >= 0; i--) {
       const date = new Date(todayStartMs - i * DAY_MS).toISOString().slice(0, 10);
       last30dViews.push({ date, count: viewCounts.get(date) ?? 0 });
       last30dScans.push({ date, count: scanCounts.get(date) ?? 0 });
+      last30dPurchases.push({ date, count: purchaseCounts.get(date) ?? 0 });
     }
     const stats = {
       views: {
@@ -237,6 +249,11 @@ export function adminRouter({ db, adminPassword, now = () => new Date().toISOStr
         total: db.countScansTotal(),
         today: db.countScansToday(today),
         last30d: last30dScans,
+      },
+      purchases: {
+        total: db.countWebhooksTotal(),
+        today: db.countWebhooksToday(today),
+        last30d: last30dPurchases,
       },
     };
     if (wantsHtml(req)) {

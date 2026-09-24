@@ -139,6 +139,15 @@ export function openDb(dbPath) {
   const getWebhookEventStmt = db.prepare('SELECT * FROM webhook_events WHERE event_key = ?');
   const markWebhookEventStmt = db.prepare('UPDATE webhook_events SET status = ?, scan_id = ? WHERE event_key = ?');
   const countWebhookEventsStmt = db.prepare('SELECT COUNT(*) AS n FROM webhook_events WHERE day = ? AND ip = ?');
+  // Admin-stats aggregates (one webhook_events row = one purchased full report).
+  // Same UTC-day convention as scans: created_at is ISO, day = first 10 chars.
+  const countWebhooksTotalStmt = db.prepare('SELECT COUNT(*) AS n FROM webhook_events');
+  const countWebhooksTodayStmt = db.prepare(
+    'SELECT COUNT(*) AS n FROM webhook_events WHERE substr(created_at, 1, 10) = ?'
+  );
+  const webhookDayCountsStmt = db.prepare(
+    'SELECT substr(created_at, 1, 10) AS day, COUNT(*) AS n FROM webhook_events WHERE created_at >= ? GROUP BY day'
+  );
 
   return {
     // Raw better-sqlite3 Database — used by the retention job (src/retention.js)
@@ -214,6 +223,18 @@ export function openDb(dbPath) {
     /** Accepted webhook-event count for a (UTC day, IP) bucket — the per-IP daily cap. */
     countWebhookEvents(day, ip) {
       return countWebhookEventsStmt.get(day, ip)?.n ?? 0;
+    },
+    /** Total webhook-event rows (all time) — one row per purchased full report, regardless of status. */
+    countWebhooksTotal() {
+      return countWebhooksTotalStmt.get().n;
+    },
+    /** Webhook-event rows on the given UTC day (YYYY-MM-DD — the ledgers' day convention). */
+    countWebhooksToday(day) {
+      return countWebhooksTodayStmt.get(day)?.n ?? 0;
+    },
+    /** Per-UTC-day webhook-event counts with created_at >= sinceIso: [{ date, count }]. */
+    webhookDayCounts(sinceIso) {
+      return webhookDayCountsStmt.all(sinceIso).map((r) => ({ date: r.day, count: r.n }));
     },
 
     // --- Scan rate-limit ledger (independent of the webhook ledger) ----------
