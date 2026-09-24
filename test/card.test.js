@@ -297,3 +297,126 @@ test('GET /card and /share for a missing id -> 404 with the same JSON error shap
     assert.ok(json.error.message.includes('does-not-exist'), ep);
   }
 });
+
+// ------------------------------------------------- card-polish region tests
+// (owner polish pass 2026-09-24: TL accents removed, ass-score.com moved to
+// the bottom-right, donkey zone shifted right / sign shifted left so the sign
+// no longer covers the torso). All assertions live on the FINAL rendered PNG
+// (or the committed donkey-sharecard.png itself) — never on SVG strings, so a
+// layout regression that survives the SVG but shows up in pixels still fails.
+
+const CARDS = [
+  { score: 7, url: 'https://www.example.com', band: [0x4a, 0xde, 0x80], treat: 'celebrate' },
+  { score: 50, url: 'https://www.example.com', band: [0xfb, 0x92, 0x3c], treat: 'warn' },
+  { score: 93, url: 'https://www.example.com', band: [0xf8, 0x71, 0x71], treat: 'alarm' },
+];
+
+async function cardRaw(svg) {
+  const { data, info } = await sharp(svg).raw().toBuffer({ resolveWithObject: true });
+  return { data, info, png: svg };
+}
+
+function countRegion(data, info, x0, y0, x1, y1, pred) {
+  let n = 0;
+  for (let y = y0; y < y1; y += 1) {
+    for (let x = x0; x < x1; x += 1) {
+      const i = (y * info.width + x) * info.channels;
+      if (pred(data[i], data[i + 1], data[i + 2])) n += 1;
+    }
+  }
+  return n;
+}
+
+const lum = (r, g, b) => 0.2126 * r + 0.7152 * g + 0.0722 * b;
+const grayish = (r, g, b) => Math.abs(r - g) <= 12 && Math.abs(g - b) <= 12 && Math.abs(r - b) <= 12 && r > 50;
+const matchRgb = (r, g, b, [tr, tg, tb], tol = 14) =>
+  Math.abs(r - tr) <= tol && Math.abs(g - tg) <= tol && Math.abs(b - tb) <= tol;
+
+test('card polish (a): old top-left accent box (870-945, 92-135) is ink-empty for CLEANEST / VERY ASS / CATASTROPHICALLY ASS', async () => {
+  const accentColors = { celebrate: null, warn: [0xfa, 0xcc, 0x15], alarm: [0xff, 0x3d, 0x8e] }; // old TL white / TLyellow / TLpink2
+  for (const { score, treat } of CARDS) {
+    const { data, info } = await cardRaw(await renderCardPng(buildCardSvg({ score, url: 'https://www.example.com' })));
+    assert.equal(info.width, CARD_WIDTH);
+    assert.equal(info.height, CARD_HEIGHT);
+    const check = (pred) => countRegion(data, info, 870, 92, 945, 135, pred);
+    assert.equal(check((r, g, b) => lum(r, g, b) > 180), 0, `score ${score}: no bright near-white tick strokes`);
+    assert.equal(check((r, g, b) => r + g + b > 30), 0, `score ${score}: region holds NO ink at all`);
+    const accent = accentColors[treat];
+    if (accent) {
+      assert.equal(
+        check((r, g, b) => matchRgb(r, g, b, accent, 12)),
+        0, `score ${score}: old TL accent color absent`);
+    }
+  }
+});
+
+test('card polish (b): ass-score.com URL moved out of the top-right text band into the bottom-right band', async () => {
+  for (const { score } of CARDS) {
+    const { data, info } = await cardRaw(await renderCardPng(buildCardSvg({ score, url: 'https://www.example.com' })));
+    const topRight = countRegion(data, info, 1380, 70, 1520, 100, grayish);
+    assert.equal(topRight, 0, `score ${score}: no URL-text (grayish-white) ink in the old top-right text band`);
+    // The band is not vacuous: the treatment accent (lime star / pink ticks)
+    // still lives top-right, so a missing text check is meaningful.
+    const accentInk = countRegion(data, info, 1380, 70, 1520, 100, (r, g, b2) => r + g + b2 > 30);
+    assert.ok(accentInk > 100, `score ${score}: top-right still carries accent ink (${accentInk} px)`);
+    const bottomRight = countRegion(data, info, 1280, 852, 1520, 872, grayish);
+    assert.ok(bottomRight > 200, `score ${score}: URL text present in the bottom-right band (${bottomRight} px)`);
+  }
+});
+
+test('card polish (c): sign header fully visible — no donkey pixels cover the sign; sign clear of the torso', async () => {
+  for (const { score, band } of CARDS) {
+    const { data, info } = await cardRaw(await renderCardPng(buildCardSvg({ score, url: 'https://www.example.com' })));
+    // Row band across the sign header (y 565-585, x 700-1100): the band-colored
+    // header, the dark "A.S.S. SCORE / OFFICIAL" title text and the white paper
+    // must all be present — the sign face renders unobstructed.
+    const dark = countRegion(data, info, 700, 565, 1100, 585, (r, g, b2) => r < 60 && g < 60 && b2 < 60);
+    const header = countRegion(data, info, 700, 565, 1100, 585, (r, g, b2) => matchRgb(r, g, b2, band));
+    const paper = countRegion(data, info, 700, 565, 1100, 585, (r, g, b2) => matchRgb(r, g, b2, [0xf2, 0xf1, 0xea]));
+    assert.ok(dark > 100, `score ${score}: dark title text visible on the sign (${dark} px)`);
+    assert.ok(header > 2000, `score ${score}: band-colored header visible (${header} px)`);
+    assert.ok(paper > 500, `score ${score}: white sign paper visible (${paper} px)`);
+  }
+
+  // Donkey-zone alpha coverage in the sign band (card y 538-774 -> asset y
+  // 344-517, asset 372x580 mapped 1:1 into the 510x795 card zone). NEW sign
+  // spans card x 700-1096 -> asset x 0-19; the old layout (SIGN_X 818, D_X 1050)
+  // spanned asset x 0-119 and its rotated edge reached the torso. The fixed
+  // asset's body starts at asset x >= 120, so the sign now overlaps ZERO
+  // donkey pixels while the torso remains present to its right.
+  const asset = fs.readFileSync(new URL('../src/assets/donkey-sharecard.png', import.meta.url));
+  const { data: adata, info: ainfo } = await sharp(asset).raw().toBuffer({ resolveWithObject: true });
+  assert.equal(ainfo.width, 372, 'asset is the 372px-wide share-card cutout');
+  assert.equal(ainfo.height, 580);
+  const opaqueIn = (x0, x1) => {
+    let n = 0;
+    for (let y = 344; y < 517; y += 1) {
+      for (let x = x0; x < x1; x += 1) {
+        if (adata[(y * ainfo.width + x) * 4 + 3] > 10) n += 1;
+      }
+    }
+    return n;
+  };
+  assert.equal(opaqueIn(0, 20), 0, 'new sign overlap sliver (asset x 0-19) contains no donkey pixels');
+  const body = opaqueIn(120, ainfo.width);
+  assert.ok(body > 20000, `torso present right of the sign edge (${body} opaque px in band)`);
+  // The body's left edge is well clear of the new sign right edge (asset x 19):
+  let minX = ainfo.width;
+  for (let y = 344; y < 517; y += 1) {
+    for (let x = 120; x < ainfo.width; x += 1) {
+      if (adata[(y * ainfo.width + x) * 4 + 3] > 10 && x < minX) minX = x;
+    }
+  }
+  assert.ok(minX >= 120, `torso left edge at asset x ${minX} — clear of sign edge x 19`);
+});
+
+test('card polish (d): byte-determinism — two renders of the same inputs are identical PNGs (7 / 50 / 93)', async () => {
+  for (const { score, url } of CARDS) {
+    const a = await renderCardPng(buildCardSvg({ score, url }));
+    const b = await renderCardPng(buildCardSvg({ score, url }));
+    assert.ok(a.equals(b), `score ${score}: two renders -> identical PNG bytes`);
+    const meta = await sharp(a).metadata();
+    assert.equal(meta.width, CARD_WIDTH);
+    assert.equal(meta.height, CARD_HEIGHT);
+  }
+});

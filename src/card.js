@@ -151,35 +151,36 @@ export function buildCardSvg({ score, url }) {
   const numW = digits.length * 0.6 * numSize; // Anton is condensed (~.60em/digit incl ls)
   const NUM_X = 84; const NUM_BASE = 560;                 // giant number baseline
   const OF_X = NUM_X + numW + 22; const OF_BASE = NUM_BASE + 26; // /100 baseline
-  const TRACK_X = 84; const TRACK_Y = 610; const TRACK_W = 640;
+  const TRACK_X = 84; const TRACK_Y = 610; const TRACK_W = 596; // ends at 680: clear of the sign's rotated left edge (~700-705)
   const M_X = TRACK_X + Math.max(0, Math.min(1, s / 100)) * TRACK_W; // you-are-here marker
+  const MARK_TXT_X = Math.min(M_X, TRACK_X + TRACK_W - 64); // label never tucks under the paper sign at high scores
   const STAMP_FS = 34; const STAMP_PAD_X = 42; const STAMP_H = 64;
   const stampW = label.length * 0.6 * STAMP_FS + STAMP_PAD_X * 2;
   const STAMP_X = 84; const STAMP_Y = 700;
   // Donkey cutout zone — sized to the approved donkey-sharecard.png portrait
   // (372×580, aspect 0.6414): box 510×795 matches that aspect exactly, so the
-  // slice renders the full silhouette with no crop; right edge stays at the
-  // old 1560 (40px card margin), the paper sign overlaps the lower body.
-  const D_X = 1050; const D_Y = 66; const D_W = 510; const D_H = 795;
-  const SIGN_X = 818; const SIGN_Y = 538; const SIGN_W = 396; const SIGN_H = 236; // paper sign
+  // slice renders the full silhouette with no crop. Right edge at 1580 (20px
+  // card margin — owner-polish pass 2026-09-24); the paper sign now sits LEFT
+  // of the torso (overlap with the donkey zone is only its 26px left sliver,
+  // which contains no donkey pixels).
+  const D_X = 1070; const D_Y = 66; const D_W = 510; const D_H = 795;
+  const SIGN_X = 700; const SIGN_Y = 538; const SIGN_W = 396; const SIGN_H = 236; // paper sign
   const DISC_Y = 846;
 
-  /* accents per treatment (corners of the donkey zone) */
-  const TL = '<g transform="translate(880,96)">' + ticks(false) + '</g>'; // white spark ticks
+  /* accents per treatment (top-right corner of the donkey zone only — the
+   * top-left variants were removed as owner-flagged strays, 2026-09-24) */
   const TRstar = '<g transform="translate(1470,60) scale(1.4)">' + star() + '</g>' +
     '<g transform="translate(1516,136) scale(.9)">' + star() + '</g>';
   const TRstar1 = '<g transform="translate(1484,70) scale(1.2)">' + star() + '</g>';
   const TRpink1 = '<g transform="translate(1480,84)">' + ticks(true, 1) + '</g>';
   const TRpink2 = '<g transform="translate(1462,64) scale(1.25)">' + ticks(true, 2) + '</g>';
-  const TLpink2 = '<g transform="translate(872,80) scale(1.15)">' + ticks(true, 2) + '</g>';
-  const TLyellow = '<g transform="translate(884,96)">' + ticks(false, 1, '#facc15') + '</g>';
   let accents = '';
-  if (treat === 'celebrate') accents = TL + TRstar;
-  else if (treat === 'positive') accents = TL + TRstar1;
-  else if (treat === 'mixed') accents = TL;
-  else if (treat === 'warn') accents = TLyellow + TRpink1;
-  else if (treat === 'chaos') accents = TL + TRpink2;
-  else /* alarm */ accents = TLpink2 + TRpink2;
+  if (treat === 'celebrate') accents = TRstar;
+  else if (treat === 'positive') accents = TRstar1;
+  else if (treat === 'mixed') accents = ''; // left side stays clean by design
+  else if (treat === 'warn') accents = TRpink1;
+  else if (treat === 'chaos') accents = TRpink2;
+  else /* alarm */ accents = TRpink2;
 
   const stampEllipse = treat === 'alarm'
     ? '<svg x="' + (STAMP_X - 26) + '" y="' + (STAMP_Y - 30) + '" width="' + (stampW + 52) + '" height="124" viewBox="0 0 ' + (stampW + 52) + ' 124" overflow="visible">' +
@@ -211,7 +212,7 @@ export function buildCardSvg({ score, url }) {
     <text x="82" y="88" font-family="Anton" font-size="54" fill="#d4f000" letter-spacing="2">A.S.S. SCORE</text>
     <g transform="translate(84,104)"><svg width="430" height="16" viewBox="0 0 150 16" preserveAspectRatio="none">${scrib('#d4f000', true)}</svg></g>
   </g>
-  <text x="1516" y="84" text-anchor="end" font-family="Inter" font-weight="700" font-size="16" fill="rgba(255,255,255,.38)" letter-spacing="1.5">ass-score.com</text>
+  <text x="1516" y="870" text-anchor="end" font-family="Inter" font-weight="700" font-size="16" fill="rgba(255,255,255,.38)" letter-spacing="1.5">ass-score.com</text>
 
   <text x="86" y="168" font-family="Caveat" font-weight="600" font-size="24" fill="rgba(255,255,255,.55)" letter-spacing="1">SCANNED WEBSITE</text>
   <text x="84" y="216" font-family="Inter" font-weight="800" font-size="34" fill="#ffffff">${host}</text>
@@ -221,10 +222,10 @@ export function buildCardSvg({ score, url }) {
   <text x="${OF_X}" y="${OF_BASE}" font-family="Inter" font-weight="800" font-size="52" fill="rgba(255,255,255,.38)">/ 100</text>
 
   <rect x="${TRACK_X}" y="${TRACK_Y}" width="${TRACK_W}" height="12" rx="6" fill="url(#ramp)" opacity=".92"/>
-  <text x="${M_X}" y="${TRACK_Y - 14}" text-anchor="middle" font-family="Caveat" font-weight="700" font-size="21" fill="#ffffff">you are here</text>
+  <text x="${MARK_TXT_X}" y="${TRACK_Y - 14}" text-anchor="middle" font-family="Caveat" font-weight="700" font-size="21" fill="#ffffff">you are here</text>
   <path d="M${M_X - 9} ${TRACK_Y - 4} L${M_X} ${TRACK_Y + 8} L${M_X + 9} ${TRACK_Y - 4} Z" fill="#ffffff"/>
   <text x="84" y="${TRACK_Y + 38}" font-family="Caveat" font-weight="600" font-size="20" fill="rgba(255,255,255,.6)">0 = LEAST ASS</text>
-  <text x="724" y="${TRACK_Y + 38}" text-anchor="end" font-family="Caveat" font-weight="600" font-size="20" fill="rgba(255,255,255,.8)">100 = MAX ASS</text>
+  <text x="${TRACK_X + TRACK_W - 4}" y="${TRACK_Y + 38}" text-anchor="end" font-family="Caveat" font-weight="600" font-size="20" fill="rgba(255,255,255,.8)">100 = MAX ASS</text>
 
   ${stampEllipse}
   <g transform="rotate(-2.5 ${STAMP_X + stampW / 2} ${STAMP_Y + STAMP_H / 2})">
