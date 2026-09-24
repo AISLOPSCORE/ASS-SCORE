@@ -44,11 +44,14 @@ const DISCLAIMER_LINES = [
 ];
 
 /**
- * Donkey mascot — the approved share-card cutout (Donkey System, owner spec
- * 2026-09-22 v3: donkey-sharecard.png, 372×580, transparent bg, strong
- * silhouette that reads at small sizes). Embedded as a data-URI so the card
- * is fully self-contained and byte-deterministic on every host.
- * The same image is used for every band — never tinted or re-cropped.
+ * Donkey mascot — the approved share-card cutout (owner-approved final asset,
+ * 2026-09-24: donkey-sharecard.png, 1191×1186, near-square 1.0042, RGBA
+ * transparent bg, solid dark subject with soft feathered edges — used exactly
+ * as supplied, never tinted, cropped or re-cropped). It is embedded as a
+ * data-URI so the card is fully self-contained and byte-deterministic on
+ * every host. The same image is used for every band.
+ * Rendered with preserveAspectRatio="xMidYMid meet" into the fixed zone: the
+ * near-square asset scales to 510×508 (no cropping) and centers vertically.
  */
 const MASCOT_B64 = fs.readFileSync(new URL('./assets/donkey-sharecard.png', import.meta.url)).toString('base64');
 const MASCOT_HREF = `data:image/png;base64,${MASCOT_B64}`;
@@ -157,12 +160,13 @@ export function buildCardSvg({ score, url }) {
   const STAMP_FS = 34; const STAMP_PAD_X = 42; const STAMP_H = 64;
   const stampW = label.length * 0.6 * STAMP_FS + STAMP_PAD_X * 2;
   const STAMP_X = 84; const STAMP_Y = 700;
-  // Donkey cutout zone — sized to the approved donkey-sharecard.png portrait
-  // (372×580, aspect 0.6414): box 510×795 matches that aspect exactly, so the
-  // slice renders the full silhouette with no crop. Right edge at 1580 (20px
-  // card margin — owner-polish pass 2026-09-24); the paper sign now sits LEFT
-  // of the torso (overlap with the donkey zone is only its 26px left sliver,
-  // which contains no donkey pixels).
+  // Donkey cutout zone — fixed box (owner-polish pass 2026-09-24, right edge
+  // at 1580 = 20px card margin). The committed donkey-sharecard.png is near-
+  // square (1191×1186) and renders with preserveAspectRatio="xMidYMid meet":
+  // scale = min(510/1191, 795/1186) ≈ 0.4282 → 510×508, x-centered on the
+  // zone, vertically centered at y≈210-718 (no cropping — a slice would cut
+  // ~40% of the width). The paper sign sits LEFT of the torso; the only zone
+  // overlap is its 26px left sliver under the sign's right edge.
   const D_X = 1070; const D_Y = 66; const D_W = 510; const D_H = 795;
   const SIGN_X = 700; const SIGN_Y = 538; const SIGN_W = 396; const SIGN_H = 236; // paper sign
   const DISC_Y = 846;
@@ -234,7 +238,7 @@ export function buildCardSvg({ score, url }) {
     <text x="${STAMP_X + stampW / 2}" y="${STAMP_Y + STAMP_H / 2 + 12}" text-anchor="middle" font-family="Anton" font-size="${STAMP_FS}" fill="#0b0c0c" letter-spacing="3">${label}</text>
   </g>
 
-  <image href="${MASCOT_HREF}" x="${D_X}" y="${D_Y}" width="${D_W}" height="${D_H}" preserveAspectRatio="xMidYMid slice"/>
+  <image href="${MASCOT_HREF}" x="${D_X}" y="${D_Y}" width="${D_W}" height="${D_H}" preserveAspectRatio="xMidYMid meet"/>
   <g transform="rotate(3 ${SIGN_X + SIGN_W / 2} ${SIGN_Y + SIGN_H / 2})">
     <rect x="${SIGN_X + 8}" y="${SIGN_Y + 10}" width="${SIGN_W}" height="${SIGN_H}" rx="18" fill="rgba(0,0,0,.45)"/>
     <rect x="${SIGN_X}" y="${SIGN_Y}" width="${SIGN_W}" height="${SIGN_H}" rx="18" fill="#f2f1ea"/>
