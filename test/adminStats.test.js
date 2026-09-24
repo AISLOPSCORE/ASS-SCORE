@@ -25,6 +25,20 @@ const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 C
 
 const countViews = (dbPath) => new Database(dbPath, { readonly: true }).prepare('SELECT COUNT(*) AS n FROM page_views').get().n;
 const viewRows = (dbPath) => new Database(dbPath, { readonly: true }).prepare('SELECT ts, ip, ua, path FROM page_views ORDER BY id').all();
+// Seed the paid-order ledger the same way retention.test.js does — one row per
+// purchased full report. `day` mirrors the webhook route's rate-limit bucket
+// (created_at's UTC day); status defaults to 'pending' like a fresh order.
+const seedWebhook = (db, eventKey, createdAt, status = 'pending') =>
+  db.insertWebhookEvent({
+    eventKey,
+    provider: 'stripe',
+    eventId: `evt_${eventKey}`,
+    ip: '203.0.113.9',
+    day: createdAt.slice(0, 10),
+    payload: { id: `evt_${eventKey}` },
+    createdAt,
+    status,
+  });
 
 function startApp(opts = {}) {
   // `app.listen(0)` with NO host binds synchronously (address() is available
@@ -213,7 +227,7 @@ test('admin: stats JSON has views (total/today/last30d x30/recent) and scans sum
     const r = await fetch(`${app.base}/admin/stats`, { headers: { 'x-admin-password': PASSWORD } });
     assert.equal(r.status, 200);
     const json = await r.json();
-    assert.deepEqual(Object.keys(json).sort(), ['scans', 'views']);
+    assert.deepEqual(Object.keys(json).sort(), ['purchases', 'scans', 'views']);
     assert.equal(json.views.total, 1, 'bot view never counted');
     assert.equal(json.views.today, 1);
     assert.equal(json.views.last30d.length, 30, 'exactly 30 daily buckets');
@@ -287,6 +301,83 @@ test('admin: Accept: text/html renders the styled dashboard (content-type, marke
     app.server.close();
   }
 });
+test('admin: stats JSON gains purchases {total, today, last30d} from the webhook ledger, aligned with scans/views', async () => {
+  const dbp = tmpDb();
+  const app = startApp({ dbPath: dbp, now: () => TICK });
+  try {
+    await track(app.base, { path: '/' }, { 'user-agent': UA });
+    const seedDb = openDb(dbp);
+    seedDb.insertScan({ id: 'scan-1', url: 'https://acme.example/', score: 42, breakdown: {}, createdAt: TICK });
+    // One row per accepted order webhook — status is irrelevant (every row is a
+    // purchased full report), and pre-window rows count in total but not in the series.
+    seedWebhook(seedDb, 'we-today', '2026-09-23T09:00:00.000Z', 'failed');
+    seedWebhook(seedDb, 'we-yesterday', '2026-09-22T11:00:00.000Z');
+    seedWebhook(seedDb, 'we-window', '2026-09-10T09:30:00.000Z');
+    seedWebhook(seedDb, 'we-old', '2026-08-15T09:00:00.000Z'); // 39 days before today — outside the window
+    seedDb.close();
+    const r = await fetch(`${app.base}/admin/stats`, { headers: { 'x-admin-password': PASSWORD } });
+    assert.equal(r.status, 200);
+    const json = await r.json();
+    assert.deepEqual(Object.keys(json).sort(), ['purchases', 'scans', 'views']);
+    assert.equal(json.purchases.total, 4, 'every ledger row counts (any status, any age)');
+    assert.equal(json.purchases.today, 1, 'today = created_at UTC-day bucket');
+    assert.equal(json.purchases.last30d.length, 30, 'exactly 30 daily buckets');
+    assert.equal(json.purchases.last30d[0].date, '2026-08-25', 'window starts 29 days before today');
+    assert.equal(json.purchases.last30d[29].date, '2026-09-23', 'window ends today');
+    assert.equal(json.purchases.last30d[29].count, 1, 'today bucket includes the failed-status order too');
+    assert.equal(json.purchases.last30d[28].count, 1, '2026-09-22 bucket');
+    assert.equal(json.purchases.last30d[16].count, 1, '2026-09-10 bucket (inside the window)');
+    assert.equal(json.purchases.last30d[0].count, 0, 'pre-window row excluded from the series');
+    // Aligned by index with the existing series (oldest-first, same dates).
+    for (let i = 0; i < 30; i++) {
+      assert.equal(json.purchases.last30d[i].date, json.scans.last30d[i].date, `purchase date ${i} == scan date`);
+      assert.equal(json.purchases.last30d[i].date, json.views.last30d[i].date, `purchase date ${i} == view date`);
+    }
+    // Existing fields untouched.
+    assert.equal(json.scans.total, 1);
+    assert.equal(json.views.total, 1);
+  } finally {
+    app.server.close();
+  }
+});
+test('admin: HTML dashboard shows FULL REPORTS PURCHASED / REPORTS TODAY KPIs and the third chart series', async () => {
+  const dbp = tmpDb();
+  const app = startApp({ dbPath: dbp, now: () => TICK });
+  try {
+    await track(app.base, { path: '/' }, { 'user-agent': UA });
+    const seedDb = openDb(dbp);
+    seedDb.insertScan({ id: 'scan-1', url: 'https://acme.example/', score: 42, breakdown: {}, createdAt: TICK });
+    seedWebhook(seedDb, 'we-1', '2026-09-23T08:00:00.000Z');
+    seedWebhook(seedDb, 'we-2', '2026-09-23T09:30:00.000Z');
+    seedWebhook(seedDb, 'we-3', '2026-09-18T14:00:00.000Z');
+    seedDb.close();
+    const r = await fetch(`${app.base}/admin/stats`, { headers: { accept: 'text/html', 'x-admin-password': PASSWORD } });
+    assert.equal(r.status, 200);
+    const html = await r.text();
+    assert.ok(html.includes('FULL REPORTS PURCHASED'), 'total KPI label present');
+    assert.ok(html.includes('REPORTS TODAY'), 'today KPI label present');
+    assert.match(
+      html,
+      /FULL REPORTS PURCHASED<\/span>\s*<span class="kpi-value" style="color:#f87171">3<\/span>/,
+      'total card renders the ledger count in red'
+    );
+    assert.match(
+      html,
+      /REPORTS TODAY<\/span>\s*<span class="kpi-value" style="color:#f87171">2<\/span>/,
+      'today card renders today count in red'
+    );
+    assert.ok(html.includes('sw-reports'), 'legend gains the reports swatch');
+    assert.ok(html.includes('</span>Reports'), 'legend labels Scans / Views / Reports');
+    // Day-cell tooltip now includes the reports count; per-bar tooltips render.
+    assert.ok(html.includes('2026-09-23 — scans 1, views 1, reports 2'), 'day cell shows all three counts');
+    assert.ok(html.includes('2026-09-23 · 2 reports'), 'today report bar tooltip rendered');
+    assert.ok(html.includes('2026-09-18 · 1 reports'), 'older report bar tooltip rendered');
+    // Every day gets a reports bar (hairline when zero), like the other series.
+    assert.equal((html.match(/class="bar bar-reports"/g) || []).length, 30, 'one reports bar per day');
+  } finally {
+    app.server.close();
+  }
+});
 test('admin: HTML requests still hit the JSON 403 gate (missing/wrong pw never produce HTML)', async () => {
   const app = startApp({ dbPath: tmpDb(), now: () => TICK });
   try {
@@ -317,7 +408,7 @@ test('admin: HTML page shows the empty state when no views recorded yet', async 
     // the same app still serves exact JSON to non-HTML consumers
     const j = await fetch(`${app.base}/admin/stats`, { headers: { 'x-admin-password': PASSWORD } });
     assert.equal(j.status, 200);
-    assert.deepEqual(Object.keys(await j.json()).sort(), ['scans', 'views']);
+    assert.deepEqual(Object.keys(await j.json()).sort(), ['purchases', 'scans', 'views']);
   } finally {
     app.server.close();
   }
@@ -330,7 +421,7 @@ test('admin: JSON consumers are untouched (Accept: application/json and */* both
     const explicitJson = await fetch(`${app.base}/admin/stats`, { headers: { accept: 'application/json', 'x-admin-password': PASSWORD } });
     assert.equal(explicitJson.status, 200);
     assert.ok((explicitJson.headers.get('content-type') || '').includes('application/json'));
-    assert.deepEqual(Object.keys(await explicitJson.json()).sort(), ['scans', 'views'], 'JSON shape unchanged');
+    assert.deepEqual(Object.keys(await explicitJson.json()).sort(), ['purchases', 'scans', 'views'], 'JSON shape unchanged');
     const wildcard = await fetch(`${app.base}/admin/stats?pw=${encodeURIComponent(PASSWORD)}`, { headers: { accept: '*/*' } });
     assert.equal(wildcard.status, 200);
     const wildcardText = await wildcard.text();
