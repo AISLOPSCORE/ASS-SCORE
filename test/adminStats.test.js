@@ -238,6 +238,131 @@ test('admin: stats JSON has views (total/today/last30d x30/recent) and scans sum
 });
 
 // ---------------------------------------------------------------------------
+// Admin HTML dashboard (content negotiation — Accept: text/html)
+// ---------------------------------------------------------------------------
+test('admin: Accept: text/html renders the styled dashboard (content-type, markers, real data)', async () => {
+  const dbp = tmpDb();
+  const app = startApp({ dbPath: dbp, now: () => TICK });
+  try {
+    await track(app.base, { path: '/pricing?utm=x' }, { 'user-agent': UA });
+    await track(app.base, { path: '/blog' }, { 'user-agent': UA, 'x-forwarded-for': '203.0.113.7' });
+    const seedDb = openDb(dbp);
+    seedDb.insertScan({ id: 'scan-1', url: 'https://acme.example/', score: 42, breakdown: {}, createdAt: TICK });
+    seedDb.close();
+    const r = await fetch(`${app.base}/admin/stats`, { headers: { accept: 'text/html', 'x-admin-password': PASSWORD } });
+    assert.equal(r.status, 200);
+    assert.ok(r.headers.get('content-type').includes('text/html'), 'content-type is text/html');
+    assert.equal(r.headers.get('cache-control'), 'no-store', 'admin page is never cached');
+    const html = await r.text();
+    for (const marker of [
+      'A.S.S. SCORE',
+      '— ADMIN',
+      'internal',
+      'SCANS TOTAL',
+      'SCANS TODAY',
+      'VIEWS TOTAL',
+      'VIEWS TODAY',
+      'Last 30 days',
+      'Recent views',
+      'Internal tool — ass-score.com',
+      'Generated',
+      'noindex',
+    ]) {
+      assert.ok(html.includes(marker), `html includes marker: ${marker}`);
+    }
+    // Real data rendered: today's chart cell (1 scan + 1 view), bar tooltips,
+    // and the recent-views table rows.
+    assert.ok(html.includes('2026-09-23 — scans 1, views 2'), 'day cell shows the real counts');
+    assert.ok(html.includes('2026-09-23 · 1 scans'), 'scan bar tooltip rendered');
+    assert.ok(html.includes('2026-09-23 · 2 views'), 'view bar tooltip rendered');
+    assert.ok(html.includes('/pricing?utm=x'), 'recent path rendered');
+    assert.ok(html.includes('203.0.113.7'), 'second view IP rendered');
+    assert.match(html, /\d{4}-\d{2}-\d{2} \d{2}:\d{2}/, 'epoch ms rendered as readable local time');
+    // every 5th date tick is sparse, not one per day (30 days, 6 ticks)
+    assert.equal((html.match(/class="tick"/g) || []).length, 6, '30 days -> 6 sparse ticks (every 5th)');
+    // 30 bars per series + 1px hairlines: exactly 30 scan bars and 30 view bars
+    assert.equal((html.match(/class="bar bar-scans"/g) || []).length, 30, 'one bar per day per series');
+    assert.equal((html.match(/class="bar bar-views"/g) || []).length, 30);
+  } finally {
+    app.server.close();
+  }
+});
+test('admin: HTML requests still hit the JSON 403 gate (missing/wrong pw never produce HTML)', async () => {
+  const app = startApp({ dbPath: tmpDb(), now: () => TICK });
+  try {
+    const noPw = await fetch(`${app.base}/admin/stats`, { headers: { accept: 'text/html' } });
+    assert.equal(noPw.status, 403);
+    assert.deepEqual(await noPw.json(), { error: { code: 'forbidden' } });
+    assert.ok(!(noPw.headers.get('content-type') || '').includes('text/html'), '403 is JSON even for HTML accept');
+    const wrongPw = await fetch(`${app.base}/admin/stats`, { headers: { accept: 'text/html', 'x-admin-password': 'wrong' } });
+    assert.equal(wrongPw.status, 403);
+    assert.deepEqual(await wrongPw.json(), { error: { code: 'forbidden' } });
+    // header AND query auth still both work for the HTML variant
+    const goodQuery = await fetch(`${app.base}/admin/stats?pw=${encodeURIComponent(PASSWORD)}`, { headers: { accept: 'text/html' } });
+    assert.equal(goodQuery.status, 200);
+    assert.ok((await goodQuery.text()).includes('A.S.S. SCORE'));
+  } finally {
+    app.server.close();
+  }
+});
+test('admin: HTML page shows the empty state when no views recorded yet', async () => {
+  const app = startApp({ dbPath: tmpDb(), now: () => TICK });
+  try {
+    const r = await fetch(`${app.base}/admin/stats`, { headers: { accept: 'text/html', 'x-admin-password': PASSWORD } });
+    assert.equal(r.status, 200);
+    const html = await r.text();
+    assert.match(html, /no views recorded yet/i, 'empty-state message present');
+    assert.ok(!html.includes('<table>'), 'no table markup when there are no views');
+    assert.ok(!html.includes('class="chart"'), 'no chart markup when there are no views');
+    // the same app still serves exact JSON to non-HTML consumers
+    const j = await fetch(`${app.base}/admin/stats`, { headers: { 'x-admin-password': PASSWORD } });
+    assert.equal(j.status, 200);
+    assert.deepEqual(Object.keys(await j.json()).sort(), ['scans', 'views']);
+  } finally {
+    app.server.close();
+  }
+});
+test('admin: JSON consumers are untouched (Accept: application/json and */* both get JSON)', async () => {
+  const dbp = tmpDb();
+  const app = startApp({ dbPath: dbp, now: () => TICK });
+  try {
+    await track(app.base, { path: '/' }, { 'user-agent': UA });
+    const explicitJson = await fetch(`${app.base}/admin/stats`, { headers: { accept: 'application/json', 'x-admin-password': PASSWORD } });
+    assert.equal(explicitJson.status, 200);
+    assert.ok((explicitJson.headers.get('content-type') || '').includes('application/json'));
+    assert.deepEqual(Object.keys(await explicitJson.json()).sort(), ['scans', 'views'], 'JSON shape unchanged');
+    const wildcard = await fetch(`${app.base}/admin/stats?pw=${encodeURIComponent(PASSWORD)}`, { headers: { accept: '*/*' } });
+    assert.equal(wildcard.status, 200);
+    const wildcardText = await wildcard.text();
+    const json = JSON.parse(wildcardText);
+    assert.equal(json.views.total, 1, '*/* (curl/fetch default) must NOT get HTML');
+    assert.ok(!wildcardText.includes('<!doctype html'), '*/* consumer gets JSON, not the dashboard');
+  } finally {
+    app.server.close();
+  }
+});
+test('admin: HTML escapes every dynamic value (path/UA/IP) — never raw interpolation', async () => {
+  const dbp = tmpDb();
+  const app = startApp({ dbPath: dbp, now: () => TICK });
+  try {
+    const evilPath = '/"><script>alert(1)</script>';
+    const evilUa = 'Evil"><img src=x onerror=alert(2)>'.padEnd(120, 'x');
+    await track(app.base, { path: evilPath }, { 'user-agent': evilUa, 'x-forwarded-for': '203.0.113.66' });
+    const r = await fetch(`${app.base}/admin/stats`, { headers: { accept: 'text/html', 'x-admin-password': PASSWORD } });
+    const html = await r.text();
+    assert.ok(!html.includes('<script>'), 'raw <script> tag never present');
+    assert.ok(!html.includes('<img src=x'), 'raw <img> tag from UA never present');
+    assert.ok(html.includes('&lt;script&gt;'), 'path <script> is escaped');
+    assert.ok(html.includes('&quot;&gt;&lt;img'), 'UA quotes/angle brackets are escaped');
+    assert.ok(html.includes('title="Evil&quot;&gt;&lt;img'), 'full UA kept unescaped-free in title attr');
+    assert.ok(html.includes('…'), 'long UA is truncated to ~48 chars with an ellipsis');
+    assert.ok(html.includes('203.0.113.66'), 'IP still rendered (plain value)');
+  } finally {
+    app.server.close();
+  }
+});
+
+// ---------------------------------------------------------------------------
 // Retention
 // ---------------------------------------------------------------------------
 test('retention: page_views older than 30 days are purged, fresh kept (runRetention)', () => {
