@@ -114,6 +114,49 @@ export function openDb(dbPath) {
     CREATE INDEX IF NOT EXISTS idx_page_views_ts ON page_views (ts);
   `);
 
+  // Paid-report orders — the 'collect email before checkout' fulfillment flow
+  // (built 2026-09-25). One row per POST /api/v1/order-intent: the site hands
+  // the buyer's email + scan id BEFORE redirecting to the Stripe payment link,
+  // Stripe echoes the order id back as checkout session client_reference_id,
+  // and the webhook correlates the completed session back to this row.
+  //   id                  – orderId (uuid, generated at order-intent time)
+  //   scan_id             – the scan the buyer is purchasing the report for
+  //   email               – normalized (lowercased/trimmed) report recipient
+  //   status              – 'pending' | 'fulfilled'
+  //   checkout_session_id – Stripe session id that completed this order
+  //   paid_at             – ISO timestamp of the checkout.session.completed
+  //                         event that fulfilled the order
+  //   created_at          – ISO timestamp of the order-intent request
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS orders (
+      id                  TEXT PRIMARY KEY,
+      scan_id             TEXT NOT NULL,
+      email               TEXT NOT NULL,
+      status              TEXT NOT NULL DEFAULT 'pending',
+      checkout_session_id TEXT,
+      paid_at             TEXT,
+      created_at          TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_orders_email_status ON orders (email, status);
+    CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders (created_at);
+  `);
+
+  // Bare-link purchases — checkout.session.completed events that matched NO
+  // pending order (someone bought via the static payment link, like the owner
+  // did 2026-09-24, so there is no scan id to tie them to). Support fulfills
+  // these manually via POST /admin/deliver once the customer names their site.
+  //   session_id  – Stripe checkout session id (PRIMARY KEY: a Stripe retry
+  //                 replays the same event, and INSERT OR IGNORE keeps one row)
+  //   email       – customer email from the session (nullable)
+  //   received_at – ISO timestamp of the first event received
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS unmatched_orders (
+      session_id  TEXT PRIMARY KEY,
+      email       TEXT,
+      received_at TEXT NOT NULL
+    );
+  `);
+
   const insertScanEventStmt = db.prepare(
     'INSERT OR IGNORE INTO scan_events (event_key, ip, day, scan_id, status, created_at) VALUES (?, ?, ?, ?, ?, ?)'
   );
@@ -147,6 +190,20 @@ export function openDb(dbPath) {
   );
   const webhookDayCountsStmt = db.prepare(
     'SELECT substr(created_at, 1, 10) AS day, COUNT(*) AS n FROM webhook_events WHERE created_at >= ? GROUP BY day'
+  );
+  // Order-fulfillment statements (orders + unmatched_orders ledgers).
+  const insertOrderStmt = db.prepare(
+    'INSERT OR IGNORE INTO orders (id, scan_id, email, status, checkout_session_id, paid_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+  );
+  const getOrderStmt = db.prepare('SELECT * FROM orders WHERE id = ?');
+  const findPendingOrderByEmailStmt = db.prepare(
+    "SELECT * FROM orders WHERE email = ? AND status = 'pending' AND created_at >= ? ORDER BY created_at DESC LIMIT 1"
+  );
+  const fulfillOrderStmt = db.prepare(
+    "UPDATE orders SET status = 'fulfilled', checkout_session_id = ?, paid_at = ? WHERE id = ? AND status = 'pending'"
+  );
+  const insertUnmatchedOrderStmt = db.prepare(
+    'INSERT OR IGNORE INTO unmatched_orders (session_id, email, received_at) VALUES (?, ?, ?)'
   );
 
   return {
@@ -235,6 +292,47 @@ export function openDb(dbPath) {
     /** Per-UTC-day webhook-event counts with created_at >= sinceIso: [{ date, count }]. */
     webhookDayCounts(sinceIso) {
       return webhookDayCountsStmt.all(sinceIso).map((r) => ({ date: r.day, count: r.n }));
+    },
+
+    // --- Paid-order ledger (collect-email-before-checkout fulfillment) -------
+    /**
+     * Record an order-intent (a pending $12 report order waiting for its
+     * Stripe checkout to complete). @returns {boolean} true when inserted.
+     */
+    insertOrder({ id, scanId, email, createdAt, status = 'pending' }) {
+      const info = insertOrderStmt.run(id, scanId, email, status, null, null, createdAt);
+      return info.changes > 0;
+    },
+    /** @returns {null | { id, scan_id, email, status, checkout_session_id, paid_at, created_at }} */
+    getOrder(id) {
+      return getOrderStmt.get(id) ?? null;
+    },
+    /**
+     * Newest PENDING order for an email created at/after `sinceIso` (the 24h
+     * webhook-correlation fallback when a session carries no client_reference_id).
+     * @returns {null | { id, scan_id, email, status, checkout_session_id, paid_at, created_at }}
+     */
+    findPendingOrderByEmail(email, sinceIso) {
+      return findPendingOrderByEmailStmt.get(email, sinceIso) ?? null;
+    },
+    /**
+     * Fulfill a pending order. Race-safe: the UPDATE is scoped to
+     * `status = 'pending'`, so only the FIRST matching webhook event flips
+     * it — Stripe retries / duplicate deliveries see changes === 0 and are
+     * treated as already-fulfilled (idempotent, exactly like webhook_events).
+     * @returns {boolean} true when this call flipped the row to 'fulfilled'.
+     */
+    markOrderFulfilled(id, { checkoutSessionId = null, paidAt = null } = {}) {
+      return fulfillOrderStmt.run(checkoutSessionId, paidAt, id).changes > 0;
+    },
+    /**
+     * Record a checkout.session.completed that matched NO pending order
+     * (bare payment-link purchase). INSERT OR IGNORE keyed on session id:
+     * Stripe retries replay the same id and never create a second row.
+     * @returns {boolean} true when a new row was inserted.
+     */
+    insertUnmatchedOrder({ sessionId, email = null, receivedAt }) {
+      return insertUnmatchedOrderStmt.run(sessionId, email, receivedAt).changes > 0;
     },
 
     // --- Scan rate-limit ledger (independent of the webhook ledger) ----------

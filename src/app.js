@@ -5,6 +5,7 @@ import { validateUrl, resolveAndCheck } from './fetch/ssrf.js';
 import { scanRouter } from './routes/scan.js';
 import { scansRouter } from './routes/scans.js';
 import { webhookRouter } from './routes/webhook.js';
+import { orderIntentRouter } from './routes/orderIntent.js';
 import { trackRouter } from './routes/track.js';
 import { adminRouter } from './routes/admin.js';
 import { createEmailSender } from './email.js';
@@ -76,7 +77,7 @@ const defaultCheckTarget = async (raw) => {
  * src/clientIp.js; without trust proxy, Express ignores X-Forwarded-For and
  * every request would look like the LB's IP, collapsing the per-IP caps.
  */
-export function createApp({ dbPath = './data/ass-score.db', fetcher, webhookDeliverer, emailSender, scanBudgetMs, publicBaseUrl = process.env.PUBLIC_BASE_URL || 'https://ass-score.com', now, maxWebhooksPerDay, maxScansPerDay, validateTarget, allowedOrigins, reportTokenSecret, reportBaseUrl, adminPassword, runRetentionOnBoot = false } = {}) {
+export function createApp({ dbPath = './data/ass-score.db', fetcher, webhookDeliverer, emailSender, scanBudgetMs, publicBaseUrl = process.env.PUBLIC_BASE_URL || 'https://ass-score.com', now, maxWebhooksPerDay, maxScansPerDay, validateTarget, allowedOrigins, reportTokenSecret, reportBaseUrl, adminPassword, stripeWebhookSecret, stripePaymentLink, runRetentionOnBoot = false } = {}) {
   const db = openDb(dbPath);
   const fetcherImpl = fetcher ?? new Fetcher();
   // PAYWALL secret: env REPORT_TOKEN_SECRET, or random per-boot (fail closed —
@@ -95,7 +96,11 @@ export function createApp({ dbPath = './data/ass-score.db', fetcher, webhookDeli
   app.disable('x-powered-by');
   app.set('trust proxy', 1); // platform edge in front; req.ip = real client (XFF / socket)
   app.use(createCors({ allowedOrigins })); // browser origins only; no-op for non-browser clients
-  app.use(express.json({ limit: '64kb' }));
+  // The verify callback stashes the RAW body buffer on req.rawBody — Stripe
+  // signature verification needs the byte-exact payload, which the parsed
+  // req.body cannot reproduce (whitespace/encoding). Harmless for every other
+  // route (one extra property on the request object).
+  app.use(express.json({ limit: '64kb', verify: (req, _res, buf) => { req.rawBody = buf; } }));
 
   // Spec-parity health endpoints: `GET /health` (Railway healthcheckPath) plus
   // the `/api/health` alias — identical 200 JSON contract.
@@ -120,13 +125,22 @@ export function createApp({ dbPath = './data/ass-score.db', fetcher, webhookDeli
     now: nowImpl,
     maxWebhooksPerDay: webhookCap,
     validateTarget: checkTarget,
+    stripeWebhookSecret,
+  }));
+  // Paid-order intent — 'collect email before checkout': the site registers
+  // { scanId, email } BEFORE redirecting to the Stripe payment link, so the
+  // completed-checkout webhook can correlate the session back to a scan.
+  app.use(orderIntentRouter({
+    db,
+    now: nowImpl,
+    stripePaymentLink: stripePaymentLink ?? process.env.STRIPE_PAYMENT_LINK,
   }));
   app.use(scansRouter({ db, publicBaseUrl, reportTokenSecret: secret, reportBaseUrl: reportLinkBase }));
   // Homepage view tracking + private admin stats (backlog db64a1c9 — owner
   // lifted the hold 2026-09-23). track is a silent beacon; admin is gated on
   // ADMIN_PASSWORD (disabled/403 until the owner sets it on Railway).
   app.use(trackRouter({ db, now: nowImpl }));
-  app.use(adminRouter({ db, adminPassword, now: nowImpl }));
+  app.use(adminRouter({ db, adminPassword, emailSender: emailSenderImpl, now: nowImpl }));
 
   app.use((_req, res) => {
     res.status(404).json({ error: { code: 'not_found', message: 'Route not found' } });
