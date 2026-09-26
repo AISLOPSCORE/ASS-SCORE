@@ -6,6 +6,7 @@ import { scanRouter } from './routes/scan.js';
 import { scansRouter } from './routes/scans.js';
 import { webhookRouter } from './routes/webhook.js';
 import { orderIntentRouter } from './routes/orderIntent.js';
+import { ordersRouter } from './routes/orders.js';
 import { trackRouter } from './routes/track.js';
 import { adminRouter } from './routes/admin.js';
 import { createEmailSender } from './email.js';
@@ -77,7 +78,7 @@ const defaultCheckTarget = async (raw) => {
  * src/clientIp.js; without trust proxy, Express ignores X-Forwarded-For and
  * every request would look like the LB's IP, collapsing the per-IP caps.
  */
-export function createApp({ dbPath = './data/ass-score.db', fetcher, webhookDeliverer, emailSender, scanBudgetMs, publicBaseUrl = process.env.PUBLIC_BASE_URL || 'https://ass-score.com', now, maxWebhooksPerDay, maxScansPerDay, validateTarget, allowedOrigins, reportTokenSecret, reportBaseUrl, adminPassword, stripeWebhookSecret, stripePaymentLink, runRetentionOnBoot = false } = {}) {
+export function createApp({ dbPath = './data/ass-score.db', fetcher, webhookDeliverer, emailSender, scanBudgetMs, publicBaseUrl = process.env.PUBLIC_BASE_URL || 'https://www.ass-score.com', now, maxWebhooksPerDay, maxScansPerDay, validateTarget, allowedOrigins, reportTokenSecret, reportBaseUrl, adminPassword, stripeWebhookSecret, stripe, stripeSecretKey, stripePriceId, runRetentionOnBoot = false } = {}) {
   const db = openDb(dbPath);
   const fetcherImpl = fetcher ?? new Fetcher();
   // PAYWALL secret: env REPORT_TOKEN_SECRET, or random per-boot (fail closed —
@@ -127,13 +128,28 @@ export function createApp({ dbPath = './data/ass-score.db', fetcher, webhookDeli
     validateTarget: checkTarget,
     stripeWebhookSecret,
   }));
-  // Paid-order intent — 'collect email before checkout': the site registers
-  // { scanId, email } BEFORE redirecting to the Stripe payment link, so the
-  // completed-checkout webhook can correlate the session back to a scan.
+  // Paid-order checkout — full-Stripe flow (owner-approved 2026-09-25):
+  // order-intent creates a per-order Checkout Session, /orders/:orderId is
+  // the success page's polling read, /orders/:orderId/verify verifies the
+  // session DIRECTLY against Stripe (payment_status) for same-session unlock.
+  // The webhook route above stays the primary fulfillment mechanism — all
+  // three paths share the race-safe markOrderFulfilled + email delivery.
   app.use(orderIntentRouter({
     db,
     now: nowImpl,
-    stripePaymentLink: stripePaymentLink ?? process.env.STRIPE_PAYMENT_LINK,
+    stripe,
+    stripeSecretKey,
+    stripePriceId,
+    publicBaseUrl,
+  }));
+  app.use(ordersRouter({
+    db,
+    now: nowImpl,
+    stripe,
+    stripeSecretKey,
+    reportTokenSecret: secret,
+    reportBaseUrl: reportLinkBase,
+    emailSender: emailSenderImpl,
   }));
   app.use(scansRouter({ db, publicBaseUrl, reportTokenSecret: secret, reportBaseUrl: reportLinkBase }));
   // Homepage view tracking + private admin stats (backlog db64a1c9 — owner

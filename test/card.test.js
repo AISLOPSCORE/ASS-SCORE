@@ -227,7 +227,7 @@ test('POST scan -> GET /share: pre-filled text + public result URL (public score
   const res = await fetch(`${api.base}/api/v1/scans/${created.id}/share`);
   assert.equal(res.status, 200);
   const json = await res.json();
-  assert.equal(json.url, `https://ass-score.com/scan/${created.id}`);
+  assert.equal(json.url, `https://www.ass-score.com/scan/${created.id}`);
   // Share text is the bare-homepage sentence with the PUBLIC score — no deep link.
   assert.equal(
     json.text,

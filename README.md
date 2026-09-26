@@ -247,37 +247,39 @@ returns `200 already_processed` (with the original `scanId` once completed)
 and **never creates a second scan**. Events without an id are processed
 normally (rate limit still applies) but cannot be deduplicated.
 
-### `POST /api/v1/order-intent` — collect email before checkout
-
-The static Stripe payment link (ass-score.com catalog product, $12) collects
-**no email** and its checkout sessions carry **no metadata**, so a
-`checkout.session.completed` event from it cannot be normalized into a scan
-order. The fix (built 2026-09-25): the site asks for the buyer's email and
-records an order BEFORE redirecting to Stripe.
-
+### `POST /api/v1/order-intent` — per-order Stripe Checkout (full-Stripe flow)
+The backend creates a **per-order Checkout Session** directly against Stripe's
+REST API (owner-approved 2026-09-25; replaces the static payment link). The
+site asks for the buyer's email, then:
 ```bash
 curl -s -X POST http://localhost:4000/api/v1/order-intent \
   -H 'content-type: application/json' \
   -d '{ "scanId": "<scan-id>", "email": "buyer@example.com" }'
-# -> 200 { "orderId": "<uuid>", "redirectUrl": "https://buy.stripe.com/...?prefilled_email=buyer%40example.com&client_reference_id=<orderId>" }
+# -> 200 { "orderId": "<uuid>", "checkoutUrl": "https://checkout.stripe.com/c/pay/..." }
 ```
-
 - **`scanId`** (alias `scan_id`) must reference an existing scan row — `404
   not_found` otherwise. **`email`** is required and validated with the same
   rule the scan/webhook routes use — `400 invalid_email` otherwise.
-- Response `redirectUrl` is the Stripe payment link, pre-filled with the
-  (lowercased) email via `?prefilled_email=` and tagged with the order id via
-  `?client_reference_id=`. Base link = env `STRIPE_PAYMENT_LINK`, falling back
-  to the current static buy link (`https://buy.stripe.com/cNi00j7zs1P49ju5B9abK00`).
-- Each call inserts one **`orders`** row (`id` uuid, `scan_id`, `email`,
-  `status 'pending'`, `created_at`) — the pending-order ledger the webhook
-  correlates against.
+- The Stripe call runs FIRST (mode `payment`, `line_items` = the $12 price
+  from env `STRIPE_PRICE_ID`), carrying `client_reference_id: <orderId>`,
+  `customer_email` (lowercased), `metadata { scan_id, order_id }`,
+  `success_url: {PUBLIC_BASE_URL}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
+  `cancel_url: {PUBLIC_BASE_URL}/scan/<scanId>` — Stripe substitutes
+  `{CHECKOUT_SESSION_ID}` with the real session id on redirect.
+- Only then is the **`orders`** row inserted (`id` uuid, `scan_id`, `email`,
+  `status 'pending'`, `checkout_session_id`, `created_at`). If the Stripe call
+  fails there is nothing to clean up (no row); if the insert fails the orphan
+  session expires on its own. Failures: `503 config_missing` when
+  `STRIPE_SECRET_KEY`/`STRIPE_PRICE_ID` is unset (message names the var);
+  `502 stripe_unauthorized / stripe_unavailable / stripe_error` otherwise.
+- The buyer is redirected to `checkoutUrl` (session.url). The success page
+  passes `?session_id=` back; the backend NEVER trusts the redirect — it
+  verifies `payment_status` directly against Stripe (see below).
 
-**Payment-link webhook flow.** A `checkout.session.completed` event whose
-session carries NO `metadata.target_url` (i.e. `normalizeStripe()` cannot
-extract a scan target) is handled by order correlation instead of the legacy
-scan+email path:
-
+**Webhook fulfillment — still the PRIMARY path.** A
+`checkout.session.completed` event whose session carries NO
+`metadata.target_url` (backend-created and payment-link sessions both) is
+handled by order correlation instead of the legacy scan+email path:
 1. **Correlation** — FIRST `client_reference_id` → the `orders` row with that
    id must be `pending`; an already-fulfilled ref match returns
    `200 { status: 'already_fulfilled' }` (a Stripe retry — it never falls
@@ -296,6 +298,34 @@ scan+email path:
    retries a failure into the ledger. Support fulfills these manually via
    `POST /admin/deliver` once the customer names their site.
 
+**Same-session unlock (`POST /api/v1/orders/:orderId/verify`).** The success
+page polls this with `{ "sessionId": "<?session_id=>" }`:
+- `200 { status: 'pending' }` — session exists but `payment_status !== 'paid'`
+  (never an error; keep polling). Missing `sessionId` (and no stored session
+  on the order) → `400 invalid_session_id`; session whose
+  `client_reference_id` does not match the order → `400 invalid_session`.
+- `200 { status: 'fulfilled', scanId, reportUrl }` — the session's
+  `payment_status` is `paid`. The route fulfills race-safely
+  (`markOrderFulfilled` — whoever flips first wins, webhook/verify/sweep are
+  mutually idempotent), emails the token'd report link via the same
+  `emailSender`, and returns the reportUrl for immediate same-session open.
+  A refresh re-verifies with the same shape and NO second email.
+- `404 not_found` unknown order; `503 config_missing` (no key);
+  `502 stripe_unauthorized / stripe_unavailable / stripe_error`.
+
+**Polling read (`GET /api/v1/orders/:orderId`).** Database only — no Stripe
+call. `200 { status: 'pending'|'fulfilled', scanId, reportUrl? }`
+(reportUrl only when fulfilled); `404 not_found` otherwise. `orderId` is a
+random 122-bit uuid, so orders are unguessable and the endpoint emits nothing
+for unpaid orders.
+
+**Webhook endpoint registration.** Run manually at deploy, never at boot:
+`node src/registerWebhook.js` (needs `STRIPE_SECRET_KEY`; optional
+`--base-url=`). It reuses an existing endpoint for
+`{REPORT_BASE_URL || PUBLIC_BASE_URL || railway}/api/v1/webhook` or creates
+one for `checkout.session.completed`, and PRINTS the signing secret — store it
+as `STRIPE_WEBHOOK_SECRET`.
+
 **Signature verification.** When env `STRIPE_WEBHOOK_SECRET` is set, every
 Stripe event must carry a valid `Stripe-Signature` header (HMAC-SHA256 over
 `<t>.<raw-body>`, 5-minute timestamp tolerance) — failure is `401
@@ -304,7 +334,6 @@ the secret is set, a one-line warning is logged at boot and events are still
 processed (local tests / staged deploy). Fiverr/LemonSqueezy payloads are
 unaffected. The raw body is captured by the JSON body-parser's `verify`
 callback (`req.rawBody`), so signature checks run against byte-exact payloads.
-
 ### `POST /admin/deliver` — manual report fulfillment
 
 Same admin-password gate as `GET /admin/stats` (`x-admin-password` header or
@@ -320,6 +349,27 @@ path as webhook fulfillment — the tool for fulfilling `unmatched_orders`
 | Bad / missing email or scanId | `400` | `error.code "invalid_email" / "invalid_scan_id"` |
 | Wrong / missing admin password | `403` | `error.code "forbidden"` |
 
+### CORS — browser origins for the public API
+The API allowlists browser origins (no `*`): `https://www.ass-score.com`,
+`https://ass-score.com` and the production platform origin are allowed by
+default. To make the `/checkout/success` page work in PREVIEWS (the working
+site at `https://df5831baeeff55d6a65893943c619d81-dev.ctonew.app`), set
+`CORS_ORIGINS` to the FULL list (it REPLACES the defaults, comma-separated,
+no trailing spaces):
+```
+CORS_ORIGINS=https://www.ass-score.com,https://ass-score.com,https://df5831baeeff55d6a65893943c619d81.ctonew.app,https://df5831baeeff55d6a65893943c619d81-dev.ctonew.app
+```
+Non-browser clients (curl, servers, the Stripe webhook) are unaffected:
+requests without an `Origin` header pass straight through.
+
+### Checkout env vars (full-Stripe flow)
+| Env | Meaning | Default |
+| --- | --- | --- |
+| `STRIPE_SECRET_KEY` | Stripe **secret** key (live or test) — powers order-intent session creation + verify reads. Set by the owner's account switch. | **unset → order-intent/verify answer `503 config_missing`** |
+| `STRIPE_TEST_SECRET_KEY` | test-mode key (used by the registerWebhook CLI fallback only; pass it as `apiKey`/env to run the whole flow against Stripe test mode) | — |
+| `STRIPE_PRICE_ID` | the $12 price object id used as the Checkout line item | **unset → `503 config_missing`** |
+| `STRIPE_WEBHOOK_SECRET` | signing secret printed by `src/registerWebhook.js` — enables Stripe-Signature verification on `/api/v1/webhook` | unset → signature gate off (warning at boot) |
+| `PUBLIC_BASE_URL` | origin used for `success_url`/`cancel_url` and report links | `https://www.ass-score.com` |
 ### Rate limiting
 
 Both endpoints carry per-IP per-UTC-day caps backed by
@@ -435,7 +485,7 @@ inbox can A/B test against real delivery.
 | `SMTP_PASS` | auth password | — |
 | `SMTP_FROM` | SMTP sender address / Resend from-fallback | `A.S.S. Score <no-reply@ass-score.com>` |
 | `EMAIL_SUBJECT` | subject line variant | `Your website audit is ready` |
-| `PUBLIC_BASE_URL` | report-link base | `https://ass-score.com` |
+| `PUBLIC_BASE_URL` | report-link + checkout-redirect base | `https://www.ass-score.com` |
 
 **No credentials → nothing breaks.** When neither `RESEND_API_KEY` nor
 `SMTP_HOST` is present, the default sender is a no-op that logs `[email] email
