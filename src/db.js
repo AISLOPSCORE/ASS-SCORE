@@ -297,10 +297,13 @@ export function openDb(dbPath) {
     // --- Paid-order ledger (collect-email-before-checkout fulfillment) -------
     /**
      * Record an order-intent (a pending $12 report order waiting for its
-     * Stripe checkout to complete). @returns {boolean} true when inserted.
+     * Stripe checkout to complete). `checkoutSessionId` is the per-order
+     * Checkout Session created BEFORE the insert (full-Stripe flow) — kept
+     * null for rows written by the legacy payment-link flow. @returns
+     * {boolean} true when inserted.
      */
-    insertOrder({ id, scanId, email, createdAt, status = 'pending' }) {
-      const info = insertOrderStmt.run(id, scanId, email, status, null, null, createdAt);
+    insertOrder({ id, scanId, email, createdAt, status = 'pending', checkoutSessionId = null }) {
+      const info = insertOrderStmt.run(id, scanId, email, status, checkoutSessionId, null, createdAt);
       return info.changes > 0;
     },
     /** @returns {null | { id, scan_id, email, status, checkout_session_id, paid_at, created_at }} */

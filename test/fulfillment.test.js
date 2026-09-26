@@ -9,14 +9,18 @@ import { createApp } from '../src/app.js';
 import { validateUrl } from '../src/fetch/ssrf.js';
 import { verifyStripeSignature } from '../src/stripeSignature.js';
 import { extractStripeSession } from '../src/orderNormalizer.js';
+import { createStripeClient } from '../src/stripeClient.js';
 
 /**
- * Paid-report fulfillment — 'collect email before checkout' (built 2026-09-25).
+ * Paid-report fulfillment — order checkout + webhook delivery.
  *
- * Covers: POST /api/v1/order-intent (order row + redirectUrl), the
- * payment-link webhook path (client_reference_id + email correlation,
- * unmatched_orders, idempotent retries), Stripe signature verification
- * (unit + E2E), and POST /admin/deliver (manual fulfillment).
+ * Order-intent now runs the full-Stripe flow (owner-approved 2026-09-25): a
+ * per-order Checkout Session is created BEFORE the order row, and the buyer
+ * is redirected to session.url. Its contract tests live in
+ * test/stripeVerify.test.js; this file covers the webhook path
+ * (client_reference_id + email correlation, unmatched_orders, idempotent
+ * retries), Stripe signature verification (unit + E2E), and POST /admin/deliver
+ * (manual fulfillment).
  */
 
 const tmpDb = () => path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'assfulfill-')), 'test.db');
@@ -31,6 +35,57 @@ const fakeFetcher = (html = SLOP_HTML) => ({
 });
 
 const offlineValidateTarget = async (raw) => validateUrl(raw);
+/**
+ * Fake Stripe client (no network). createCheckoutSession returns a session
+ * keyed `cs_test_<n>` (recorded in `sessions`, settable via overrides),
+ * getCheckoutSession reads that map. `createImpl`/`getImpl` replace the
+ * default behavior when a test needs a failure (throw a StripeAuthError
+ * etc.). Webhook-endpoint methods just record calls.
+ */
+export function fakeStripe({ sessions = new Map(), createImpl, getImpl } = {}) {
+  const calls = { createCheckoutSession: [], getCheckoutSession: [], createWebhookEndpoint: [], listWebhookEndpoints: [] };
+  const client = {
+    calls,
+    sessions,
+    async createCheckoutSession(params) {
+      calls.createCheckoutSession.push(params);
+      if (createImpl) return createImpl(params);
+      const id = `cs_test_${calls.createCheckoutSession.length}`;
+      const session = {
+        id,
+        url: `https://checkout.stripe.com/c/pay/${id}`,
+        client_reference_id: params.client_reference_id,
+        customer_email: params.customer_email,
+        payment_status: 'unpaid',
+        metadata: params.metadata,
+        ...(sessions.get(id) ?? {}),
+      };
+      sessions.set(id, session);
+      return session;
+    },
+    async getCheckoutSession(id) {
+      calls.getCheckoutSession.push(id);
+      if (getImpl) return getImpl(id);
+      const session = sessions.get(id);
+      if (!session) {
+        const err = new Error(`No such checkout session: ${id}`);
+        err.code = 'stripe_error';
+        err.status = 404;
+        throw err;
+      }
+      return session;
+    },
+    async createWebhookEndpoint(params) {
+      calls.createWebhookEndpoint.push(params);
+      return { id: 'we_test_1', url: params.url, secret: 'whsec_registered' };
+    },
+    async listWebhookEndpoints(limit) {
+      calls.listWebhookEndpoints.push(limit);
+      return { data: [] };
+    },
+  };
+  return client;
+}
 
 function stubSender({ behavior = 'record' } = {}) {
   const calls = [];
@@ -47,7 +102,16 @@ function startApp(opts = {}) {
   // Caps disabled: the suite shares one 127.0.0.1 IP across many scans, so a
   // default 3/day scan cap would 429 legitimate test traffic. (The legacy
   // webhook path's own cap behavior is covered by webhookFulfillment.test.js.)
-  const app = createApp({ validateTarget: offlineValidateTarget, maxScansPerDay: 0, maxWebhooksPerDay: 0, ...opts });
+  // A fake Stripe client + price are injected so order-intent works offline.
+  const app = createApp({
+    validateTarget: offlineValidateTarget,
+    maxScansPerDay: 0,
+    maxWebhooksPerDay: 0,
+    stripe: fakeStripe(),
+    stripePriceId: 'price_test_1',
+    reportTokenSecret: 'test-secret',
+    ...opts,
+  });
   const server = app.listen(0);
   const port = server.address().port;
   return { server, base: `http://127.0.0.1:${port}` };
@@ -160,61 +224,51 @@ after(() => {
   appShared.server.close();
 });
 
-test('order-intent: success records a pending order and returns a redirectUrl with prefilled_email + client_reference_id', async () => {
-  const scan = await makeScan(appShared.base);
-  const { status, json } = await postJson(appShared.base, '/api/v1/order-intent', { scanId: scan.id, email: 'Buyer@Example.COM ' });
-  assert.equal(status, 200);
-  assert.equal(typeof json.orderId, 'string');
-  assert.ok(/^[0-9a-f-]{36}$/.test(json.orderId), 'orderId is a uuid');
-
-  const url = new URL(json.redirectUrl);
-  assert.equal(url.origin + url.pathname, 'https://buy.stripe.com/cNi00j7zs1P49ju5B9abK00', 'default payment link');
-  assert.equal(url.searchParams.get('prefilled_email'), 'buyer@example.com', 'email is prefilled, lowercased');
-  assert.equal(url.searchParams.get('client_reference_id'), json.orderId);
-
-  const rows = query(sharedDb, 'SELECT id, scan_id, email, status, created_at FROM orders WHERE id = ?', json.orderId);
-  assert.equal(rows.length, 1);
-  assert.equal(rows[0].scan_id, scan.id);
-  assert.equal(rows[0].email, 'buyer@example.com');
-  assert.equal(rows[0].status, 'pending');
-  assert.ok(rows[0].created_at, 'created_at recorded');
-});
-
-test('order-intent: scan_id alias accepted; STRIKE_PAYMENT_LINK option/env override used', async () => {
-  // A dedicated app so the payment-link option is captured at creation.
-  const app = startApp({ dbPath: tmpDb(), fetcher: fakeFetcher(), emailSender: stubSender(), stripePaymentLink: 'https://buy.stripe.com/test/link123' });
+test('order-intent: success creates the Checkout Session FIRST, returns checkoutUrl, records the order with the session id', async () => {
+  const stripe = fakeStripe();
+  const dbp = tmpDb();
+  const app = startApp({ dbPath: dbp, fetcher: fakeFetcher(), emailSender: stubSender(), stripe });
   try {
     const scan = await makeScan(app.base);
-    const r1 = await postJson(app.base, '/api/v1/order-intent', { scan_id: scan.id, email: 'a@b.co' });
-    assert.equal(r1.status, 200);
-    const u1 = new URL(r1.json.redirectUrl);
-    assert.equal(u1.origin + u1.pathname, 'https://buy.stripe.com/test/link123');
-    assert.equal(u1.searchParams.get('prefilled_email'), 'a@b.co');
-
-    // A link that already carries a query string gets `&`, not a second `?`.
-    const env = process.env.STRIPE_PAYMENT_LINK;
-    process.env.STRIPE_PAYMENT_LINK = 'https://buy.stripe.com/test/link456?prefilled_promo=1';
-    try {
-      const app2 = startApp({ dbPath: tmpDb(), fetcher: fakeFetcher(), emailSender: stubSender() });
-      try {
-        const scan2 = await makeScan(app2.base);
-        const r2 = await postJson(app2.base, '/api/v1/order-intent', { scanId: scan2.id, email: 'a@b.co' });
-        const u2 = new URL(r2.json.redirectUrl);
-        assert.equal(u2.searchParams.get('prefilled_promo'), '1');
-        assert.equal(u2.searchParams.get('prefilled_email'), 'a@b.co');
-        assert.ok(!u2.search.includes('??'), 'no doubled query separator');
-      } finally {
-        app2.server.close();
-      }
-    } finally {
-      if (env === undefined) delete process.env.STRIPE_PAYMENT_LINK;
-      else process.env.STRIPE_PAYMENT_LINK = env;
-    }
+    const { status, json } = await postJson(app.base, '/api/v1/order-intent', { scanId: scan.id, email: 'Buyer@Example.COM ' });
+    assert.equal(status, 200);
+    assert.equal(typeof json.orderId, 'string');
+    assert.ok(/^[0-9a-f-]{36}$/.test(json.orderId), 'orderId is a uuid');
+    // Session-first: the Stripe call happened BEFORE any DB write.
+    assert.equal(stripe.calls.createCheckoutSession.length, 1);
+    const params = stripe.calls.createCheckoutSession[0];
+    assert.equal(params.mode, 'payment');
+    assert.deepEqual(params.line_items, [{ price: 'price_test_1', quantity: 1 }]);
+    assert.equal(params.client_reference_id, json.orderId, 'order id doubles as the session client_reference_id');
+    assert.equal(params.customer_email, 'buyer@example.com', 'email prefilled, lowercased');
+    assert.equal(params.metadata.scan_id, scan.id);
+    assert.equal(params.metadata.order_id, json.orderId);
+    assert.equal(params.success_url, 'https://www.ass-score.com/checkout/success?session_id={CHECKOUT_SESSION_ID}');
+    assert.equal(params.cancel_url, `https://www.ass-score.com/scan/${scan.id}`);
+    assert.equal(json.checkoutUrl, 'https://checkout.stripe.com/c/pay/cs_test_1', 'buyer is sent to session.url');
+    // Order row exists, carries the session id, still pending.
+    const rows = query(dbp, 'SELECT id, scan_id, email, status, checkout_session_id, created_at FROM orders WHERE id = ?', json.orderId);
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].scan_id, scan.id);
+    assert.equal(rows[0].email, 'buyer@example.com');
+    assert.equal(rows[0].status, 'pending');
+    assert.equal(rows[0].checkout_session_id, 'cs_test_1', 'session id stored on the order');
+    assert.ok(rows[0].created_at, 'created_at recorded');
   } finally {
     app.server.close();
   }
 });
-
+test('order-intent: scan_id alias accepted; success_url/cancel_url use the injected publicBaseUrl', async () => {
+  const app = startApp({ dbPath: tmpDb(), fetcher: fakeFetcher(), emailSender: stubSender(), publicBaseUrl: 'https://ass-score.example.com' });
+  try {
+    const scan = await makeScan(app.base);
+    const r1 = await postJson(app.base, '/api/v1/order-intent', { scan_id: scan.id, email: 'a@b.co' });
+    assert.equal(r1.status, 200);
+    assert.equal(r1.json.checkoutUrl, 'https://checkout.stripe.com/c/pay/cs_test_1');
+  } finally {
+    app.server.close();
+  }
+});
 test('order-intent: unknown scan -> 404; bad/missing email -> 400; missing id -> 400', async () => {
   const res404 = await postJson(appShared.base, '/api/v1/order-intent', { scanId: 'no-such-scan', email: 'a@b.co' });
   assert.equal(res404.status, 404);
