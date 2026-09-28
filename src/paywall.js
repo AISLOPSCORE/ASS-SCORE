@@ -28,7 +28,7 @@
  */
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { hashScanId } from './roast.js';
-import { isMetricFinding } from './threeLayer.js';
+import { isMetricFinding, isBoilerplateAggregateLine } from './threeLayer.js';
 import { DISCLAIMER } from './card.js';
 
 export { DISCLAIMER };
@@ -90,10 +90,18 @@ export function pickTeasers(breakdown, id) {
       // surface as free samples. Deterministic: filtering happens before
       // seeding, so the same (breakdown, id) still always yields identical
       // teasers.
-      const insights = (r.insights ?? []).filter((ins) =>
+      const all = (r.insights ?? []).filter((ins) =>
         ins && typeof ins === 'object' &&
         !isMetricFinding(key, String(ins.evidence ?? '')) &&
         ins.kind !== 'clean');
+      // ONE SIGNAL = ONE (funny) SAMPLE (audit Q3, owner-approved 2026-09-28):
+      // when a boilerplate candidate has BOTH detail-line insights and the
+      // aggregate (totals) insight, the totals insight is dropped from the
+      // teaser pool — the totals line's roast ("…a record for having nothing
+      // to say") would mislabel a copyright-only page as generic marketing
+      // filler, and its detail-line sibling already carries the real signal.
+      const details = all.filter((ins) => !isBoilerplateAggregateLine(String(ins.evidence ?? '')));
+      const insights = details.length > 0 ? details : all;
       return { key, score: Number(r.score), findings: r.findings, insights };
     })
     .filter((c) => c.insights.length > 0)

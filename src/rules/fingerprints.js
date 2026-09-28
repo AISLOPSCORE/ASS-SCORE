@@ -76,9 +76,19 @@ export function analyzeFingerprints({ html = '', head = '', text = '' } = {}) {
     ? clamp(Math.round((hitWeight / TOTAL_FINGERPRINT_WEIGHT) * 100), 0, 100)
     : 0;
 
-  const findings = hits.map(
-    (h) => `recognizable template sign in the page ${h.scope}: ${h.label} (${h.confidence} confidence)`,
-  );
+  // DESIGN clean line (report-integrity fix, owner-approved 2026-09-28,
+  // audit Q2): a scan with zero pattern hits emits ONE clean measurement line
+  // — matching the other six categories' clean-evidence formats — so DESIGN
+  // can compliment like the rest when it is genuinely clean (its compliments
+  // pool in threeLayer.json was previously unreachable dead copy). The line
+  // only fires when the pattern list is non-empty (an empty list proves
+  // nothing to scan); CLEAN_EVIDENCE.fingerprints in src/threeLayer.js
+  // classifies it. Never emits when hits exist — pattern evidence only.
+  const findings = hits.length === 0 && TOTAL_FINGERPRINT_WEIGHT > 0
+    ? ['no recognizable template signs detected']
+    : hits.map(
+        (h) => `recognizable template sign in the page ${h.scope}: ${h.label} (${h.confidence} confidence)`,
+      );
 
   return { score, findings, hits };
 }
