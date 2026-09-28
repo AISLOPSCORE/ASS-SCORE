@@ -44,7 +44,12 @@ const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
  *     API callers and delivered to webhooks/email). `payload.id` is the scan id.
  *   - { ok: false, status, json } — client-correctable failure (400 blocked,
  *     422 parse_failed, 502 fetch_failed): the caller maps it to its own
- *     response. No row is persisted for these outcomes.
+ *     response. No row is persisted for these outcomes. Failure paths:
+ *     - 400 blocked — SSRF/invalid target (pre-fetch);
+ *     - 502 fetch_failed — transport error, timeout, oversize body, too many
+ *       redirects, or the target answered with an HTTP error status (>= 400);
+ *     - 422 parse_failed — non-HTML Content-Type (binary payload), unparseable
+ *       HTML, or no extractable text.
  *   Genuine internal errors REJECT — callers route them to the centralized
  *   error handler (500), exactly like the scan route always did.
  */
@@ -66,6 +71,30 @@ export async function runScan({ db, fetcher, url, branding = null, businessName 
       return { ok: false, status: 502, json: { error: { code: 'fetch_failed', message: err.message } } };
     }
     throw err;
+  }
+
+  // --- HTTP-status gate (audit D1) -----------------------------------------
+  // A 4xx/5xx page is the ERROR page, not the site: scoring it would report
+  // the site itself as "CLEANEST". Same shape as the other fetch-failure
+  // returns (502 fetch_failed) so client handling stays uniform; no row.
+  if (page.status >= 400) {
+    clearTimeout(abortTimer);
+    return { ok: false, status: 502, json: { error: { code: 'fetch_failed', message: `Target returned HTTP ${page.status}` } } };
+  }
+
+  // --- Content-Type gate (audit D2) ----------------------------------------
+  // Binary/foreign payloads (PDF, PNG, JSON, ...) would otherwise be
+  // stream-decoded into garbage text and scored as "clean". Reject any
+  // PRESENT header whose mime essence (params like ;charset= stripped,
+  // case-insensitive) is not an HTML-family type. Absent header keeps today's
+  // behavior: attempt the parse (the zero-word gate below still applies).
+  const contentType = page.contentType ?? null;
+  if (contentType !== null) {
+    const essence = contentType.split(';')[0].trim().toLowerCase();
+    if (essence !== 'text/html' && essence !== 'application/xhtml+xml' && essence !== 'text/xml') {
+      clearTimeout(abortTimer);
+      return { ok: false, status: 422, json: { error: { code: 'parse_failed', message: `Target is not an HTML page (Content-Type: ${contentType})` } } };
+    }
   }
 
   let text;
