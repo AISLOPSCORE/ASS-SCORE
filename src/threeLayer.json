@@ -1,5 +1,5 @@
 {
- "_comment": "A.S.S. Score three-layer finding copy pools (src/threeLayer.js). Config-driven like roasts.json / fingerprints.json: edit copy here, NO code changes needed. One pool per breakdown key (filler, boilerplate, infoDensity, repetitive, crossPage, fingerprints, assets). Every finding gets an insight { roast, why, fix, evidence } where evidence is the finding string itself. Roasts carry ONE OR MORE {tokens} interpolated ONLY from that finding's real parsed evidence (token names documented per group below); a roast variant is only eligible when EVERY token it references exists in the finding's parsed tokens, and when the finding carries verbatim-evidence tokens (phrase/sentence/text/label/urls/host/alt...) the variant must cite at least one of them — variants whose tokens are missing are dropped (absolute rule: never fabricate details; a roast that can cite the real trigger must cite it). Token-free roasts are the fallback for findings with no interpolatable token at all. whys/fixes are group-level business reasoning, applied to every finding of the group. Selection is deterministic: seeded by scan id + category + finding index via the same FNV-1a hashScanId the Slop Roast uses (same scan id -> identical insights, forever). Copy rules: loud/cheeky/meme tone, 1-2 sentences, pattern-based only — never assert AI authorship as fact (automated forbidden-phrase test). Token names per group: filler {count,words,density,phrase}; boilerplate {count,words,density,label,phrase,sentence,text,signalsNoun}; infoDensity {mattr,stopwordRatio,meanLen,sentences,shortPct,paragraphs,count,words,needed,examples,specificsNoun,factsNoun}; repetitive {kind,count,phrase,openings,sentences,paragraphs,repeatsNoun,appearancesNoun}; crossPage {pairCount,maxSim,urlA,urlB,sim,count,pages,pairsNoun}; filler additionally accepts {phrasesNoun,buzzwordsNoun} (plural-noun tokens filled from the finding count; no more \"(s)\" placeholders); fingerprints {scope,label,confidence}; assets {stockCount,fileCount,altCount,cleanCount,total,index,host,stem,alt,altKind,src}. CLEAN findings (zero/none measurements, healthy metric bands) render a compliment variant instead of a roast: { kind: 'clean', roast: compliment, why: cleanWhy, fix: keepUp, evidence } — pools compliments / cleanWhys / keepUps per category, same structural rules (1-2 sentences, <=220 chars, no AI-authorship claims, token-free by design; the evidence line carries the numbers). Negative findings keep roast/why/fix with no kind marker.",
+ "_comment": "A.S.S. Score three-layer finding copy pools (src/threeLayer.js). Config-driven like roasts.json / fingerprints.json: edit copy here, NO code changes needed. One pool per breakdown key (filler, boilerplate, infoDensity, repetitive, crossPage, fingerprints, assets). Every finding gets an insight { roast, why, fix, evidence } where evidence is the finding string itself. Roasts carry ONE OR MORE {tokens} interpolated ONLY from that finding's real parsed evidence (token names documented per group below); a roast variant is only eligible when EVERY token it references exists in the finding's parsed tokens, and when the finding carries verbatim-evidence tokens (phrase/sentence/text/label/urls/host/alt...) the variant must cite at least one of them — variants whose tokens are missing are dropped (absolute rule: never fabricate details; a roast that can cite the real trigger must cite it). Token-free roasts are the fallback for findings with no interpolatable token at all. whys/fixes are business reasoning; they may carry OPTIONAL signal triggers — an entry may be an object { \"text\": \"...\", \"triggers\": [\"tag\", ...] }. A why/fix with triggers is eligible ONLY for findings whose evidence carries one of those tags (signalTagFor in src/threeLayer.js); a plain string (no triggers) is UNTAGGED and eligible for every finding of the group — it must stay genuinely signal-agnostic (no learn-more/cookie/legal/fact-check/stock/alt/filename/placeholder-style specifics; automated denylist test). When a finding has NO eligible why or fix line, that layer is omitted from the insight. Selection is deterministic: seeded by scan id + category + finding index via the same FNV-1a hashScanId the Slop Roast uses (same scan id -> identical insights, forever). Copy rules: loud/cheeky/meme tone, 1-2 sentences, pattern-based only — never assert AI authorship as fact (automated forbidden-phrase test). Token names per group: filler {count,words,density,phrase}; boilerplate {count,words,density,label,phrase,sentence,text,signalsNoun}; infoDensity {mattr,stopwordRatio,meanLen,sentences,shortPct,paragraphs,count,words,needed,examples,specificsNoun,factsNoun}; repetitive {kind,count,phrase,openings,sentences,paragraphs,repeatsNoun,appearancesNoun}; crossPage {pairCount,maxSim,urlA,urlB,sim,count,pages,pairsNoun}; filler additionally accepts {phrasesNoun,buzzwordsNoun} (plural-noun tokens filled from the finding count; no more \"(s)\" placeholders); fingerprints {scope,label,confidence}; assets {stockCount,fileCount,altCount,cleanCount,total,index,host,stem,alt,altKind,src}. CLEAN findings (zero/none measurements, healthy metric bands) render a compliment variant instead of a roast: { kind: 'clean', roast: compliment, why: cleanWhy, fix: keepUp, evidence } — pools compliments / cleanWhys / keepUps per category, same structural rules (1-2 sentences, <=220 chars, no AI-authorship claims, token-free by design; the evidence line carries the numbers). Negative findings keep roast/why/fix with no kind marker.",
  "pools": {
   "filler": {
    "roasts": [
@@ -70,16 +70,17 @@
    "whys": [
     "Generic wording is the fastest way to look like everyone else: visitors have seen these exact sentences on a dozen competitor sites, so nothing about you sticks.",
     "Sentences that live on thousands of other sites make yours interchangeable with them — the reader has already seen this line on a dozen competitor pages, so nothing about you registers.",
-    "Cookie banners, legal text and \"learn more\" links are fine alone; in bulk they make the page read as assembled rather than written — and trust is the first casualty.",
+    { "text": "Cookie banners, legal text and \"learn more\" links are fine alone; in bulk they make the page read as assembled rather than written — and trust is the first casualty.", "triggers": ["legal", "learn-more"] },
     "Every generic sentence is a wasted chance to say one specific thing about your product that a competitor cannot.",
-    "When the compliance text outweighs the pitch, the visitor's takeaway is \"this site is covering its ass,\" not \"this site solves my problem.\""
+    { "text": "When the compliance text outweighs the pitch, the visitor's takeaway is \"this site is covering its ass,\" not \"this site solves my problem.\"", "triggers": ["legal"] }
    ],
    "fixes": [
-    "Rewrite each flagged generic sentence with a concrete detail: swap \"we are committed to quality\" for \"every order is checked by a human before it ships.\"",
-    "Keep legal and cookie text in one tight, honest block at the bottom instead of sprinkling generic wording through the page.",
-    "Replace \"learn more\" links with labels that say what the visitor will actually learn — \"see pricing\" or \"read the case study.\"",
-    "Cut any line a competitor with the same website template could publish unchanged — that is exactly the kind of generic line to remove.",
-    "Do one pass where every sentence gets a fact check: if a sentence contains no verifiable claim, rewrite it until it does."
+    { "text": "Rewrite each flagged generic sentence with a concrete detail: swap \"we are committed to quality\" for \"every order is checked by a human before it ships.\"", "triggers": ["marketing"] },
+    { "text": "Keep legal and cookie text in one tight, honest block at the bottom instead of sprinkling generic wording through the page.", "triggers": ["legal"] },
+    { "text": "Replace \"learn more\" links with labels that say what the visitor will actually learn — \"see pricing\" or \"read the case study.\"", "triggers": ["learn-more"] },
+    { "text": "Cut any line a competitor with the same website template could publish unchanged — that is exactly the kind of generic line to remove.", "triggers": ["marketing", "template"] },
+    { "text": "Do one pass where every sentence gets a fact check: if a sentence contains no verifiable claim, rewrite it until it does.", "triggers": ["marketing"] },
+    "Pick the single most generic element this finding flagged and replace it with something only your business could say — a specific sentence, a real number, or a named outcome."
    ],
    "compliments": [
     "Zero generic wording in the scan — no cookie-banner copy-pasta, no generic \"learn more\" wallpaper. The page reads written, not assembled.",
@@ -323,18 +324,20 @@
     "These photos say \"business\" the way a stock photo of a handshake says \"business.\""
    ],
    "whys": [
-    "Stock imagery is instantly recognizable and instantly forgettable — it tells visitors nothing about your actual product, team, or customers.",
-    "Placeholder filenames and generic alt text are small clues that add up: together they read as \"this site was never finished.\"",
-    "Alt text is accessibility: empty or generic alts lock out screen-reader users, who experience the page as \"image, image, image\" instead of a description.",
-    "Real photos of your product, team or workspace are the cheapest credibility upgrade a website can buy; stock photos cannot do that job.",
-    "Generic imagery makes your page interchangeable with every competitor who picked the same stock library's bestseller."
+    { "text": "Stock imagery is instantly recognizable and instantly forgettable — it tells visitors nothing about your actual product, team, or customers.", "triggers": ["stock"] },
+    { "text": "Placeholder filenames and generic alt text are small clues that add up: together they read as \"this site was never finished.\"", "triggers": ["filenames", "alt"] },
+    { "text": "Alt text is accessibility: empty or generic alts lock out screen-reader users, who experience the page as \"image, image, image\" instead of a description.", "triggers": ["alt"] },
+    { "text": "Real photos of your product, team or workspace are the cheapest credibility upgrade a website can buy; stock photos cannot do that job.", "triggers": ["stock"] },
+    { "text": "Generic imagery makes your page interchangeable with every competitor who picked the same stock library's bestseller.", "triggers": ["stock"] },
+    "The visual layer is judged in the first seconds — images that read as borrowed or unfinished quietly undermine everything else the page says, no matter how sound the copy is."
    ],
    "fixes": [
-    "Replace stock and placeholder images with real ones: your product on a desk, your team in the office, your work in the wild.",
-    "Rename uploaded files descriptively (\"menu-redesign-2026.png\") instead of image1, photo2, or logo.",
-    "Write real alt text for every image: what the picture shows and why it's on the page — not just \"image\" or the filename.",
-    "If an image is purely decorative, mark it as such instead of leaving empty or generic alt text.",
-    "Do a visual audit for the stock look (boardroom handshakes, fake smiles, floating laptops) and swap the top three offenders first."
+    { "text": "Replace stock and placeholder images with real ones: your product on a desk, your team in the office, your work in the wild.", "triggers": ["stock"] },
+    { "text": "Rename uploaded files descriptively (\"menu-redesign-2026.png\") instead of image1, photo2, or logo.", "triggers": ["filenames"] },
+    { "text": "Write real alt text for every image: what the picture shows and why it's on the page — not just a bare \"image\" label.", "triggers": ["alt"] },
+    { "text": "If an image is purely decorative, mark it as such instead of leaving empty or generic alt text.", "triggers": ["alt"] },
+    { "text": "Do a visual audit for the stock look (boardroom handshakes, fake smiles, floating laptops) and swap the top three offenders first.", "triggers": ["stock"] },
+    "Pick the single weakest visual this finding flagged and replace it with something only your business could produce — a photo of your real product, your real workspace, or your real people."
    ],
    "compliments": [
     "None of your images are stock or placeholder — your imagery actually looks like it belongs to this business. Refreshing.",
