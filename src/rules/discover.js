@@ -91,7 +91,7 @@ export function parseSitemap(xml) {
  * @param {object} opts
  * @param {string} opts.targetUrl  absolute URL of the fetched target page
  * @param {string} opts.targetHtml raw HTML of the target page
- * @param {{ fetchHtml: (url, opts?: {signal}) => Promise<{status,url,body}> }} opts.fetcher
+ * @param {{ fetchHtml: (url, opts?: {signal}) => Promise<{status,url,body,contentType?}> }} opts.fetcher
  *        the SAME SSRF-protected fetcher used for the target (never bypassed)
  * @param {AbortSignal} [opts.signal] budget abort signal (shared with pipeline)
  *

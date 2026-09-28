@@ -135,7 +135,16 @@ export class Fetcher {
         signal?.removeEventListener('abort', onExternalAbort);
       }
 
-      return { status, url: url.href, body };
+      return {
+        status,
+        url: url.href,
+        body,
+        // Final response's Content-Type (raw header value, or null when the
+        // server sent none). Consumers gate on the mime essence; absent stays
+        // "unknown, try to parse" so HTML servers that omit the header keep
+        // today's behavior.
+        contentType: response.headers.get('content-type') ?? null,
+      };
     }
   }
 

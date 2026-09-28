@@ -126,8 +126,8 @@ Multi-page scans add four top-level fields (all webhook-delivered too):
 | Invalid branding | `400` | `branding` present but malformed (checked before scanning) |
 | Invalid email | `400` | `email`/`clientEmail` present but not an address (checked before scanning) |
 | Invalid business name | `400` | `businessName` present but not a string (checked before scanning) |
-| Fetch failure | `502` | timeout (>10s), network error, body > 2 MB, too many redirects (>3) |
-| Parse failure | `422` | HTML could not be parsed or contained no extractable text |
+| Fetch failure | `502` | timeout (>10s), network error, body > 2 MB, too many redirects (>3), or the target answered with an HTTP error status (4xx/5xx) |
+| Parse failure | `422` | response Content-Type is not an HTML type (e.g. a PDF or image), HTML could not be parsed, or contained no extractable text |
 | Bad JSON | `400` | malformed request body |
 | Per-IP daily cap exceeded | `429` | `error.code "rate_limited"` + `resetAt` (next UTC midnight) — see [Rate limiting](#rate-limiting) |
 
