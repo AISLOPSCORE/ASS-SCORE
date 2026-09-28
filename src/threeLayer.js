@@ -20,8 +20,18 @@ export { hashScanId } from './roast.js'; // seeding utility, shared with the Slo
  *               Findings with no interpolatable token at all fall back to the
  *               group's token-free roasts.
  *   why       — real business/credibility reasoning (differentiation, SEO,
- *               trust, conversion). Group-level, no tokens.
- *   fix       — specific, actionable remediation. Group-level, no tokens.
+ *               trust, conversion). Signal-GATED since the content-integrity
+ *               fix: a why/fix entry in threeLayer.json may carry OPTIONAL
+ *               "triggers" (see signalTagFor below); a tagged entry is
+ *               eligible ONLY for findings whose evidence carries one of its
+ *               tags (a cookie/legal line must never ride on a marketing-claim
+ *               finding). Untagged entries (plain strings) are eligible for
+ *               every finding of the group — they must stay genuinely
+ *               signal-agnostic (automated denylist test). No tokens.
+ *   fix       — specific, actionable remediation; same trigger/eligibility
+ *               rules as why. When a finding has NO eligible line for a layer,
+ *               that layer is OMITTED from the insight — never drawn from an
+ *               ineligible pool.
  *   evidence  — the finding string itself, verbatim.
  *
  * Copy lives in src/threeLayer.json (one pool per breakdown key): edit copy in
@@ -41,17 +51,64 @@ export { hashScanId } from './roast.js'; // seeding utility, shared with the Slo
 const JSON_PATH = path.join(path.dirname(fileURLToPath(import.meta.url)), 'threeLayer.json');
 const DATA = JSON.parse(fs.readFileSync(JSON_PATH, 'utf8'));
 
-/** Raw pools (key -> { roasts[], whys[], fixes[], compliments[], cleanWhys[], keepUps[] }). Exposed for tests/tooling. */
-export const THREE_LAYER_POOLS = Object.freeze(
+/**
+ * Normalize ONE whys/fixes entry from threeLayer.json: a plain string is an
+ * UNTAGGED line (eligible for every finding of the group); an object entry
+ * { "text": "...", "triggers": ["tag", ...] } is a signal-gated line (eligible
+ * only for findings whose signalTagFor(category, evidence) is one of its
+ * triggers). Compliments/cleanWhys/keepUps/roasts stay plain strings.
+ */
+function normalizeEntry(e) {
+  if (e && typeof e === 'object' && !Array.isArray(e)) {
+    return {
+      text: String(e.text ?? ''),
+      triggers: Array.isArray(e.triggers) ? e.triggers.map(String) : [],
+    };
+  }
+  return { text: String(e ?? ''), triggers: [] };
+}
+
+/** The copy text of a whys/fixes entry (string or { text, triggers }). */
+export function entryText(e) {
+  return normalizeEntry(e).text;
+}
+
+/** The trigger tags of a whys/fixes entry ([] for plain-string entries). */
+export function entryTriggers(e) {
+  return normalizeEntry(e).triggers;
+}
+
+/**
+ * Internal pools (key -> { roasts[], whyEntries[], fixEntries[], compliments[],
+ * cleanWhys[], keepUps[] }) — why/fix entries KEEP their trigger tags here;
+ * the public THREE_LAYER_POOLS export below flattens them to copy text so
+ * existing tests/tooling keep working unchanged.
+ */
+const POOLS = Object.freeze(
   Object.fromEntries(Object.entries(DATA.pools).map(([k, v]) => [
     k,
     Object.freeze({
       roasts: Object.freeze([...v.roasts]),
-      whys: Object.freeze([...v.whys]),
-      fixes: Object.freeze([...v.fixes]),
+      whyEntries: Object.freeze((v.whys ?? []).map(normalizeEntry)),
+      fixEntries: Object.freeze((v.fixes ?? []).map(normalizeEntry)),
       compliments: Object.freeze([...(v.compliments ?? [])]),
       cleanWhys: Object.freeze([...(v.cleanWhys ?? [])]),
       keepUps: Object.freeze([...(v.keepUps ?? [])]),
+    }),
+  ])),
+);
+
+/** Raw pools (key -> { roasts[], whys[], fixes[], compliments[], cleanWhys[], keepUps[] }); whys/fixes entries flattened to their copy text (backward-compatible pre-trigger shape). Exposed for tests/tooling. */
+export const THREE_LAYER_POOLS = Object.freeze(
+  Object.fromEntries(Object.entries(POOLS).map(([k, p]) => [
+    k,
+    Object.freeze({
+      roasts: p.roasts,
+      whys: Object.freeze(p.whyEntries.map((e) => e.text)),
+      fixes: Object.freeze(p.fixEntries.map((e) => e.text)),
+      compliments: p.compliments,
+      cleanWhys: p.cleanWhys,
+      keepUps: p.keepUps,
     }),
   ])),
 );
@@ -102,6 +159,127 @@ function interpolate(tpl, tokens) {
 /** Deterministic pick (FNV-1a seed via scan id + key + index + kind). */
 function pickVariant(candidates, seed) {
   return candidates[hashScanId(seed) % candidates.length];
+}
+
+/**
+ * Signal tags for boilerplate SIGNAL labels (byte-for-byte from
+ * src/rules/boilerplate.js SIGNALS — note the curly quotes \u201C \u201D).
+ * Unknown/other labels return null from signalTagFor (never guess).
+ */
+const BOILERPLATE_LABEL_SIGNALS = {
+  'generic \u201Clearn more\u201D link': 'learn-more',
+  'cookie notice': 'legal',
+  'cookie banner': 'legal',
+  'cookie settings': 'legal',
+  'consent manager': 'legal',
+  'privacy policy': 'legal',
+  'terms of service': 'legal',
+  'copyright notice': 'legal',
+  'copyright line': 'legal',
+  'unsubscribe link': 'legal',
+  'lorem ipsum placeholder': 'template',
+  'placeholder text': 'template',
+  'powered-by line': 'template',
+  'newsletter subscribe block': 'cta',
+  'newsletter signup': 'cta',
+  'social-follow block': 'cta',
+  'generic \u201Ccontact us\u201D link': 'cta',
+  'comment form text': 'cta',
+  'generic commitment claim': 'marketing',
+  'generic mission statement': 'marketing',
+  'marketing adjective': 'marketing',
+  'marketing superlative': 'marketing',
+  'marketing cliché': 'marketing',
+  'generic corporate claim': 'marketing',
+};
+
+/**
+ * Deterministic signal tag for a FINDING's evidence (content-integrity fix):
+ * which specific problem did this finding fire on? Used to gate why/fix lines
+ * so a cookie/legal/stock/alt-specific line can never ride on a finding about
+ * something else. Returns ONE tag or null. null means the finding is eligible
+ * for UNTAGGED (signal-agnostic) lines ONLY.
+ *
+ *   boilerplate:
+ *     totals line "N generic wording matches in W words (...)"  -> null
+ *     "N× repeated block: \"...\""                             -> 'repeated'
+ *     "vague sentence: ..." / "hedge evidence: ..."            -> 'marketing'
+ *     "N× vague phrase \"...\"" / "N× hedge phrase \"...\""    -> 'marketing'
+ *     "N× <label>"                                             -> label map above
+ *     unknown label                                            -> null
+ *   assets (evidence formats per EVIDENCE_PARSERS.assets):
+ *     "N of N images come from stock photo sites" / "from stock/placeholder
+ *       CDNs" / "look generic or placeholder" / "flagged for stock/placeholder
+ *       signals"                                                -> 'stock'
+ *     "N of N images with placeholder/generic filenames"        -> 'filenames'
+ *     "N of N images with missing or generic alt text"          -> 'alt'
+ *     "img[N] stock photo host|stock/placeholder CDN «...»"     -> 'stock'
+ *     "img[N] generic filename \"...\""                         -> 'filenames'
+ *     "img[N] missing|empty alt (text|attribute)" and
+ *     "img[N] generic alt \"...\""                              -> 'alt'
+ *   every other category: every finding -> null (untagged-only, matches
+ *   today's behavior).
+ *
+ * @param {string} category breakdown key (filler, boilerplate, ...)
+ * @param {string} evidence the finding/evidence string
+ * @returns {string|null} the signal tag, or null for signal-agnostic findings
+ */
+export function signalTagFor(category, evidence) {
+  const f = String(evidence ?? '');
+  if (category === 'boilerplate') {
+    if (/^\d+ (?:generic wording match(?:es)?|boilerplate signal(?:\(s\)|s)?) in \d+ words/.test(f)) return null;
+    if (/^\d+× repeated block: /.test(f)) return 'repeated';
+    if (/^vague sentence: /.test(f) || /^hedge evidence: /.test(f)) return 'marketing';
+    if (/^\d+× (?:vague|hedge) phrase /.test(f)) return 'marketing';
+    const m = /^\d+× (.+)$/.exec(f);
+    if (m) return BOILERPLATE_LABEL_SIGNALS[m[1]] ?? null;
+    return null;
+  }
+  if (category === 'assets') {
+    if (/^\d+ of \d+ images (?:come from stock photo sites|from stock\/placeholder CDNs|look generic or placeholder|flagged for stock\/placeholder signals)$/.test(f)) return 'stock';
+    if (/^\d+ of \d+ images with placeholder\/generic filenames$/.test(f)) return 'filenames';
+    if (/^\d+ of \d+ images with missing or generic alt text$/.test(f)) return 'alt';
+    if (/^img\[\d+\] (?:stock photo host|stock\/placeholder CDN) /.test(f)) return 'stock';
+    if (/^img\[\d+\] generic filename /.test(f)) return 'filenames';
+    if (/^img\[\d+\] (?:missing|empty) alt (?:text|attribute)$/.test(f)) return 'alt';
+    if (/^img\[\d+\] generic alt /.test(f)) return 'alt';
+    return null;
+  }
+  return null;
+}
+
+/**
+ * WHY/FIX ELIGIBILITY (content-integrity fix): an entry (string or
+ * { text, triggers }) is eligible for a finding with `signalTag` iff it is
+ * UNTAGGED (no triggers — the genuinely signal-agnostic generic fallback) or
+ * its triggers include the finding's signal tag. Returns the eligible copy
+ * texts in pool order.
+ *
+ * @param {Array<string|{text: string, triggers: string[]}>} entries
+ * @param {string|null} signalTag
+ * @returns {string[]}
+ */
+export function eligibleVariants(entries, signalTag) {
+  return (entries ?? [])
+    .filter((e) => {
+      const triggers = entryTriggers(e);
+      if (triggers.length === 0) return true;
+      return signalTag !== null && triggers.includes(signalTag);
+    })
+    .map(entryText);
+}
+
+/**
+ * Pick ONE eligible why/fix line deterministically, or null when the eligible
+ * set is empty (the caller then OMITS that layer from the insight — never
+ * draw from an ineligible pool). Seed format is unchanged from the original
+ * selection (`${id}:${category}:${i}:why` / `:fix`) — same determinism and
+ * hash variety WITHIN the eligible set.
+ */
+export function selectEligible(entries, signalTag, seed) {
+  const eligible = eligibleVariants(entries, signalTag);
+  if (eligible.length === 0) return null;
+  return pickVariant(eligible, seed);
 }
 
 /**
@@ -461,10 +639,13 @@ function eligibleRoasts(pool, tokens, category) {
  * @param {string} opts.category breakdown key (filler, boilerplate, ...)
  * @param {string[]} [opts.findings] the category's evidence strings
  * @param {string} opts.id scan id (seed)
- * @returns {Array<{ roast: string, why: string, fix: string, evidence: string, kind?: 'clean' }>}
+ * @returns {Array<{ roast: string, why?: string, fix?: string, evidence: string, kind?: 'clean' }>}
+ *   Negative insights carry why/fix ONLY when the finding has at least one
+ *   eligible (untagged or trigger-matched) line for that layer — a layer with
+ *   an empty eligible set is omitted (never drawn from an ineligible pool).
  */
 export function buildCategoryInsights({ category, findings = [], id }) {
-  const pool = THREE_LAYER_POOLS[category];
+  const pool = POOLS[category];
   if (!pool || findings.length === 0) return [];
   // Deterministic distinct-pick bookkeeping for the clean (token-free) lines:
   // per build, a compliment/cleanWhy/keepUp line is used at most once.
@@ -505,14 +686,23 @@ export function buildCategoryInsights({ category, findings = [], id }) {
     // Defensive: the eligible set is never empty (every group ships token-free
     // roasts), but stay crash-proof against future copy edits.
     const roastTpl = pickVariant(roasts.length > 0 ? roasts : pool.roasts, `${id}:${category}:${i}:roast`);
-    const whyTpl = pickVariant(pool.whys, `${id}:${category}:${i}:why`);
-    const fixTpl = pickVariant(pool.fixes, `${id}:${category}:${i}:fix`);
-    return {
-      roast: interpolate(roastTpl, tokens),
-      why: interpolate(whyTpl, tokens),
-      fix: interpolate(fixTpl, tokens),
-      evidence: String(evidence),
-    };
+    // CONTENT-INTEGRITY (owner Option 1, approved): why/fix lines are now
+    // SIGNAL-GATED. Only entries eligible for this finding's signal tag (see
+    // signalTagFor / eligibleVariants) may be picked; an untagged line is the
+    // generic fallback, eligible for every finding. When NOTHING is eligible
+    // for a layer, that layer is OMITTED from the insight — never draw from an
+    // ineligible pool (a cookie/legal fix must never land on a marketing- or
+    // repeated-block finding; a learn-more fix must never land on a privacy
+    // policy). Seed format unchanged -> deterministic, same hash variety
+    // within the eligible set.
+    const signalTag = signalTagFor(category, evidence);
+    const whyTpl = selectEligible(pool.whyEntries, signalTag, `${id}:${category}:${i}:why`);
+    const fixTpl = selectEligible(pool.fixEntries, signalTag, `${id}:${category}:${i}:fix`);
+    const insight = { roast: interpolate(roastTpl, tokens) };
+    if (whyTpl !== null) insight.why = interpolate(whyTpl, tokens);
+    if (fixTpl !== null) insight.fix = interpolate(fixTpl, tokens);
+    insight.evidence = String(evidence);
+    return insight;
   });
 }
 
