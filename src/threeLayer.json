@@ -80,7 +80,11 @@
     { "text": "Replace \"learn more\" links with labels that say what the visitor will actually learn — \"see pricing\" or \"read the case study.\"", "triggers": ["learn-more"] },
     { "text": "Cut any line a competitor with the same website template could publish unchanged — that is exactly the kind of generic line to remove.", "triggers": ["marketing", "template"] },
     { "text": "Do one pass where every sentence gets a fact check: if a sentence contains no verifiable claim, rewrite it until it does.", "triggers": ["marketing"] },
-    "Pick the single most generic element this finding flagged and replace it with something only your business could say — a specific sentence, a real number, or a named outcome."
+    "Make the flagged element earn its place: if it's required by law or contract, keep it — but keep it tight and out of the way; if it's filler, tighten it or cut it."
+   ],
+   "legalSafeTotalsRoasts": [
+    "All {count} flagged {signalsNoun} in {words} words are the standard-issue kind — fine print, footers, links every site pastes. Keep what you must; keep it quiet.",
+    "Every one of the {count} flagged {signalsNoun} in {words} words is legal-and-template furniture, not original writing. Your own voice lives somewhere else — let it."
    ],
    "compliments": [
     "Zero generic wording in the scan — no cookie-banner copy-pasta, no generic \"learn more\" wallpaper. The page reads written, not assembled.",

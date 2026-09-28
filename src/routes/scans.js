@@ -3,7 +3,7 @@ import { Router } from 'express';
 import { buildCardSvg, renderCardPng } from '../card.js';
 import { isHttpUrl } from '../branding.js';
 import { selectRoast, selectRoastInfo } from '../roast.js';
-import { withInsights, isCleanEvidence, isMetricFinding, classifyFinding, buildCategoryInsights, parseEvidenceTokens } from '../threeLayer.js';
+import { withInsights, isCleanEvidence, isMetricFinding, classifyFinding, buildCategoryInsights, parseEvidenceTokens, isBoilerplateAggregateLine } from '../threeLayer.js';
 import { toPublicScan, publicScore } from '../serialize.js';
 import { verdictBand, verdictLabel, scoreColor } from '../verdict.js';
 import { CATEGORY_LABELS, CATEGORY_ONE_LINERS } from '../categories.js';
@@ -178,13 +178,15 @@ export function scansRouter({ db, publicBaseUrl, reportTokenSecret, reportBaseUr
   });
 
   // --- Pre-filled share text (copy-to-clipboard + social post) ---------------
+  // Text mirrors the site's share fallback exactly (owner-approved): the
+  // "(low is good)" clarification rides the same line on every surface.
   r.get('/api/v1/scans/:id/share', (req, res) => {
     const scan = db.getScan(req.params.id);
     if (!scan) return missing(res, req.params.id);
     const shareUrl = `${shareBase.replace(/\/+$/, '')}/scan/${scan.id}`;
     res.json({
       url: shareUrl,
-      text: `My website got an A.S.S. Score of ${publicScore(scan.score)}/100. Check yours at ass-score.com`,
+      text: `My website got an A.S.S. Score of ${publicScore(scan.score)}/100 (low is good). Check yours at ass-score.com`,
     });
   });
 
@@ -283,6 +285,31 @@ function finalVerdictSentence(pubScore, band) {
 }
 
 /**
+ * ONE SIGNAL = ONE FINDING (owner-approved report-integrity fix 2026-09-28,
+ * audit Q3): the boilerplate totals line ("N generic wording matches in W
+ * words (D per 300 words)") is the AGGREGATE MEASUREMENT of the category's
+ * detail signals (e.g. "1× copyright line") — the same underlying signal(s),
+ * not a separate problem. When a category carries a NEGATIVE totals line AND
+ * other negative detail lines, the totals line is demoted to an aggregate
+ * receipt: its density fact stays visible (folded into the first finding's
+ * receipts), but it no longer renders as — or counts as — its own finding
+ * card. A totals line that is the category's ONLY negative line keeps its
+ * finding semantics unchanged. Deterministic: derived purely from the
+ * evidence strings. Never touches scoring: the category score still reflects
+ * the density measurement exactly as before.
+ *
+ * @param {string} key breakdown category key
+ * @param {Array<{finding: string}>} negatives the category's negative items
+ * @returns {{ negatives: Array, aggregates: Array }}
+ */
+function demoteAggregateLines(key, negatives) {
+  if (key !== 'boilerplate' || negatives.length < 2) return { negatives, aggregates: [] };
+  const [first, ...rest] = negatives;
+  if (!isBoilerplateAggregateLine(first.finding)) return { negatives, aggregates: [] };
+  return { negatives: rest, aggregates: [first] };
+}
+
+/**
  * Classify every finding of one category via the shared three-layer machinery
  * (owner IA 2026-09-17). The report sections derive from this SPLIT ONLY:
  *
@@ -344,13 +371,18 @@ function insightFor(scanId, key, finding, insight, index) {
  * Only ever called for classifyFinding() === 'negative' — clean results and
  * metric measurements never pass through here.
  *
+ * `extraEvidence` (report-integrity fix 2026-09-28, audit Q3): the demoted
+ * boilerplate AGGREGATE lines (the density totals) ride in the FIRST card's
+ * receipts drawer — one signal stays ONE card while the legitimate "5.5 per
+ * 300 words" measurement remains visible as evidence.
+ *
  * Markup constraint (sacred): the classed spans sit inside UNCLASSED
  * containers — a classed parent immediately followed by a child tag would
  * emit a literal `"><` sequence, which the report's blanket no-raw-delimiter
  * assertion (branding hostile test) rejects. Every classed element here is
  * followed by escaped text, never by a tag.
  */
-function renderFinding(scanId, categoryKey, categoryLabel, finding, insight, index, state = null, ordinal = index + 1) {
+function renderFinding(scanId, categoryKey, categoryLabel, finding, insight, index, state = null, ordinal = index + 1, extraEvidence = []) {
   const ins = insightFor(scanId, categoryKey, finding, insight, index);
   const roast = ins ? ins.roast : finding;
   const why = ins ? ins.why : '';
@@ -373,6 +405,9 @@ function renderFinding(scanId, categoryKey, categoryLabel, finding, insight, ind
   const fixBlock = fix
     ? `<div class="fc-fix">\n      <span class="ins-fix">How to fix it:</span> ${esc(fix)}\n    </div>`
     : '';
+  const extras = Array.isArray(extraEvidence) ? extraEvidence.map((x) => String(x)).filter((x) => x !== '') : [];
+  const evidenceCount = 1 + extras.length;
+  const receiptLis = `<li><strong>${esc(finding)}</strong></li>${extras.map((x) => `<li><strong>${esc(x)}</strong></li>`).join('')}`;
   return `\n  <div class="finding-card">
     <div class="fc-head">
       <span class="fc-count">Finding ${ordinal}</span>
@@ -389,12 +424,28 @@ function renderFinding(scanId, categoryKey, categoryLabel, finding, insight, ind
       <details class="fc-receipts">
         <summary>
           <span class="rec-label">Show the receipts:</span>
-          <span class="rec-count">1 line of evidence</span>
+          <span class="rec-count">${evidenceCount} line${evidenceCount === 1 ? '' : 's'} of evidence</span>
         </summary>
-        <ul><li><strong>${esc(finding)}</strong></li></ul>
+        <ul>${receiptLis}</ul>
       </details>
     </div>
   </div>`;
+}
+
+/**
+ * Is a category CLEAN-band (sub-score 0-24)? The exact same inputs as the
+ * breakdown card classification (categoryClass on the stored sub-score +
+ * stored findings count), used to gate compliments: WHAT'S WORKING only ever
+ * compliments truly CLEAN categories (audit Q2, owner-approved 2026-09-28) —
+ * a WATCH/45 category with an in-band measurement line must never be
+ * advertised as "CLEAN" in the same report that flags it. Skipped (null
+ * score) categories are never CLEAN-band compliment sources.
+ */
+function isCleanBand(key, rule) {
+  if (!(Number.isFinite(Number(rule?.score)) && rule.score !== null)) return false;
+  const sub = publicScore(rule.score);
+  const nFindings = Array.isArray(rule.findings) ? rule.findings.length : 0;
+  return categoryClass(sub, nFindings) === 'CLEAN';
 }
 
 /**
@@ -422,9 +473,13 @@ const WORST_PAGE_KEYS = ['filler', 'boilerplate', 'infoDensity', 'repetitive'];
  * Summarize a stored worstPage.findings list into ACTUAL-NEGATIVE counts per
  * customer category (owner IA §8: the page with the strongest concentration of
  * actual negative findings). Clean measurements and metric lines are receipts,
- * not page problems — they never count. Deterministic: the rule modules' own
- * evidence formats identify both the category and the class, so a metric line
- * can never be presented as a page problem.
+ * not page problems — they never count. ONE SIGNAL = ONE FINDING (audit Q3,
+ * owner-approved 2026-09-28): a boilerplate AGGREGATE (totals) line counts
+ * only when it is the page's only boilerplate line — when detail lines exist,
+ * the detail lines carry the signal and the totals line is a measurement, not
+ * another finding. Deterministic: the rule modules' own evidence formats
+ * identify both the category and the class, so a metric line can never be
+ * presented as a page problem.
  */
 function worstPageSummary(findings = []) {
   const per = new Map();
@@ -432,9 +487,20 @@ function worstPageSummary(findings = []) {
     const f = String(raw ?? '');
     const key = WORST_PAGE_KEYS.find((k) => Object.keys(parseEvidenceTokens(k, f)).length > 0);
     if (!key || isCleanEvidence(key, f) || isMetricFinding(key, f)) continue;
-    per.set(key, (per.get(key) ?? 0) + 1);
+    per.set(key, [...(per.get(key) ?? []), f]);
   }
-  return [...per.entries()];
+  const out = [];
+  for (const [key, lines] of per) {
+    if (key === 'boilerplate' && lines.length > 1) {
+      const details = lines.filter((l) => !isBoilerplateAggregateLine(l));
+      if (details.length > 0) {
+        out.push([key, details.length]);
+        continue;
+      }
+    }
+    out.push([key, lines.length]);
+  }
+  return out;
 }
 
 /**
@@ -609,11 +675,15 @@ function renderHtmlReport(scan) {
   // ONE split drives every section: WHAT'S WORKING (clean only), THE ACTUAL
   // FINDINGS + summary counts (negative only), WHAT TO FIX FIRST (negative
   // only), page summaries (negative only). Metrics render as neutral evidence.
-  const classified = Object.entries(scan.breakdown ?? {}).map(([key, rule]) => ({
-    key,
-    rule,
-    ...splitCategory(key, rule),
-  }));
+  // ONE SIGNAL = ONE FINDING (audit Q3, owner-approved 2026-09-28): the
+  // boilerplate aggregate (totals) line is demoted from a negative finding to
+  // an aggregate receipt whenever the category also carries detail lines — so
+  // one copyright line never renders as "2 findings".
+  const classified = Object.entries(scan.breakdown ?? {}).map(([key, rule]) => {
+    const g = splitCategory(key, rule);
+    const { negatives, aggregates } = demoteAggregateLines(key, g.negatives);
+    return { key, rule, ...g, negatives, aggregates };
+  });
   const negativeTotal = classified.reduce((n, g) => n + g.negatives.length, 0);
   const negativeCats = classified.filter((g) => g.negatives.length > 0);
 
@@ -624,8 +694,15 @@ function renderHtmlReport(scan) {
   <p class="conclusion">${esc(verdictConclusion(scan, pubScore, publicVerdict, negativeTotal))}</p>`;
 
   // --- 5. WHAT'S WORKING (clean/positive detector results only; rendered
-  // below the breakdown, per the Phase 2A target hierarchy) ------------------
+  // below the breakdown, per the Phase 2A target hierarchy). COMPLIMENT GATE
+  // (audit Q2, owner-approved 2026-09-28): a category's clean measurements
+  // render here ONLY when the category is CLEAN-band (sub-score 0-24) — a
+  // WATCH+ category is never advertised as "CLEAN" in the same report that
+  // flags it (ORIGINALITY 45/WATCH + "ORIGINALITY — CLEAN" contradiction).
+  // DESIGN now compliments too: the fingerprints rule emits a clean line on a
+  // zero-hit scan, so its (previously unreachable) compliments pool fires. ---
   const cleanLis = classified
+    .filter((g) => isCleanBand(g.key, g.rule))
     .flatMap((g) => g.cleans.map((item) => renderCleanItem(CATEGORY_LABELS[g.key] ?? g.key, item)))
     .join('');
   const workingSection = `
@@ -743,7 +820,12 @@ function renderHtmlReport(scan) {
     // stays intact in its own className for the 2C clone check.
     const fgAccent = fgState === null ? 'neutral' : (fgState === 'NEEDS ATTENTION' ? 'needs-attention' : fgState.toLowerCase());
     const items = g.negatives
-      .map((x, i) => renderFinding(scan.id, g.key, label, x.finding, x.insight, i, fgState, ++findingOrdinal))
+      .map((x, i) => renderFinding(scan.id, g.key, label, x.finding, x.insight, i, fgState, ++findingOrdinal,
+        // ONE SIGNAL = ONE FINDING (audit Q3): the FIRST card of a demoted
+        // category carries the boilerplate aggregate (density) receipts, so
+        // the "5.5 per 300 words" measurement stays visible as evidence
+        // without double-counting the signal as a second finding.
+        i === 0 ? g.aggregates.map((a) => a.finding) : []))
       .join('');
     // Cross-page duplication pairs -> REPETITION receipts (real evidence,
     // replaces the old "Templated Content" section).
@@ -917,7 +999,11 @@ function renderHtmlReport(scan) {
       const cls = categoryClass(sub, nFindings);
       stateLine = `\n    <span class="cv-score">${sub}<span class="cv-den">/100</span></span>\n    <span class="cv-state cv-state-${cls.toLowerCase().replace(/[^a-z0-9]+/g, '-')}">${esc(cls)}</span>\n    <span class="cv-line">${esc(CATEGORY_ONE_LINERS[key] ?? '')}</span>`;
     }
-    const cleanLis = (g && g.cleans.length > 0)
+    // Compliment gate (audit Q2, owner-approved 2026-09-28): a category's
+    // clean measurements render in its focused view ONLY when the category is
+    // CLEAN-band — a WATCH/45 category must not show a "— CLEAN:" compliment
+    // next to its WATCH badge (same rule as the What's Working list).
+    const cleanLis = (g && g.cleans.length > 0 && isCleanBand(key, rule))
       ? `\n    <ul class="cv-clean">\n      ${g.cleans.map((item) => renderCleanItem(label, item)).join('')}\n    </ul>`
       : '';
     return `

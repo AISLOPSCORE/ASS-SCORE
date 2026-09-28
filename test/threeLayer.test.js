@@ -513,9 +513,10 @@ test('E2E: legacy row without insights gets deterministic derivation (additive c
 // Owner CR (2026-09-16): "CLEAN FINDINGS SHOULD BE COMPLIMENTS, NOT INSULTS"
 // ---------------------------------------------------------------------------
 // Canonical CLEAN evidence strings per category (mirror the rule modules'
-// zero/none measurements and healthy metric bands exactly). fingerprints has
-// NO clean evidence format (findings only exist on pattern hits) — a clean
-// fingerprints scan has no findings, so nothing to compliment.
+// zero/none measurements and healthy metric bands exactly). fingerprints
+// gained a clean evidence format with the report-integrity fix (2026-09-28):
+// analyzeFingerprints emits "no recognizable template signs detected" on a
+// zero-hit scan, so DESIGN compliments like the other six categories.
 const CLEAN_CANONICAL = {
   filler: ['0 filler phrase occurrence(s) in 18 words (0.0 per 300 words)'],
   boilerplate: ['0 boilerplate signal(s) in 18 words (0.0 per 300 words)'],
@@ -527,7 +528,7 @@ const CLEAN_CANONICAL = {
   ],
   repetitive: ['no notable repetitive structure (24 sentences, 8 paragraphs)'],
   crossPage: ['no page pairs above 80% similarity (3 pages compared)'],
-  fingerprints: [],
+  fingerprints: ['no recognizable template signs detected'],
   assets: [
     '0 of 5 images flagged for stock/placeholder signals',
     '0 of 3 images from stock/placeholder CDNs',
@@ -781,11 +782,15 @@ test('E2E (Case A): all-negative fixture -> every stored insight stays a plain r
   }
 });
 
-test('E2E (mixed): slop fixture -> clean stopword line compliments, negative lines roast, report mixes both labels honestly', async () => {
+test('E2E (mixed): slop fixture -> clean stopword line compliments in STORED insights, negative lines roast; report gates compliments to CLEAN-band categories (Q2 report-integrity fix)', async () => {
   // The shared SLOP_PAGE fixture has one genuinely clean measurement — the
   // stopword ratio (~36% <= 40%) — everything else is negative. Per-finding
-  // honesty: that one line compliments, the rest roast, and the intro uses the
-  // neutral mixed phrasing.
+  // honesty is preserved in the STORED insights (that one line carries
+  // kind:'clean', the rest plain roast/why/fix). REPORT-layer change
+  // (owner-approved 2026-09-28, audit Q2): WHAT'S WORKING only compliments
+  // CLEAN-BAND categories (sub-score 0-24) — this fixture's four categories
+  // all score WATCH+ (100/100/94/56), so no "— CLEAN:" observation renders
+  // anywhere; the self-contradiction "ORIGINALITY 45/WATCH … CLEAN" is gone.
   const res = await fetch(`${api.base}/api/v1/scan`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -809,10 +814,26 @@ test('E2E (mixed): slop fixture -> clean stopword line compliments, negative lin
   }
   assert.ok(cleanOnes.length >= 1 && negativeOnes.length >= 10,
     `mixed fixture: ${cleanOnes.length} clean, ${negativeOnes.length} negative`);
+  // Sanity: the four copy/design categories with negative findings all score
+  // WATCH+ (that is what the Q2 gate keys on). fingerprints scores 14 (below
+  // 25 — its v0.dev hit is weighted low) but its finding is a pattern hit, so
+  // it carries NO clean measurement line: it contributes nothing to What's
+  // Working, which is exactly why the '— CLEAN:' absence assertion holds.
+  for (const [key, rule] of Object.entries(stored)) {
+    if (rule.score === null || rule.score === undefined) continue;
+    if (!Array.isArray(rule.findings) || rule.findings.length === 0) continue;
+    const hasClean = rule.findings.some((f) => isCleanEvidence(key, f));
+    if (hasClean) assert.ok(rule.score >= 25, `${key} has a clean line but scores ${rule.score}??`);
+  }
   const token = createReportToken(TL_SECRET, json.id);
   const html = await (await fetch(`${api.base}/api/v1/scans/${json.id}?token=${encodeURIComponent(token)}`, { headers: { accept: 'text/html' } })).text();
-  assert.ok(html.includes('— CLEAN:') && html.includes('How to fix it:'),
-    'mixed report renders both CLEAN observations and roast labels');
+  // Roast labels render for the negative findings…
+  assert.ok(html.includes('How to fix it:'), 'mixed report renders the roast/fix labels');
+  // …but NO '— CLEAN:' compliment renders: every category is WATCH+, and the
+  // report-integrity gate forbids complimenting a non-CLEAN category.
+  assert.ok(!html.includes('— CLEAN:'), 'no CLEAN observation for a WATCH+ category');
   assert.ok(html.includes('every roast points at the receipts'), 'findings intro points at the receipts');
   assert.ok(!html.includes('every single one is a compliment'), 'no all-compliment framing on a mixed report');
+  // The What's Working section renders its intentional empty state.
+  assert.ok(html.includes('Nothing to compliment this scan'), 'no CLEAN-band categories -> empty What\'s Working');
 });

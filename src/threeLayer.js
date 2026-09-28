@@ -94,11 +94,17 @@ const POOLS = Object.freeze(
       compliments: Object.freeze([...(v.compliments ?? [])]),
       cleanWhys: Object.freeze([...(v.cleanWhys ?? [])]),
       keepUps: Object.freeze([...(v.keepUps ?? [])]),
+      // Roasts for the boilerplate TOTALS line when the category's ONLY
+      // signals are legal/template/cta-type (no marketing phrases) — the
+      // generic-wording roasts would mislabel a copyright line as "generic
+      // phrase … nothing to say" (audit Q3.2). Token-compatible with the
+      // totals line ({count}, {signalsNoun}, {words}); see buildCategoryInsights.
+      legalSafeTotalsRoasts: Object.freeze([...(v.legalSafeTotalsRoasts ?? [])]),
     }),
   ])),
 );
 
-/** Raw pools (key -> { roasts[], whys[], fixes[], compliments[], cleanWhys[], keepUps[] }); whys/fixes entries flattened to their copy text (backward-compatible pre-trigger shape). Exposed for tests/tooling. */
+/** Raw pools (key -> { roasts[], whys[], fixes[], compliments[], cleanWhys[], keepUps[], legalSafeTotalsRoasts[] }); whys/fixes entries flattened to their copy text (backward-compatible pre-trigger shape). Exposed for tests/tooling. */
 export const THREE_LAYER_POOLS = Object.freeze(
   Object.fromEntries(Object.entries(POOLS).map(([k, p]) => [
     k,
@@ -109,6 +115,7 @@ export const THREE_LAYER_POOLS = Object.freeze(
       compliments: p.compliments,
       cleanWhys: p.cleanWhys,
       keepUps: p.keepUps,
+      legalSafeTotalsRoasts: p.legalSafeTotalsRoasts,
     }),
   ])),
 );
@@ -270,13 +277,46 @@ export function eligibleVariants(entries, signalTag) {
 }
 
 /**
+ * Is this a boilerplate AGGREGATE (totals) line — "N generic wording
+ * matches/boilerplate signals in W words (D per 300 words)"? The totals line
+ * is a MEASUREMENT of the category's signal density, not a distinct signal of
+ * its own: one copyright line produces ONE detail line ("1× copyright line")
+ * AND this totals line. Report surfaces use this to render one signal as one
+ * finding (audit Q3, owner-approved 2026-09-28) while keeping the density
+ * measurement visible as a receipt, and the roast/teaser gates use it to
+ * never label legal-only pages with generic-phrase copy.
+ *
+ * @param {string} finding the evidence string
+ * @returns {boolean}
+ */
+export function isBoilerplateAggregateLine(finding) {
+  return /^\d+ (?:generic wording match(?:es)?|boilerplate signal(?:\(s\)|s)?) in \d+ words/.test(String(finding ?? ''));
+}
+
+/**
  * Pick ONE eligible why/fix line deterministically, or null when the eligible
  * set is empty (the caller then OMITS that layer from the insight — never
  * draw from an ineligible pool). Seed format is unchanged from the original
  * selection (`${id}:${category}:${i}:why` / `:fix`) — same determinism and
  * hash variety WITHIN the eligible set.
+ *
+ * TRIGGER-PREFERRED SELECTION (report-integrity fix, owner-approved
+ * 2026-09-28, audit Q1): when the finding HAS a signal tag AND at least one
+ * trigger-matched line exists in the pool, selection happens ONLY inside that
+ * trigger-matched subset — the untagged generic fallback becomes a true LAST
+ * RESORT, reachable only when the tagged set is empty (or the finding has no
+ * tag at all, which already meant untagged-only). This kills the residual
+ * mismatch class where a legal finding could still land the marketing
+ * fallback ~50% of scan ids: a legal finding always gets legal advice, a
+ * marketing finding always gets marketing advice.
  */
 export function selectEligible(entries, signalTag, seed) {
+  if (signalTag !== null) {
+    const tagged = (entries ?? [])
+      .filter((e) => entryTriggers(e).includes(signalTag))
+      .map(entryText);
+    if (tagged.length > 0) return pickVariant(tagged, seed);
+  }
   const eligible = eligibleVariants(entries, signalTag);
   if (eligible.length === 0) return null;
   return pickVariant(eligible, seed);
@@ -466,9 +506,11 @@ export function parseEvidenceTokens(category, finding) {
 //               — emitted only when all three sub-detectors came back empty.
 //   crossPage   "no page pairs above 80% similarity (N pages compared)"
 //               — emitted only when no pair crossed the 0.80 threshold.
-//   fingerprints findings only exist on pattern hits — there is no clean
-//               evidence format, so this category never compliments (a clean
-//               fingerprints scan simply has no findings/insights at all).
+//   fingerprints "no recognizable template signs detected" — emitted by the
+//               rule module when a scan finds zero pattern hits (added with
+//               the report-integrity fix 2026-09-28 so DESIGN compliments like
+//               the other six categories). Pattern-hit findings remain the
+//               only negative evidence format.
 //   assets      "0 of N images flagged for stock/placeholder signals" (full
 //               category clean) plus the per-signal zero lines ("0 of N images
 //               from stock/placeholder CDNs", "…with placeholder/generic
@@ -504,8 +546,13 @@ const CLEAN_EVIDENCE = {
   crossPage(f) {
     return /^(?:no two pages are more than \d+% the same \(\d+ pages compared\)|no page pairs above \d+% similarity \(\d+ pages compared\))$/.test(f);
   },
-  fingerprints() {
-    return false; // no clean evidence format exists; clean scans have no findings
+  fingerprints(f) {
+    // DESIGN clean line (report-integrity fix, owner-approved 2026-09-28,
+    // audit Q2): analyzeFingerprints now emits "no recognizable template
+    // signs detected" when a scan finds zero pattern hits, so DESIGN
+    // compliments like the other six categories when truly clean (its
+    // compliments pool was previously unreachable dead copy).
+    return /^no recognizable template signs detected$/.test(f);
   },
   assets(f) {
     if (/^0 of \d+ images look generic or placeholder$/.test(f)) return true;
@@ -616,6 +663,37 @@ function eligibleRoasts(pool, tokens, category) {
 }
 
 /**
+ * Signal tags that are NOT marketing phrases — a boilerplate category whose
+ * every detail signal is one of these (legal/template/cta/learn-more) must
+ * never be roasted as "generic phrase … having nothing to say": the flagged
+ * element is standard-issue legal/CTA furniture, not empty marketing copy
+ * (audit Q3.2, owner-approved 2026-09-28). 'repeated' and unknown/null tags
+ * are deliberately NOT in the safe set — a repeated block or an unrecognized
+ * label could be marketing content, so those keep the generic-wording roasts.
+ */
+const NON_MARKETING_BOILERPLATE_TAGS = new Set(['legal', 'template', 'cta', 'learn-more']);
+
+/**
+ * True when a boilerplate findings list is "legal-safe to roast as boilerplate
+ * furniture": it carries NO aggregate/totals-only signal, AND every detail
+ * line's signal tag is one of the NON-MARKETING tags (legal/template/cta/
+ * learn-more). A list with no detail lines (a lone totals line) is NOT
+ * legal-safe — conservative: without sibling signals we cannot know.
+ * Deterministic (pure function of the evidence strings).
+ */
+function isLegalSafeBoilerplate(findings) {
+  if (!Array.isArray(findings)) return false;
+  let sawDetail = false;
+  for (const raw of findings) {
+    const f = String(raw ?? '');
+    if (isBoilerplateAggregateLine(f)) continue;
+    sawDetail = true;
+    if (!NON_MARKETING_BOILERPLATE_TAGS.has(signalTagFor('boilerplate', f))) return false;
+  }
+  return sawDetail;
+}
+
+/**
  * Build the three-layer insights for ONE category from its findings.
  * Deterministic for a given (category, findings, id): same inputs -> identical
  * insights, always. Capped at MAX_INSIGHTS_PER_CATEGORY (first findings, in
@@ -647,6 +725,13 @@ function eligibleRoasts(pool, tokens, category) {
 export function buildCategoryInsights({ category, findings = [], id }) {
   const pool = POOLS[category];
   if (!pool || findings.length === 0) return [];
+  // Legal-safe totality flag (audit Q3.2): when EVERY detail signal behind a
+  // boilerplate category is legal/template/cta-type (no marketing phrase), the
+  // TOTALS line must not roast "generic phrase … a record for having nothing
+  // to say" — the flagged element is a copyright line / legal footer, not
+  // empty marketing copy. Computed once per build from the whole findings
+  // list; deterministic.
+  const legalSafeBoilerplate = category === 'boilerplate' && isLegalSafeBoilerplate(findings);
   // Deterministic distinct-pick bookkeeping for the clean (token-free) lines:
   // per build, a compliment/cleanWhy/keepUp line is used at most once.
   const usedCompliments = new Set();
@@ -683,9 +768,18 @@ export function buildCategoryInsights({ category, findings = [], id }) {
     // negative finding/roast even when its stored insight is a roast-shaped
     // line). In-band metric lines take the kind:'clean' branch above.
     const roasts = eligibleRoasts(pool, tokens, category);
+    // Audit Q3.2 (owner-approved 2026-09-28): on a legal-safe boilerplate
+    // category, the TOTALS line draws from the legalSafeTotalsRoasts pool
+    // instead of the generic-wording roasts — a copyright-only page must
+    // roast the legal element as what it is, never as "generic phrase …
+    // having nothing to say". Detail lines keep their label-citing roasts.
+    let roastCandidates = roasts;
+    if (legalSafeBoilerplate && isBoilerplateAggregateLine(evidence) && pool.legalSafeTotalsRoasts.length > 0) {
+      roastCandidates = pool.legalSafeTotalsRoasts;
+    }
     // Defensive: the eligible set is never empty (every group ships token-free
     // roasts), but stay crash-proof against future copy edits.
-    const roastTpl = pickVariant(roasts.length > 0 ? roasts : pool.roasts, `${id}:${category}:${i}:roast`);
+    const roastTpl = pickVariant(roastCandidates.length > 0 ? roastCandidates : pool.roasts, `${id}:${category}:${i}:roast`);
     // CONTENT-INTEGRITY (owner Option 1, approved): why/fix lines are now
     // SIGNAL-GATED. Only entries eligible for this finding's signal tag (see
     // signalTagFor / eligibleVariants) may be picked; an untagged line is the

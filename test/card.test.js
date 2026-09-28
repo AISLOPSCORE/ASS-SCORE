@@ -231,7 +231,7 @@ test('POST scan -> GET /share: pre-filled text + public result URL (public score
   // Share text is the bare-homepage sentence with the PUBLIC score — no deep link.
   assert.equal(
     json.text,
-    `My website got an A.S.S. Score of ${created.score}/100. Check yours at ass-score.com`,
+    `My website got an A.S.S. Score of ${created.score}/100 (low is good). Check yours at ass-score.com`,
   );
   assert.ok(!json.text.includes(json.url), 'share text carries NO /scan deep link');
   assert.ok(!json.text.includes('https://'), 'share text is the bare homepage, no scheme');
@@ -282,7 +282,7 @@ test('publicBaseUrl option overrides the share-link base', async () => {
     // publicBaseUrl override affects the url field, not the social post copy.
     assert.equal(
       json.text,
-      `My website got an A.S.S. Score of ${created.score}/100. Check yours at ass-score.com`,
+      `My website got an A.S.S. Score of ${created.score}/100 (low is good). Check yours at ass-score.com`,
     );
   } finally {
     app.server.close();
