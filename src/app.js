@@ -59,10 +59,13 @@ const defaultCheckTarget = async (raw) => {
  *                     env REPORT_TOKEN_SECRET; when neither is set a random
  *                     per-boot secret is used — emailed links die on restart,
  *                     a warning is logged)
- *   reportBaseUrl   — public origin embedded in emailed full-report links
- *                     (default publicBaseUrl; env REPORT_BASE_URL when unset —
- *                     use the backend origin if the domain does not proxy
- *                     /api/v1/report to the service)
+ *   reportBaseUrl   — host for the orders verify-RESPONSE reportUrl ONLY
+ *                     (default publicBaseUrl; env REPORT_BASE_URL when unset).
+ *                     Emailed PAID-report links are built from publicBaseUrl
+ *                     (the PUBLIC site origin — buildSiteReportUrl in
+ *                     src/email.js); REPORT_BASE_URL no longer affects those.
+ *                     The site's toProxyPath strips the host from the verify
+ *                     response anyway, so this value is display-only there.
  *   runRetentionOnBoot — boolean; when true the daily retention sweep
  *                     (src/retention.js — purge scans/scan_events/webhook_events/
  *                     page_views older than 30 days) runs once at app creation

@@ -8,10 +8,12 @@ import { validateUrl } from '../src/fetch/ssrf.js';
 import {
   validateEmail,
   buildReportEmail,
+  buildSiteReportUrl,
   createEmailSender,
   DEFAULT_SUBJECT,
   ASS_SCORE_SUBJECT,
 } from '../src/email.js';
+import { createReportToken } from '../src/paywall.js';
 import { verdictFor } from '../src/card.js';
 
 const tmpDb = () => path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'aislop-mail-')), 'test.db');
@@ -141,6 +143,24 @@ function DEFAULT_DISCLAIMER() {
 
 // ------------------------------------------------------------ sender (units)
 
+test('buildSiteReportUrl: PUBLIC /report/<scanId>?token= shape — parses, exact path, exact token, safe encoding', () => {
+  const id = 'scan-abc/1'; // chars that need encoding — belt & braces
+  const token = createReportToken('test-secret', id);
+  const link = buildSiteReportUrl('https://www.ass-score.com///', id, token);
+  assert.equal(
+    link,
+    `https://www.ass-score.com/report/${encodeURIComponent(id)}?token=${encodeURIComponent(token)}`,
+    'exact public-origin link shape'
+  );
+  const u = new URL(link);
+  assert.equal(u.origin, 'https://www.ass-score.com', 'host is the PUBLIC origin');
+  assert.equal(u.pathname, `/report/${encodeURIComponent(id)}`, 'path is the site proxy route');
+  assert.equal(u.searchParams.get('token'), token, 'token param equals the created token');
+  assert.match(u.searchParams.get('token'), /^v1\.[a-f0-9]{64}$/, 'token is the versioned HMAC shape');
+  assert.ok(!link.includes('/api/v1/'), 'never the internal API path');
+  assert.ok(!link.includes('railway'), 'never an internal host');
+});
+
 test('createEmailSender: without SMTP_HOST -> no-op, logs "email not configured", never rejects', async () => {
   const logs = [];
   const sender = createEmailSender({ env: {}, logger: { log: (m) => logs.push(m), error: () => {} } });
@@ -167,6 +187,36 @@ test('createEmailSender: with SMTP_HOST + fake transport -> sends the buildRepor
   assert.ok(sent[0].text.includes('63 / 100'));
   assert.ok(sent[0].html.includes(verdictFor(63)));
   assert.ok(sent[0].html.includes(DEFAULT_DISCLAIMER()));
+});
+
+test('SMTP paid email: report link is the PUBLIC site origin /report/<id>?token=v1.<hex> — reportBaseUrl is ignored for emailed links', async () => {
+  const sent = [];
+  const sender = createEmailSender({
+    env: { SMTP_HOST: 'smtp.example.com' },
+    publicBaseUrl: 'https://www.ass-score.com',
+    // The old internal host must NO LONGER appear in emailed links.
+    reportBaseUrl: 'https://ass-score-production.up.railway.app',
+    reportTokenSecret: 'test-secret',
+    transport: { sendMail: async (mail) => { sent.push(mail); return { accepted: [mail.to] }; } },
+    logger: { log: () => {}, error: () => {}, warn: () => {} },
+  });
+  const scan = { id: 'scan-site-1', url: 'https://example.com/', score: 42 };
+  const token = createReportToken('test-secret', scan.id);
+  const result = await sender(scan, 'buyer@example.com');
+  assert.deepEqual(result, { ok: true, configured: true, attempts: 1 });
+  const text = sent[0].text;
+  const m = text.match(/Full report: (\S+)/);
+  assert.ok(m, 'email contains a report link');
+  const link = m[1];
+  assert.equal(link, `https://www.ass-score.com/report/scan-site-1?token=${token}`, 'exact public-origin link');
+  const u = new URL(link);
+  assert.equal(u.pathname, '/report/scan-site-1');
+  assert.equal(u.searchParams.get('token'), token, 'token param equals the created token');
+  assert.match(u.searchParams.get('token'), /^v1\.[a-f0-9]{64}$/, 'token is the versioned HMAC shape');
+  assert.ok(!link.includes('railway'), 'no internal host in the emailed link');
+  assert.ok(!link.includes('/api/v1/report'), 'no internal API path in the emailed link');
+  const htmlHref = sent[0].html.match(/<a href="([^"]+)" style="display:inline-block/)[1];
+  assert.equal(htmlHref, link, 'html CTA href carries the identical public link');
 });
 
 test('createEmailSender: failing transport retries up to maxAttempts, never rejects, logs failures', async () => {

@@ -28,7 +28,7 @@
 
 import { DISCLAIMER } from './card.js';
 import { verdictFor } from './verdict.js';
-import { createReportToken, reportSecret, buildReportUrl } from './paywall.js';
+import { createReportToken, reportSecret } from './paywall.js';
 import nodemailer from 'nodemailer';
 
 /** Conservative default primary — deliverability-safe, no emoji/brand tokens. */
@@ -145,6 +145,27 @@ export function buildReportEmail({ scan, to, publicBaseUrl, subject = DEFAULT_SU
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
+ * The PUBLIC-origin link for a PAID report — the only link shape the site
+ * (ass-score.com) can serve. The backend's own /api/v1/report/:id path is NOT
+ * routed by the public origin (verified live 2026-09-28: www.ass-score.com
+ * 404s it), while the site's TanStack route /report/:scanId (report.$scanId.tsx)
+ * proxies/iframes the backend at `${API_BASE}/api/v1/report/:id?token=…`.
+ * The buyer's emailed link MUST therefore be `${publicBaseUrl}/report/…`
+ * (owner-approved cleanup). Keeps buildReportUrl (src/paywall.js) untouched —
+ * that API shape is still the orders verify-RESPONSE contract; the site's
+ * toProxyPath regex-matches it and strips the host, so that response must not
+ * change.
+ *
+ * @param {string} publicBaseUrl e.g. https://www.ass-score.com
+ * @param {string} scanId
+ * @param {string} token report token (`v1.<hex>`)
+ * @returns {string} `${publicBaseUrl}/report/${encodeURIComponent(scanId)}?token=${encodeURIComponent(token)}`
+ */
+export function buildSiteReportUrl(publicBaseUrl, scanId, token) {
+  return `${String(publicBaseUrl).replace(/\/+$/, '')}/report/${encodeURIComponent(scanId)}?token=${encodeURIComponent(token)}`;
+}
+
+/**
  * Build a Resend API email sender (global fetch — no SDK dependency).
  *
  * POSTs the report to https://api.resend.com/emails with
@@ -159,7 +180,12 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
  * @param {string} [opts.from]            sender ("Name <email@verified-domain>")
  * @param {string} [opts.subject]         subject line (default env EMAIL_SUBJECT
  *                                        or DEFAULT_SUBJECT)
- * @param {string} [opts.publicBaseUrl]   report-link base
+ * @param {string} [opts.publicBaseUrl]   public origin the paid /report/<scanId>
+ *                                        email link is built on (site route)
+ * @param {string} [opts.reportBaseUrl]   RETAINED for call-site compatibility
+ *                                        only — NO LONGER affects the emailed
+ *                                        link (owner-approved: emailed links
+ *                                        must point at the PUBLIC site origin)
  * @param {object} [opts.logger]          logger with .log/.error (default console)
  * @param {number} [opts.maxAttempts=3]   total attempts
  * @param {number[]} [opts.backoffMs]     delay before attempts 2, 3, ...
@@ -185,7 +211,6 @@ export function createResendSender({
     throw new Error('createResendSender requires a non-empty apiKey');
   }
   const secret = reportTokenSecret ?? reportSecret(process.env, logger);
-  const linkBase = reportBaseUrl ?? publicBaseUrl;
   return async function sendScanEmailViaResend(scan, to, opts = {}) {
     if (!scan || typeof scan.id !== 'string') {
       logger.error(`[email] send to ${to} aborted: payload is not a scan result`);
@@ -198,11 +223,13 @@ export function createResendSender({
         if (delay > 0) await sleep(delay);
       }
       try {
-        // PAYWALL: paid (default) -> token'd full-report link; free -> the
-        // free result page. The token is HMAC'd to this scan id + secret.
+        // PAYWALL: paid (default) -> token'd full-report link on the PUBLIC
+        // site origin (/report/<scanId>, the site's proxy route — the backend
+        // /api/v1/report path 404s on the public domain); free -> the free
+        // result page. The token is HMAC'd to this scan id + secret.
         const reportUrl = opts.free
           ? `${String(publicBaseUrl).replace(/\/+$/, '')}/api/v1/scans/${scan.id}`
-          : buildReportUrl(linkBase, scan.id, createReportToken(secret, scan.id));
+          : buildSiteReportUrl(publicBaseUrl, scan.id, createReportToken(secret, scan.id));
         const mail = buildReportEmail({ scan, to, publicBaseUrl, subject, from, reportUrl });
         const response = await fetchImpl(RESEND_API_URL, {
           method: 'POST',
@@ -254,7 +281,12 @@ export function createResendSender({
  * @param {object} [opts]
  * @param {string} [opts.subject]           subject line (default env EMAIL_SUBJECT
  *                                          or DEFAULT_SUBJECT)
- * @param {string} [opts.publicBaseUrl]     report-link base
+ * @param {string} [opts.publicBaseUrl]     public origin the paid /report/<scanId>
+ *                                          email link is built on (site route)
+ * @param {string} [opts.reportBaseUrl]     RETAINED for call-site compatibility
+ *                                          only — NO LONGER affects the emailed
+ *                                          link (owner-approved: emailed links
+ *                                          must point at the PUBLIC site origin)
  * @param {string} [opts.from]              sender override (default per transport:
  *                                          Resend → RESEND_FROM ?? SMTP_FROM ?? RESEND_DEFAULT_FROM;
  *                                          SMTP → SMTP_FROM ?? DEFAULT_FROM)
@@ -328,7 +360,6 @@ export function createEmailSender({
   const pass = env.SMTP_PASS || '';
   const smtpFrom = from ?? env.SMTP_FROM ?? DEFAULT_FROM;
   const secret = reportTokenSecret ?? reportSecret(env, logger);
-  const linkBase = reportBaseUrl ?? publicBaseUrl;
   const transporter = transport ?? nodemailer.createTransport({
     host: smtpHost,
     port,
@@ -351,11 +382,13 @@ export function createEmailSender({
         if (delay > 0) await sleep(delay);
       }
       try {
-        // PAYWALL: paid (default) -> token'd full-report link; free -> the
-        // free result page. The token is HMAC'd to this scan id + secret.
+        // PAYWALL: paid (default) -> token'd full-report link on the PUBLIC
+        // site origin (/report/<scanId>, the site's proxy route — the backend
+        // /api/v1/report path 404s on the public domain); free -> the free
+        // result page. The token is HMAC'd to this scan id + secret.
         const reportUrl = opts.free
           ? `${String(publicBaseUrl).replace(/\/+$/, '')}/api/v1/scans/${scan.id}`
-          : buildReportUrl(linkBase, scan.id, createReportToken(secret, scan.id));
+          : buildSiteReportUrl(publicBaseUrl, scan.id, createReportToken(secret, scan.id));
         const mail = buildReportEmail({ scan, to, publicBaseUrl, subject, from: smtpFrom, reportUrl });
         await transporter.sendMail(mail);
         return { ok: true, configured: true, attempts: attempt };
