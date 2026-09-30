@@ -532,7 +532,7 @@ const WORST_PAGE_KEYS = ['filler', 'boilerplate', 'infoDensity', 'repetitive'];
  * identify both the category and the class, so a metric line can never be
  * presented as a page problem.
  */
-function worstPageSummary(findings = []) {
+export function worstPageSummary(findings = []) {
   const per = new Map();
   for (const raw of findings) {
     const f = String(raw ?? '');
