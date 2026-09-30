@@ -148,6 +148,46 @@ test('retention: a second run is harmless (idempotent)', () => {
   }
 });
 
+test('retention: a FULLY PAID scan (order status=fulfilled) is exempt from the 30-day purge — the row survives', () => {
+  const db = openDb(tmpDb());
+  try {
+    db.insertScan({ id: 'scan-paid', url: 'https://paid.example/', score: 72, breakdown: {}, createdAt: OLD });
+    db.insertOrder({ id: 'order-paid', scanId: 'scan-paid', email: 'buyer@example.com', createdAt: OLD });
+    db.markOrderFulfilled('order-paid', { checkoutSessionId: 'cs_test_1', paidAt: OLD });
+
+    const res = runRetention({ db, now: () => NOW });
+
+    assert.deepEqual(res.deleted, { scans: 0, scanEvents: 0, webhookEvents: 0, views: 0 }, 'the fulfilled paid scan is NOT purged');
+    assert.ok(hasScan(db, 'scan-paid'), 'fulfilled paid scan survives the 30-day purge');
+    // Deterministic/idempotent: a second run still keeps it (no accidental
+    // state flip in the exemption query).
+    const second = runRetention({ db, now: () => NOW });
+    assert.deepEqual(second.deleted, { scans: 0, scanEvents: 0, webhookEvents: 0, views: 0 });
+    assert.ok(hasScan(db, 'scan-paid'));
+  } finally {
+    db.close();
+  }
+});
+
+test('retention: pending-order and order-less scans still purge at 31 days — only status=fulfilled is exempt', () => {
+  const db = openDb(tmpDb());
+  try {
+    // Pending-order scan (bought but never completed): still purged.
+    db.insertScan({ id: 'scan-pending', url: 'https://pending.example/', score: 60, breakdown: {}, createdAt: OLD });
+    db.insertOrder({ id: 'order-pending', scanId: 'scan-pending', email: 'buyer@example.com', createdAt: OLD });
+    // Order-less scan (plain free scan): still purged.
+    db.insertScan({ id: 'scan-orderless', url: 'https://orderless.example/', score: 50, breakdown: {}, createdAt: OLD });
+
+    const res = runRetention({ db, now: () => NOW });
+
+    assert.deepEqual(res.deleted, { scans: 2, scanEvents: 0, webhookEvents: 0, views: 0 }, 'both non-fulfilled scans purged');
+    assert.ok(!hasScan(db, 'scan-pending'), 'pending-order scan still purged at 31d');
+    assert.ok(!hasScan(db, 'scan-orderless'), 'order-less scan still purged at 31d');
+  } finally {
+    db.close();
+  }
+});
+
 test('retention: app wiring — runRetentionOnBoot sweeps at app creation, default off leaves fixtures alone', () => {
   // Fixture db with an old + a fresh scan row.
   const dbPath = tmpDb();

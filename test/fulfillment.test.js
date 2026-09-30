@@ -6,6 +6,7 @@ import path from 'node:path';
 import Database from 'better-sqlite3';
 import { createHmac } from 'node:crypto';
 import { createApp } from '../src/app.js';
+import { openDb } from '../src/db.js';
 import { validateUrl } from '../src/fetch/ssrf.js';
 import { verifyStripeSignature } from '../src/stripeSignature.js';
 import { extractStripeSession } from '../src/orderNormalizer.js';
@@ -524,6 +525,44 @@ test('admin deliver: unset ADMIN_PASSWORD disables the route (403 always), like 
   try {
     const { status } = await postJson(app.base, '/admin/deliver', { scanId: 'x', email: 'a@b.co' });
     assert.equal(status, 403);
+  } finally {
+    app.server.close();
+  }
+});
+
+test('admin deliver: an expired (31-day-old) scan returns the expiry note and NO email is sent; a fresh scan still delivers', async () => {
+  // Owner-approved preserve-data/expire-access: the scan row survives retention
+  // (fulfilled paid scans are exempt), but its 30-day report window has passed,
+  // so /admin/deliver must NOT re-send the report link.
+  const NOW = '2026-09-23T12:00:00.000Z';
+  const dbp = tmpDb();
+  const sender = stubSender();
+  const app = startApp({ dbPath: dbp, fetcher: fakeFetcher(), emailSender: sender, adminPassword: 's3cret', now: () => NOW });
+  try {
+    // A scan 31 days old with a fulfilled order (the retainable paid case).
+    const db = openDb(dbp);
+    const scanId = 'scan-expired-31d';
+    db.insertScan({ id: scanId, url: 'https://old.example/', score: 42, breakdown: {}, createdAt: '2026-08-23T12:00:00.000Z' });
+    db.insertOrder({ id: 'order-expired', scanId, email: 'buyer@example.com', createdAt: '2026-08-23T12:00:00.000Z' });
+    db.markOrderFulfilled('order-expired', { checkoutSessionId: 'cs_test_expired', paidAt: '2026-08-23T12:00:00.000Z' });
+    db.close();
+
+    const { status, json } = await postJson(app.base, '/admin/deliver', { scanId, email: 'buyer@example.com' }, { 'x-admin-password': 's3cret' });
+    assert.equal(status, 200);
+    assert.equal(json.delivered, false);
+    assert.equal(json.scanId, scanId);
+    assert.equal(json.email, 'buyer@example.com');
+    assert.ok(json.note.includes('30-day access window has passed'), `expiry note present: ${json.note}`);
+    assert.equal(sender.calls.length, 0, 'emailSender NOT called for an expired scan');
+
+    // Same app + clock: a FRESH scan still delivers normally (the gate is
+    // per-scan, not a global freeze).
+    const fresh = await makeScan(app.base);
+    const res = await postJson(app.base, '/admin/deliver', { scanId: fresh.id, email: 'fresh@example.com' }, { 'x-admin-password': 's3cret' });
+    assert.equal(res.status, 200);
+    assert.equal(res.json.delivered, true);
+    assert.equal(sender.calls.length, 1, 'fresh scan still emails');
+    assert.equal(sender.calls[0].to, 'fresh@example.com');
   } finally {
     app.server.close();
   }

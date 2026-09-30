@@ -8,6 +8,7 @@ import { toPublicScan, publicScore } from '../serialize.js';
 import { verdictBand, verdictLabel, scoreColor } from '../verdict.js';
 import { CATEGORY_LABELS, CATEGORY_ONE_LINERS } from '../categories.js';
 import { buildFreePayload, verifyReportToken, DISCLAIMER } from '../paywall.js';
+import { isReportExpired } from '../ttl.js';
 
 /**
  * The stored line when the row has one; for rows written before the roast
@@ -62,9 +63,16 @@ function breakdownFor(scan) {
  *
  * GET /api/v1/report/:id — the token'd full-report page (the URL inside the
  * buyer email). Same gating as the token'd scans route, plus the free page is
- * NOT rendered here — without a valid token it is a 403.
+ * NOT rendered here — without a valid token it is a 403. ACCESS WINDOW
+ * (owner-approved preserve-data/expire-access): a VALID token on a scan older
+ * than REPORT_ACCESS_TTL_MS (30 days past scan.created_at — see src/ttl.js) is a
+ * 410 report_expired — the scan row itself survives retention (see
+ * src/retention.js), only the report link expires. Ordering: missing scan ->
+ * 404, invalid/missing token -> 403, valid token past the window -> 410. The
+ * free routes (/api/v1/scans/:id and the /report/:id alias) are NOT gated —
+ * they are free by construction and their rows still purge at 30 days.
  */
-export function scansRouter({ db, publicBaseUrl, reportTokenSecret, reportBaseUrl }) {
+export function scansRouter({ db, publicBaseUrl, reportTokenSecret, reportBaseUrl, now = () => new Date().toISOString() }) {
   const r = Router();
   const shareBase = publicBaseUrl || process.env.PUBLIC_BASE_URL || 'https://ass-score.com';
   // Approved Donkey System asset (owner spec 2026-09-22 v3): the dashboard/analyst
@@ -97,6 +105,35 @@ export function scansRouter({ db, publicBaseUrl, reportTokenSecret, reportBaseUr
       );
     }
     return res.status(403).json({ error: { code: 'forbidden', message: 'A valid report token is required for the full report' } });
+  };
+
+  /**
+   * 410 for a VALID-token request on a scan past its report-access window.
+   * Mirrors `forbidden` (same content negotiation): HTML accept -> the tiny
+   * branded expiry page (copy owner-approved preserve-data/expire-access:
+   * "This report link has expired — reports are available for 30 days after
+   * your purchase." + support contact + the mandated disclaimer); JSON accept
+   * -> 410 { error: { code: 'report_expired', ... } }. Only reachable with a
+   * valid token (the 403 branch above runs first), so it never widens the
+   * existence oracle beyond current behavior.
+   *
+   * The window is FIXED to scan.created_at (see src/ttl.js — REPORT_ACCESS_TTL_MS),
+   * NOT the token-mint time, so the gate is deterministic for a given row.
+   */
+  const expired = (res, accept) => {
+    const wantsHtml = /text\/html/.test(accept) && !/application\/json/.test(accept);
+    if (wantsHtml) {
+      return res.status(410).type('html').send(
+        `<!doctype html><html lang="en"><head><meta charset="utf-8"/><title>410 — Link expired</title></head>
+<body style="font-family:system-ui,sans-serif;max-width:640px;margin:3rem auto;padding:0 1rem;color:#1a202c">
+<h1>This report link has expired.</h1>
+<p>This report link has expired — reports are available for 30 days after your purchase.</p>
+<p>If you bought a report and need it again, email <a href="mailto:support@ass-score.com">support@ass-score.com</a>.</p>
+<p class="disclaimer" style="color:#64748b;font-size:.8rem">${DISCLAIMER}</p>
+</body></html>`
+      );
+    }
+    return res.status(410).json({ error: { code: 'report_expired', message: 'This report link has expired — reports are available for 30 days after your purchase' } });
   };
 
   r.get('/api/v1/scans/:id', (req, res) => {
@@ -136,6 +173,10 @@ export function scansRouter({ db, publicBaseUrl, reportTokenSecret, reportBaseUr
       return res.status(404).json({ error: { code: 'not_found', message: `No scan found with id "${req.params.id}"` } });
     }
     if (hasValidToken(req, scan.id)) {
+      // ACCESS GATE (owner-approved preserve-data/expire-access): a valid token
+      // on a scan past its 30-day window (fixed to scan.created_at — src/ttl.js)
+      // is a 410, not the report. Only reachable with a valid token.
+      if (isReportExpired(scan, now())) return expired(res, req.get('accept') || '');
       return res.type('html').send(renderHtmlReport({ ...scan, breakdown: breakdownFor(scan) }));
     }
     return forbidden(res, req.get('accept') || '');

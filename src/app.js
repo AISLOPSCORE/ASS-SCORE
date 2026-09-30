@@ -154,7 +154,7 @@ export function createApp({ dbPath = './data/ass-score.db', fetcher, webhookDeli
     reportBaseUrl: reportLinkBase,
     emailSender: emailSenderImpl,
   }));
-  app.use(scansRouter({ db, publicBaseUrl, reportTokenSecret: secret, reportBaseUrl: reportLinkBase }));
+  app.use(scansRouter({ db, publicBaseUrl, reportTokenSecret: secret, reportBaseUrl: reportLinkBase, now: nowImpl }));
   // Homepage view tracking + private admin stats (backlog db64a1c9 — owner
   // lifted the hold 2026-09-23). track is a silent beacon; admin is gated on
   // ADMIN_PASSWORD (disabled/403 until the owner sets it on Railway).

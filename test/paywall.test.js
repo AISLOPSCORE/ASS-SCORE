@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import Database from 'better-sqlite3';
 import { createApp } from '../src/app.js';
+import { openDb } from '../src/db.js';
 import { validateUrl } from '../src/fetch/ssrf.js';
 import { createEmailSender } from '../src/email.js';
 import {
@@ -176,6 +177,93 @@ test('PAID contract: /api/v1/report/:id without a token = 403 (never the free pa
   const ok = await getReport(api.base, created.id, `?token=${encodeURIComponent(token)}`);
   assert.equal(ok.status, 200);
   assert.ok((await ok.text()).includes('The Verdict'));
+});
+
+// ------------------------------------------------- report access window (30d)
+// Owner-approved preserve-data/expire-access: the token'd report link expires
+// 30 days after scan.created_at (src/ttl.js) — a VALID token on an older scan
+// is a 410 report_expired. Missing scan -> 404 and missing/invalid token ->
+// 403 stay unchanged and take precedence (a 410 must only be reachable by a
+// valid-token holder). The FREE routes are not gated (free by construction).
+
+test('report access window: valid token on a 29-day-old scan -> 200 HTML; 31-day-old scan -> 410 report_expired', async () => {
+  const NOW = '2026-09-23T12:00:00.000Z';
+  const dbp = tmpDb();
+  const app = startApp({ dbPath: dbp, now: () => NOW });
+  try {
+    const db = openDb(dbp);
+    const youngId = 'scan-29d';
+    const oldId = 'scan-31d';
+    // 29 days before NOW (inside the window) and 31 days before NOW (past it).
+    db.insertScan({ id: youngId, url: 'https://young.example/', score: 42, breakdown: {}, createdAt: '2026-08-25T12:00:00.000Z' });
+    db.insertScan({ id: oldId, url: 'https://old.example/', score: 42, breakdown: {}, createdAt: '2026-08-23T12:00:00.000Z' });
+    db.close();
+
+    // 29 days old: NOT expired -> 200 full report.
+    const young = await getReport(app.base, youngId, `?token=${encodeURIComponent(createReportToken(TOKEN_SECRET, youngId))}`);
+    assert.equal(young.status, 200, 'valid token on a 29-day-old scan renders the report');
+    assert.match(young.headers.get('content-type'), /text\/html/);
+    assert.ok((await young.text()).includes('The Verdict'), 'full report rendered for the in-window scan');
+
+    // 31 days old: expired -> 410 with the branded expiry page (HTML accept).
+    const oldHtmlRes = await getReport(app.base, oldId, `?token=${encodeURIComponent(createReportToken(TOKEN_SECRET, oldId))}`);
+    assert.equal(oldHtmlRes.status, 410, 'valid token on a 31-day-old scan -> 410');
+    const oldHtml = await oldHtmlRes.text();
+    assert.ok(oldHtml.includes('This report link has expired.'), 'expired page headline');
+    assert.ok(oldHtml.includes('reports are available for 30 days after your purchase'), 'window copy on the expired page');
+    assert.ok(oldHtml.includes('mailto:support@ass-score.com'), 'support contact on the expired page');
+    assert.ok(oldHtml.includes(DISCLAIMER), 'mandated disclaimer on the expired page');
+
+    // JSON accept -> 410 error envelope.
+    const oldJsonRes = await fetch(`${app.base}/api/v1/report/${oldId}?token=${encodeURIComponent(createReportToken(TOKEN_SECRET, oldId))}`, { headers: { accept: 'application/json' } });
+    assert.equal(oldJsonRes.status, 410);
+    const oldJson = await oldJsonRes.json();
+    assert.equal(oldJson.error.code, 'report_expired');
+    assert.ok(oldJson.error.message.includes('30 days'), 'JSON message names the window');
+  } finally {
+    app.server.close();
+  }
+});
+
+test('report access window: missing/invalid token on an old scan stay 403, missing scan stays 404, free routes stay un-gated', async () => {
+  const NOW = '2026-09-23T12:00:00.000Z';
+  const dbp = tmpDb();
+  const app = startApp({ dbPath: dbp, now: () => NOW });
+  try {
+    const db = openDb(dbp);
+    const oldId = 'scan-31d';
+    db.insertScan({ id: oldId, url: 'https://old.example/', score: 42, breakdown: {}, createdAt: '2026-08-23T12:00:00.000Z' });
+    db.close();
+
+    // Missing token on an EXPIRED scan: 403 (unchanged), never 410 — a 410
+    // must not widen the existence oracle beyond current 403 behavior.
+    const noToken = await getReport(app.base, oldId);
+    assert.equal(noToken.status, 403, 'missing token -> 403 even on an expired scan');
+    const noTokenJson = await fetch(`${app.base}/api/v1/report/${oldId}`, { headers: { accept: 'application/json' } });
+    assert.equal(noTokenJson.status, 403);
+    assert.equal((await noTokenJson.json()).error.code, 'forbidden');
+
+    // Invalid token on an expired scan: 403 (unchanged).
+    const badToken = await getReport(app.base, oldId, '?token=v1.0000000000000000000000000000000000000000000000000000000000000000');
+    assert.equal(badToken.status, 403, 'invalid token -> 403 even on an expired scan');
+
+    // Missing scan: 404 (unchanged), even with a (validly-formed) token.
+    const missing = await getReport(app.base, 'no-such-scan', `?token=${encodeURIComponent(createReportToken(TOKEN_SECRET, 'no-such-scan'))}`);
+    assert.equal(missing.status, 404);
+    assert.equal((await missing.json()).error.code, 'not_found');
+
+    // The FREE routes are NOT gated (free by construction; their rows still
+    // purge at 30d via retention): JSON, HTML, and the /report/:id alias all
+    // still answer for the expired scan.
+    assert.equal((await getJson(app.base, oldId)).status, 200, 'free JSON route not gated');
+    const freeHtml = await getHtml(app.base, oldId);
+    assert.equal(freeHtml.status, 200, 'free HTML route not gated');
+    assert.ok((await freeHtml.text()).includes('A.S.S. Score: 42 / 100'), 'free teaser page renders for the expired scan');
+    const alias = await fetch(`${app.base}/report/${oldId}`, { headers: { accept: 'text/html' } });
+    assert.equal(alias.status, 200, '/report/:id alias not gated');
+  } finally {
+    app.server.close();
+  }
 });
 
 // ------------------------------------------------------------------ (d) unguessable tokens
