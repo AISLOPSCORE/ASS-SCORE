@@ -109,11 +109,17 @@ test('Q1/owner-case: the exact owner evidence with the REAL scan ids gets a lega
     // Copyright detail line alone (the signal the owner's Finding 2 flagged).
     const [ins] = buildCategoryInsights({ category: 'boilerplate', findings: [COPYRIGHT], id });
     assert.equal(signalTagFor('boilerplate', COPYRIGHT), 'legal', 'copyright line tags as legal');
-    assert.equal(ins.fix, 'Keep legal and cookie text in one tight, honest block at the bottom instead of sprinkling generic wording through the page.',
-      `${id}: fix must be the legal-tagged line`);
+    assert.equal(ins.fix, 'Keep legal and cookie text in one tight, honest block at the bottom — a copyright line in the footer is expected practice; the rest of the page is where your own voice should do the talking.',
+      `${id}: fix must be the legal-tagged line (legal-safe, no invented sprinkling)`);
     assert.ok(!ins.fix.includes(OLD_FALLBACK_FIX), `${id}: never the old generic-marketing fallback`);
     assert.ok(!/nothing to say|generic phrase/i.test(ins.roast), `${id}: detail roast must not mislabel legal text ("${ins.roast}")`);
     assert.ok(/copyright line/.test(ins.roast), `${id}: roast names the legal element ("${ins.roast}")`);
+    // Report-quality fix #3 (2026-10-01): the detail roast comes from the
+    // LEGAL-SAFE detail pool, not the generic marketing-card roasts (no
+    // "it's a checklist", no "greatest-hits album").
+    assert.ok(THREE_LAYER_POOLS.boilerplate.legalSafeRoasts
+      .map((t) => t.replace(/\{count\}/g, '1').replace(/\{label\}/g, 'copyright line'))
+      .includes(ins.roast), `${id}: detail roast must come from the legalSafeRoasts pool ("${ins.roast}")`);
 
     // Full category ([totals, detail]) — the way the detector actually emits.
     const [totalsIns, detailIns] = buildCategoryInsights({ category: 'boilerplate', findings: [TOTALS, COPYRIGHT], id });
@@ -209,6 +215,7 @@ test('Q3/report: owner scan — ONE finding card for the copyright signal; roast
       const card = paid.match(/<div class="finding-card">[\s\S]*?<\/div>\s*<\/div>/)?.[0] ?? paid;
       assert.ok(/copyright line/.test(card), `${id}: roast names the legal element`);
       assert.ok(!/nothing to say|generic phrase/i.test(card), `${id}: roast never mislabels legal text as generic filler`);
+      assert.ok(!card.includes('checklist'), `${id}: legal detail card never overstates one legal line as a checklist (fix #3)`);
       assert.ok(card.includes('Keep legal and cookie text in one tight, honest block'),
         `${id}: fix is the legal-tagged line`);
       assert.ok(!card.includes(OLD_FALLBACK_FIX), `${id}: never the old marketing fallback`);

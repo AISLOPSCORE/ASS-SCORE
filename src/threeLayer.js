@@ -100,11 +100,17 @@ const POOLS = Object.freeze(
       // phrase … nothing to say" (audit Q3.2). Token-compatible with the
       // totals line ({count}, {signalsNoun}, {words}); see buildCategoryInsights.
       legalSafeTotalsRoasts: Object.freeze([...(v.legalSafeTotalsRoasts ?? [])]),
+      // Roasts for a DETAIL line whose OWN evidence tags as legal/copyright
+      // ("1× copyright line", "2× cookie banner", …) — report-quality fix #3
+      // (2026-10-01): one legal line is standard furniture, never "a
+      // checklist"; {label}/{count}-compatible with the detail evidence
+      // format (see buildCategoryInsights).
+      legalSafeRoasts: Object.freeze([...(v.legalSafeRoasts ?? [])]),
     }),
   ])),
 );
 
-/** Raw pools (key -> { roasts[], whys[], fixes[], compliments[], cleanWhys[], keepUps[], legalSafeTotalsRoasts[] }); whys/fixes entries flattened to their copy text (backward-compatible pre-trigger shape). Exposed for tests/tooling. */
+/** Raw pools (key -> { roasts[], whys[], fixes[], compliments[], cleanWhys[], keepUps[], legalSafeTotalsRoasts[], legalSafeRoasts[] }); whys/fixes entries flattened to their copy text (backward-compatible pre-trigger shape). Exposed for tests/tooling. */
 export const THREE_LAYER_POOLS = Object.freeze(
   Object.fromEntries(Object.entries(POOLS).map(([k, p]) => [
     k,
@@ -116,6 +122,7 @@ export const THREE_LAYER_POOLS = Object.freeze(
       cleanWhys: p.cleanWhys,
       keepUps: p.keepUps,
       legalSafeTotalsRoasts: p.legalSafeTotalsRoasts,
+      legalSafeRoasts: p.legalSafeRoasts,
     }),
   ])),
 );
@@ -599,7 +606,12 @@ export function isMetricFinding(category, finding) {
   const f = String(finding ?? '');
   return (
     /^(?:word variety|vocabulary diversity \(MATTR-\d+\)): [\d.]+ \(lower = more repetitive vocabulary\)$/.test(f) ||
-    /^(?:common words|stopword ratio): [\d.]+%$/.test(f) ||
+    // The common-words line ships with the rule's parenthetical annotation
+    // ("…% (little words like \"the\" and \"and\" — …)"), which must not
+    // knock the line out of the metric class — a measurement is a
+    // measurement with or without its commentary (report-quality fix #4,
+    // owner-approved 2026-10-01). Bare legacy forms still match.
+    /^(?:common words|stopword ratio): [\d.]+%(?: \([^)]*\))?$/.test(f) ||
     /^(?:average sentence length|mean sentence length): [\d.]+ words \(\d+ sentences\)$/.test(f) ||
     /^short paragraphs \(<25 words\): \d+% \(\d+ paragraphs\)$/.test(f)
   );
@@ -768,28 +780,33 @@ export function buildCategoryInsights({ category, findings = [], id }) {
     // negative finding/roast even when its stored insight is a roast-shaped
     // line). In-band metric lines take the kind:'clean' branch above.
     const roasts = eligibleRoasts(pool, tokens, category);
+    // CONTENT-INTEGRITY (owner Option 1, approved): why/fix lines are now
+    // SIGNAL-GATED. Only entries eligible for this finding's signal tag (see
+    // signalTagFor / eligibleVariants) may be picked; the tag is computed here
+    // so the roast routing below can also key on it.
+    const signalTag = signalTagFor(category, evidence);
     // Audit Q3.2 (owner-approved 2026-09-28): on a legal-safe boilerplate
     // category, the TOTALS line draws from the legalSafeTotalsRoasts pool
     // instead of the generic-wording roasts — a copyright-only page must
     // roast the legal element as what it is, never as "generic phrase …
-    // having nothing to say". Detail lines keep their label-citing roasts.
+    // having nothing to say". Other detail lines keep their label-citing
+    // roasts (legal-tagged ones route to legalSafeRoasts below).
     let roastCandidates = roasts;
-    if (legalSafeBoilerplate && isBoilerplateAggregateLine(evidence) && pool.legalSafeTotalsRoasts.length > 0) {
+    // Report-quality fix #3 (owner-approved 2026-10-01): a DETAIL finding
+    // whose own evidence tags as legal/copyright ("1× copyright line",
+    // "2× cookie banner", …) draws its card roast from the legalSafeRoasts
+    // pool, never the generic marketing-card roasts ("…it's a checklist",
+    // "greatest-hits album" overstate a single legal line as invented
+    // clutter). The gate is the finding's OWN tag — template/cta/learn-more
+    // and untagged signals keep the generic pools exactly as before.
+    if (category === 'boilerplate' && signalTag === 'legal' && pool.legalSafeRoasts?.length > 0) {
+      roastCandidates = pool.legalSafeRoasts;
+    } else if (legalSafeBoilerplate && isBoilerplateAggregateLine(evidence) && pool.legalSafeTotalsRoasts.length > 0) {
       roastCandidates = pool.legalSafeTotalsRoasts;
     }
     // Defensive: the eligible set is never empty (every group ships token-free
     // roasts), but stay crash-proof against future copy edits.
     const roastTpl = pickVariant(roastCandidates.length > 0 ? roastCandidates : pool.roasts, `${id}:${category}:${i}:roast`);
-    // CONTENT-INTEGRITY (owner Option 1, approved): why/fix lines are now
-    // SIGNAL-GATED. Only entries eligible for this finding's signal tag (see
-    // signalTagFor / eligibleVariants) may be picked; an untagged line is the
-    // generic fallback, eligible for every finding. When NOTHING is eligible
-    // for a layer, that layer is OMITTED from the insight — never draw from an
-    // ineligible pool (a cookie/legal fix must never land on a marketing- or
-    // repeated-block finding; a learn-more fix must never land on a privacy
-    // policy). Seed format unchanged -> deterministic, same hash variety
-    // within the eligible set.
-    const signalTag = signalTagFor(category, evidence);
     const whyTpl = selectEligible(pool.whyEntries, signalTag, `${id}:${category}:${i}:why`);
     const fixTpl = selectEligible(pool.fixEntries, signalTag, `${id}:${category}:${i}:fix`);
     const insight = { roast: interpolate(roastTpl, tokens) };

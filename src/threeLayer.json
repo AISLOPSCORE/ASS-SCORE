@@ -70,13 +70,13 @@
    "whys": [
     "Generic wording is the fastest way to look like everyone else: visitors have seen these exact sentences on a dozen competitor sites, so nothing about you sticks.",
     "Sentences that live on thousands of other sites make yours interchangeable with them — the reader has already seen this line on a dozen competitor pages, so nothing about you registers.",
-    { "text": "Cookie banners, legal text and \"learn more\" links are fine alone; in bulk they make the page read as assembled rather than written — and trust is the first casualty.", "triggers": ["legal", "learn-more"] },
+    { "text": "Standard-issue lines like a copyright footer, a cookie notice or a \"learn more\" link are furniture, not content — every real site has them. They only start to hurt when legal text crowds out what you actually do.", "triggers": ["legal", "learn-more"] },
     "Every generic sentence is a wasted chance to say one specific thing about your product that a competitor cannot.",
     { "text": "When the compliance text outweighs the pitch, the visitor's takeaway is \"this site is covering its ass,\" not \"this site solves my problem.\"", "triggers": ["legal"] }
    ],
    "fixes": [
     { "text": "Rewrite each flagged generic sentence with a concrete detail: swap \"we are committed to quality\" for \"every order is checked by a human before it ships.\"", "triggers": ["marketing"] },
-    { "text": "Keep legal and cookie text in one tight, honest block at the bottom instead of sprinkling generic wording through the page.", "triggers": ["legal"] },
+    { "text": "Keep legal and cookie text in one tight, honest block at the bottom — a copyright line in the footer is expected practice; the rest of the page is where your own voice should do the talking.", "triggers": ["legal"] },
     { "text": "Replace \"learn more\" links with labels that say what the visitor will actually learn — \"see pricing\" or \"read the case study.\"", "triggers": ["learn-more"] },
     { "text": "Cut any line a competitor with the same website template could publish unchanged — that is exactly the kind of generic line to remove.", "triggers": ["marketing", "template"] },
     { "text": "Do one pass where every sentence gets a fact check: if a sentence contains no verifiable claim, rewrite it until it does.", "triggers": ["marketing"] },
@@ -85,6 +85,11 @@
    "legalSafeTotalsRoasts": [
     "All {count} flagged {signalsNoun} in {words} words are the standard-issue kind — fine print, footers, links every site pastes. Keep what you must; keep it quiet.",
     "Every one of the {count} flagged {signalsNoun} in {words} words is legal-and-template furniture, not original writing. Your own voice lives somewhere else — let it."
+   ],
+   "legalSafeRoasts": [
+    "\"{label}\" — {count} of them. Standard-issue legal furniture, tucked in the footer where it belongs. Not content — and not a crime, either.",
+    "\"{label}\" — {count} of them. The legal footer doing its quiet job. We checked the whole page for crimes; this isn't one.",
+    "\"{label}\" — {count} of them. Every site that stays in business keeps this line. Yours does too — we just noticed, that's all."
    ],
    "compliments": [
     "Zero generic wording in the scan — no cookie-banner copy-pasta, no generic \"learn more\" wallpaper. The page reads written, not assembled.",
