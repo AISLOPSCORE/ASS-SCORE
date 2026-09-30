@@ -89,10 +89,15 @@ function esc(v) {
  * public-by-id link (kept for direct callers).
  *
  * @param {{ scan: object, to: string, publicBaseUrl: string, subject?: string,
- *           from?: string, reportUrl?: string }}
+ *           from?: string, reportUrl?: string, ctaLabel?: string, textLabel?: string }}
  * @returns {{ from: string, to: string, subject: string, text: string, html: string }}
+ *
+ * `ctaLabel` (HTML button text, default "View full report") and `textLabel`
+ * (plain-text line label, default "Full report") describe the link honestly:
+ * paid senders keep the full-report framing; free senders pass "View your
+ * result" because free-tier recipients only get the free result page.
  */
-export function buildReportEmail({ scan, to, publicBaseUrl, subject = DEFAULT_SUBJECT, from = DEFAULT_FROM, reportUrl }) {
+export function buildReportEmail({ scan, to, publicBaseUrl, subject = DEFAULT_SUBJECT, from = DEFAULT_FROM, reportUrl, ctaLabel = 'View full report', textLabel = 'Full report' }) {
   // The scan payload is the PUBLIC scan shape (`score` 0-100, higher = worse,
   // with a `verdict`); legacy payloads may carry `slopScore` (same direction)
   // — accept both, prefer the public `score`.
@@ -106,7 +111,7 @@ export function buildReportEmail({ scan, to, publicBaseUrl, subject = DEFAULT_SU
     `A.S.S. Score: ${score} / 100`,
     `Verdict: ${verdictFor(score)}`,
     '',
-    `Full report: ${link}`,
+    `${textLabel}: ${link}`,
     '',
     '————',
     '',
@@ -130,7 +135,7 @@ export function buildReportEmail({ scan, to, publicBaseUrl, subject = DEFAULT_SU
           <p style="margin:0 0 6px;font-size:13px;color:#64748b">A.S.S. Score</p>
           <p style="margin:0 0 4px;font-size:40px;font-weight:800;color:#f59e0b">${score} <span style="font-size:18px;color:#94a3b8">/ 100</span></p>
           <p style="margin:0 0 24px;font-size:16px;color:#334155">${esc(verdictFor(score))}</p>
-          <p style="margin:0 0 8px"><a href="${esc(link)}" style="display:inline-block;background:#0f172a;color:#f8fafc;text-decoration:none;padding:12px 22px;border-radius:8px;font-weight:600">View full report</a></p>
+          <p style="margin:0 0 8px"><a href="${esc(link)}" style="display:inline-block;background:#0f172a;color:#f8fafc;text-decoration:none;padding:12px 22px;border-radius:8px;font-weight:600">${esc(ctaLabel)}</a></p>
           <p style="margin:24px 0 0;font-size:12px;line-height:1.5;color:#64748b">${esc(DISCLAIMER)}</p>
         </td></tr>
       </table>
@@ -226,11 +231,22 @@ export function createResendSender({
         // PAYWALL: paid (default) -> token'd full-report link on the PUBLIC
         // site origin (/report/<scanId>, the site's proxy route — the backend
         // /api/v1/report path 404s on the public domain); free -> the free
-        // result page. The token is HMAC'd to this scan id + secret.
+        // result page (/scan/<scanId> — the site route the public origin
+        // actually serves; /api/v1/scans/<id> is backend-only and 404s on
+        // www). The token is HMAC'd to this scan id + secret. Free senders
+        // also label the CTA honestly ("View your result").
         const reportUrl = opts.free
-          ? `${String(publicBaseUrl).replace(/\/+$/, '')}/api/v1/scans/${scan.id}`
+          ? `${String(publicBaseUrl).replace(/\/+$/, '')}/scan/${scan.id}`
           : buildSiteReportUrl(publicBaseUrl, scan.id, createReportToken(secret, scan.id));
-        const mail = buildReportEmail({ scan, to, publicBaseUrl, subject, from, reportUrl });
+        const mail = buildReportEmail({
+          scan,
+          to,
+          publicBaseUrl,
+          subject,
+          from,
+          reportUrl,
+          ...(opts.free ? { ctaLabel: 'View your result', textLabel: 'View your result' } : {}),
+        });
         const response = await fetchImpl(RESEND_API_URL, {
           method: 'POST',
           headers: {
@@ -385,11 +401,21 @@ export function createEmailSender({
         // PAYWALL: paid (default) -> token'd full-report link on the PUBLIC
         // site origin (/report/<scanId>, the site's proxy route — the backend
         // /api/v1/report path 404s on the public domain); free -> the free
-        // result page. The token is HMAC'd to this scan id + secret.
+        // result page (/scan/<scanId> — see the Resend path above). The token
+        // is HMAC'd to this scan id + secret. Free senders also label the CTA
+        // honestly ("View your result").
         const reportUrl = opts.free
-          ? `${String(publicBaseUrl).replace(/\/+$/, '')}/api/v1/scans/${scan.id}`
+          ? `${String(publicBaseUrl).replace(/\/+$/, '')}/scan/${scan.id}`
           : buildSiteReportUrl(publicBaseUrl, scan.id, createReportToken(secret, scan.id));
-        const mail = buildReportEmail({ scan, to, publicBaseUrl, subject, from: smtpFrom, reportUrl });
+        const mail = buildReportEmail({
+          scan,
+          to,
+          publicBaseUrl,
+          subject,
+          from: smtpFrom,
+          reportUrl,
+          ...(opts.free ? { ctaLabel: 'View your result', textLabel: 'View your result' } : {}),
+        });
         await transporter.sendMail(mail);
         return { ok: true, configured: true, attempts: attempt };
       } catch (err) {
