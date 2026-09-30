@@ -10,6 +10,7 @@ import {
   buildReportEmail,
   buildSiteReportUrl,
   createEmailSender,
+  createResendSender,
   DEFAULT_SUBJECT,
   ASS_SCORE_SUBJECT,
 } from '../src/email.js';
@@ -353,4 +354,84 @@ test('no SMTP credentials: POST with email -> 200 with the no-op logged ("email 
     app.server.close();
   }
   assert.ok(logs.some((l) => l.includes('email not configured')), 'logged the no-op');
+});
+
+// --------------------------------------------------- free-vs-paid email labels
+// Regression: trust-policy pass (D7) — free-tier email links point at the
+// PUBLIC site route /scan/<id> (never the backend-only /api/v1/scans/<id> path,
+// which 404s on www), and the free CTA says "View your result", not
+// "View full report" — free recipients only get the free result page. The paid
+// path keeps its token'd /report/<id> link and "View full report" label.
+
+const SCAN = { id: 'scan-free-1', url: 'https://example.com/', score: 42 };
+const PUB = 'https://www.ass-score.com';
+
+test('SMTP free email: link is ${publicBaseUrl}/scan/<id> (never /api/v1/scans/) and the CTA says "View your result"', async () => {
+  const sent = [];
+  const sender = createEmailSender({
+    env: { SMTP_HOST: 'smtp.example.com' },
+    publicBaseUrl: PUB,
+    reportTokenSecret: 'test-secret',
+    transport: { sendMail: async (mail) => { sent.push(mail); return { accepted: [mail.to] }; } },
+    logger: { log: () => {}, error: () => {}, warn: () => {} },
+  });
+  await sender(SCAN, 'owner@example.com', { free: true });
+
+  assert.equal(sent.length, 1);
+  const { text, html } = sent[0];
+  assert.ok(text.includes(`View your result: ${PUB}/scan/scan-free-1`), 'plain-text line uses the honest free label + public /scan/ link');
+  assert.ok(!text.includes(`/api/v1/scans/`), 'plain text never contains the backend API path');
+  const htmlHref = html.match(/<a href="([^"]+)" style="display:inline-block/)[1];
+  assert.equal(htmlHref, `${PUB}/scan/scan-free-1`, 'HTML CTA href is the public /scan/ result page');
+  assert.ok(html.includes('>View your result<'), 'HTML button text is the honest free label');
+  assert.ok(!html.includes('View full report'), 'free email never promises the full report');
+  assert.ok(!html.includes('/api/v1/scans/'), 'HTML never contains the backend API path');
+  assert.ok(!html.includes('/report/'), 'free email never carries a token\'d paid link');
+});
+
+test('Resend free email: same honest /scan/<id> link + "View your result" label on the public origin', async () => {
+  const bodies = [];
+  const fetchImpl = async (url, opts) => {
+    bodies.push({ url, body: JSON.parse(opts.body) });
+    return { status: 200, ok: true };
+  };
+  const sender = createResendSender({
+    apiKey: 'test-key',
+    publicBaseUrl: PUB,
+    reportTokenSecret: 'test-secret',
+    fetchImpl,
+    logger: { log: () => {}, error: () => {}, warn: () => {} },
+  });
+  const result = await sender(SCAN, 'owner@example.com', { free: true });
+  assert.deepEqual(result, { ok: true, configured: true, attempts: 1 });
+  assert.equal(bodies.length, 1);
+  const { html } = bodies[0].body;
+  assert.ok(html.includes(`href="${PUB}/scan/scan-free-1"`), 'Resend HTML carries the public /scan/ result link');
+  assert.ok(html.includes('>View your result<'), 'Resend HTML button text is the honest free label');
+  assert.ok(!html.includes('/api/v1/scans/'), 'Resend HTML never contains the backend API path');
+  assert.ok(!html.includes('View full report'), 'Resend free email never promises the full report');
+});
+
+test('paid email keeps the token\'d /report/<id> link and "View full report" label (unchanged)', async () => {
+  const sent = [];
+  const sender = createEmailSender({
+    env: { SMTP_HOST: 'smtp.example.com' },
+    publicBaseUrl: PUB,
+    reportTokenSecret: 'test-secret',
+    transport: { sendMail: async (mail) => { sent.push(mail); return { accepted: [mail.to] }; } },
+    logger: { log: () => {}, error: () => {}, warn: () => {} },
+  });
+  const scan = { id: 'scan-paid-1', url: 'https://example.com/', score: 42 };
+  const token = createReportToken('test-secret', scan.id);
+  const result = await sender(scan, 'buyer@example.com');
+  assert.deepEqual(result, { ok: true, configured: true, attempts: 1 });
+
+  const { text, html } = sent[0];
+  const expectLink = `${PUB}/report/scan-paid-1?token=${token}`;
+  const textLink = text.match(/Full report: (\S+)/)[1];
+  assert.equal(textLink, expectLink, 'plain-text paid line unchanged: "Full report: <token\'d link>"');
+  const htmlHref = html.match(/<a href="([^"]+)" style="display:inline-block/)[1];
+  assert.equal(htmlHref, expectLink, 'HTML CTA href is the token\'d /report/ link');
+  assert.ok(html.includes('>View full report<'), 'HTML button text is the paid "View full report" label');
+  assert.ok(!html.includes('/api/v1/scans/'), 'paid email never contains the free backend path');
 });
