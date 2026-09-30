@@ -271,7 +271,11 @@ test('GET HTML report: roast lives in The Verdict, emoji-tagged, escape-safe whe
     roast: '<script>alert(1)</script> & "quoted"',
   });
   db.close();
-  const app2 = startApp(dbPath2, { reportTokenSecret: ROAST_TOKEN_SECRET });
+  // Fixed clock 1 day after the row's createdAt: this test pins the ESCAPE
+  // contract, not the 30-day report-access expiry — the fixed now keeps the
+  // token'd render inside the window deterministically (see src/ttl.js;
+  // the expiry gate itself is covered in paywall.test.js).
+  const app2 = startApp(dbPath2, { reportTokenSecret: ROAST_TOKEN_SECRET, now: () => '2026-01-02T00:00:00.000Z' });
   try {
     const html2 = await (await fetch(`${app2.base}/api/v1/scans/hostile-roast-scan`, { headers: { accept: 'text/html' } })).text();
     assert.ok(!html2.includes('<script>alert(1)</script>'), 'hostile roast not rendered as markup');

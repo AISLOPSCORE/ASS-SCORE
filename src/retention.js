@@ -5,6 +5,16 @@
  * `scan_events`, `webhook_events`, and `page_views`, running daily with no
  * manual intervention.
  *
+ * PAID-SCAN EXEMPTION (owner-approved 2026-09-28, preserve-data/expire-access):
+ * the `scans` purge skips any scan that has an order with status = 'fulfilled'
+ * (orders.scan_id = scans.id). Fulfilled paid scans are kept forever — the
+ * 30-day window still applies to their REPORT LINK (see src/ttl.js, an
+ * independent knob), but the row itself is never deleted. Already-purged paid
+ * scans (created BEFORE this change and deleted by an earlier retention run)
+ * cannot be recovered; the exemption protects rows from the next retention
+ * run forward. `scan_events` / `webhook_events` / `page_views` purges are
+ * unchanged — the exemption applies to scans only.
+ *
  * The first three tables store created_at as ISO-8601 strings
  * (e.g. `2026-09-23T12:00:00.000Z`), so the cutoff is compared
  * lexicographically against the ISO string — exact for same-format ISO
@@ -27,7 +37,15 @@ export function runRetention({ db, now = () => new Date().toISOString(), maxAgeM
 
   // Strictly older than the cutoff (`<`, not `<=`): a row created exactly
   // maxAgeMs ago is not yet "older than 30 days".
-  const deleteScans = conn.prepare('DELETE FROM scans WHERE created_at < ?');
+  // PAID-SCAN EXEMPTION (owner-approved preserve-data/expire-access): rows with
+  // a fulfilled order survive the purge — their report links expire per
+  // src/ttl.js, but the scan row itself is retained so the purchase record
+  // (and any future re-fulfillment) keeps its data.
+  const deleteScans = conn.prepare(
+    `DELETE FROM scans
+     WHERE created_at < ?
+       AND NOT EXISTS (SELECT 1 FROM orders o WHERE o.scan_id = scans.id AND o.status = 'fulfilled')`
+  );
   const deleteScanEvents = conn.prepare('DELETE FROM scan_events WHERE created_at < ?');
   const deleteWebhookEvents = conn.prepare('DELETE FROM webhook_events WHERE created_at < ?');
   const deletePageViews = conn.prepare('DELETE FROM page_views WHERE ts < ?');

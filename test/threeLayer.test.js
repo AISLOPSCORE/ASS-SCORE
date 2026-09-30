@@ -476,7 +476,11 @@ test('E2E: legacy row without insights gets deterministic derivation (additive c
     roast: 'A stored roast.',
   });
   db.close();
-  const app = startApp(dbPath2, { reportTokenSecret: TL_SECRET });
+  // Fixed clock 1 day after the row's createdAt: this test pins the DERIVATION
+  // contract, not the 30-day report-access expiry — the fixed now keeps the
+  // token'd render inside the window deterministically (see src/ttl.js;
+  // the expiry gate itself is covered in paywall.test.js).
+  const app = startApp(dbPath2, { reportTokenSecret: TL_SECRET, now: () => '2026-01-02T00:00:00.000Z' });
   try {
     // FREE payload: category numbers only, deterministic across reads — the
     // derived insights are paid content and never appear here.

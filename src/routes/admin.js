@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { Router } from 'express';
 import { validateEmail } from '../email.js';
 import { toPublicScan } from '../serialize.js';
+import { isReportExpired } from '../ttl.js';
 
 /**
  * Private admin stats page — GET /admin/stats (backend origin only, NOT under
@@ -281,6 +282,9 @@ export function adminRouter({ db, adminPassword, emailSender, now = () => new Da
    *   200 { delivered: boolean, scanId, email, note? } — email attempt made;
    *      delivery itself is best-effort like every other sender call, so a
    *      not-configured email transport still resolves 200 with note
+   *   200 { delivered: false, ..., note: 'report link expired …' } — the scan
+   *      exists but is past its 30-day report window (src/ttl.js); NO email is
+   *      sent. The scan row is preserved by retention, so this is not an error.
    *   404 not_found — scanId does not exist
    *   400 invalid_scan_id / invalid_email — bad input
    *   403 forbidden — missing/wrong admin password
@@ -298,6 +302,19 @@ export function adminRouter({ db, adminPassword, emailSender, now = () => new Da
     const scan = db.getScan(scanId);
     if (!scan) {
       return res.status(404).json({ error: { code: 'not_found', message: `No scan found with id "${scanId}"` } });
+    }
+    // ACCESS WINDOW (owner-approved preserve-data/expire-access): a scan past
+    // its 30-day report window (fixed to scan.created_at — src/ttl.js) can no
+    // longer be re-sent — the report link has expired for the buyer. The scan
+    // row IS preserved (retention exemption), so this is a soft 200 note, NOT
+    // an error, and the email sender is never called.
+    if (isReportExpired(scan, now())) {
+      return res.status(200).json({
+        delivered: false,
+        scanId: scan.id,
+        email: typeof body.email === 'string' ? body.email : null,
+        note: 'report link expired — scan preserved, but the 30-day access window has passed',
+      });
     }
     const mail = validateEmail(body.email);
     if (!mail.ok || mail.email === null) {

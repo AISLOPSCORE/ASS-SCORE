@@ -205,6 +205,11 @@ test('pre-flip stored rows read correctly with NO migration: stored 30 -> public
   // roast column value (pre-roast shape).
   const row = new (await import('better-sqlite3')).default(dbPath);
   const oldId = 'pre-flip-0000-0000-000000000001';
+  // The row SHAPE is what this test pins (pre-flip, pre-roast) — the timestamp
+  // is kept inside the 30-day report-access window (src/ttl.js) so the token'd
+  // render below succeeds; the paid-report access gate is covered separately in
+  // paywall.test.js.
+  const legacyCreatedAt = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString();
   row.prepare(
     'INSERT INTO scans (id, url, score, breakdown, created_at) VALUES (?, ?, ?, ?, ?)'
   ).run(
@@ -220,7 +225,7 @@ test('pre-flip stored rows read correctly with NO migration: stored 30 -> public
       fingerprints: { score: 0, findings: [], hits: [] },
       assets: { score: 0, findings: [] },
     }),
-    '2026-08-01T00:00:00.000Z'
+    legacyCreatedAt
   );
   row.close();
 
