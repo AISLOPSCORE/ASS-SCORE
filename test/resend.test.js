@@ -12,6 +12,7 @@ import {
   RESEND_DEFAULT_FROM,
   DEFAULT_SUBJECT,
 } from '../src/email.js';
+import { createReportToken } from '../src/paywall.js';
 import { verdictFor } from '../src/card.js';
 
 const SCAN = { id: 'scan-r1', url: 'https://example.com/', score: 61, createdAt: '2026-09-14T00:00:00.000Z' };
@@ -84,6 +85,33 @@ test('factory: RESEND_API_KEY + SMTP_HOST both set -> Resend wins, SMTP transpor
   assert.deepEqual(result, RESEND_OK);
   assert.equal(fetchFn.calls.length, 1, 'Resend used');
   assert.equal(smtpCalls, 0, 'SMTP transport never used');
+});
+
+test('Resend paid email: report link is the PUBLIC site origin /report/<id>?token=v1.<hex> — reportBaseUrl is ignored for emailed links', async () => {
+  const fetchFn = fakeFetch();
+  const sender = createEmailSender({
+    env: resendEnv(),
+    publicBaseUrl: 'https://www.ass-score.com',
+    // The old internal host must NO LONGER appear in emailed links.
+    reportBaseUrl: 'https://ass-score-production.up.railway.app',
+    reportTokenSecret: 'test-secret',
+    logger: quietLogger().logger,
+    fetchImpl: fetchFn,
+  });
+  const token = createReportToken('test-secret', SCAN.id);
+  const result = await sender(SCAN, 'buyer@example.com');
+  assert.deepEqual(result, RESEND_OK);
+  const html = JSON.parse(fetchFn.calls[0].init.body).html;
+  const m = html.match(/<a href="([^"]+)" style="display:inline-block/);
+  assert.ok(m, 'html CTA link present');
+  const link = m[1];
+  assert.equal(link, `https://www.ass-score.com/report/${SCAN.id}?token=${token}`, 'exact public-origin link');
+  const u = new URL(link);
+  assert.equal(u.pathname, `/report/${SCAN.id}`);
+  assert.equal(u.searchParams.get('token'), token, 'token param equals the created token');
+  assert.match(u.searchParams.get('token'), /^v1\.[a-f0-9]{64}$/, 'token is the versioned HMAC shape');
+  assert.ok(!link.includes('railway'), 'no internal host in the emailed link');
+  assert.ok(!link.includes('/api/v1/report'), 'no internal API path in the emailed link');
 });
 
 test('factory: no RESEND_API_KEY but SMTP_HOST -> SMTP transport (fake transporter), no Resend call', async () => {

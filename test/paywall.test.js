@@ -372,14 +372,19 @@ test('fulfillment: the checkout-webhook email carries a token link that opens th
     while (sent.length === 0 && Date.now() - start < 4000) await sleep(20);
     assert.equal(sent.length, 1, 'buyer email sent');
 
-    // The emailed link is the token'd full-report URL.
+    // The emailed link is the token'd full-report URL on the PUBLIC site
+    // origin (/report/<id> — the site's proxy route; the backend's /api/v1
+    // /report path is NOT routed by the public domain, so the email must use
+    // the site route — owner-approved cleanup 2026-09-28).
     const mailText = sent[0].text;
-    assert.ok(mailText.includes(`${PUBLIC_BASE}/api/v1/report/${id}?token=v1.`), `emailed link is token'd report URL: ${mailText}`);
+    assert.ok(mailText.includes(`${PUBLIC_BASE}/report/${id}?token=v1.`), `emailed link is site-origin token'd report URL: ${mailText}`);
     const m = mailText.match(/Full report: (\S+)/);
     assert.ok(m, 'email contains a report link');
     const url = new URL(m[1]);
+    assert.equal(url.pathname, `/report/${id}`, 'link path is the site proxy route');
     const token = url.searchParams.get('token');
-    assert.ok(token, 'link carries an access token');
+    assert.match(token, /^v1\.[a-f0-9]{64}$/, 'link carries the versioned report token');
+    assert.ok(!m[1].includes('railway'), 'no internal host in the emailed link');
 
     // Opening the emailed link on the service returns the FULL report.
     const opened = await fetch(`${app.base}/api/v1/report/${id}?token=${encodeURIComponent(token)}`, { headers: { accept: 'text/html' } });
