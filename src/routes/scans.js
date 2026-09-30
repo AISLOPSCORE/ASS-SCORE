@@ -50,7 +50,12 @@ function breakdownFor(scan) {
  * report (all findings + receipts) is served only when `?token=` carries a
  * valid HMAC token for this scan id (the link emailed to the paying buyer).
  * A supplied-but-invalid token is a 403 — it never degrades to the free page
- * (that would hand the token probe a non-error).
+ * (that would hand the token probe a non-error). ACCESS WINDOW
+ * (owner-approved preserve-data/expire-access): the token'd branch mirrors the
+ * /api/v1/report/:id gate — a VALID token on a scan older than
+ * REPORT_ACCESS_TTL_MS (30 days past scan.created_at — see src/ttl.js) is a
+ * 410 report_expired (the scan row itself survives retention; only the report
+ * link expires). The no-token free path below is NEVER gated.
  *
  * GET /api/v1/scans/:id/card — the shareable result card: a deterministic
  * 1600x900 PNG (A.S.S. Score + scanned URL + band + donkey + branding +
@@ -142,8 +147,13 @@ export function scansRouter({ db, publicBaseUrl, reportTokenSecret, reportBaseUr
       return res.status(404).json({ error: { code: 'not_found', message: `No scan found with id "${req.params.id}"` } });
     }
     // A REPORT TOKEN unlocks the full report (HTML); the buyer's emailed link
-    // lands here or on /api/v1/report/:id. Free (no token) is below.
+    // lands here or on /api/v1/report/:id. The ACCESS GATE mirrors
+    // /api/v1/report/:id (owner-approved preserve-data/expire-access): a valid
+    // token on a scan past its 30-day window (fixed to scan.created_at —
+    // src/ttl.js) is a 410 report_expired, not the report. Free (no token) is
+    // below and is NEVER gated.
     if (hasValidToken(req, scan.id)) {
+      if (isReportExpired(scan, now())) return expired(res, req.get('accept') || '');
       return res.type('html').send(renderHtmlReport({ ...scan, breakdown: breakdownFor(scan) }));
     }
     // A supplied token that does NOT verify is a 403 — never the free page.

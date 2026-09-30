@@ -224,6 +224,41 @@ test('report access window: valid token on a 29-day-old scan -> 200 HTML; 31-day
     app.server.close();
   }
 });
+test('report access window: /api/v1/scans/:id token branch mirrors the report gate — valid token on a 31d-old scan -> 410 report_expired (HTML), 29d-old -> 200 full report; no-token free path stays un-gated', async () => {
+  const NOW = '2026-09-23T12:00:00.000Z';
+  const dbp = tmpDb();
+  const app = startApp({ dbPath: dbp, now: () => NOW });
+  try {
+    const db = openDb(dbp);
+    const youngId = 'scan-29d-via-scans-route';
+    const oldId = 'scan-31d-via-scans-route';
+    // 29 days before NOW (inside the window) and 31 days before NOW (past it).
+    db.insertScan({ id: youngId, url: 'https://young.example/', score: 42, breakdown: {}, createdAt: '2026-08-25T12:00:00.000Z' });
+    db.insertScan({ id: oldId, url: 'https://old.example/', score: 42, breakdown: {}, createdAt: '2026-08-23T12:00:00.000Z' });
+    db.close();
+    // Valid token on a 31-day-old scan via /api/v1/scans/:id: 410, same as
+    // /api/v1/report/:id — the buyer's emailed link must not outlive the gate.
+    const oldRes = await getHtml(app.base, oldId, `?token=${encodeURIComponent(createReportToken(TOKEN_SECRET, oldId))}`);
+    assert.equal(oldRes.status, 410, 'valid token on a 31d-old scan via /api/v1/scans/:id -> 410 report_expired');
+    const oldHtml = await oldRes.text();
+    assert.ok(oldHtml.includes('This report link has expired.'), 'expired page headline via the scans route');
+    assert.ok(oldHtml.includes('reports are available for 30 days after your purchase'), 'window copy on the expired page');
+    assert.ok(oldHtml.includes(DISCLAIMER), 'mandated disclaimer on the expired page');
+    // Valid token on a 29-day-old scan via the same route: 200 full report.
+    const youngRes = await getHtml(app.base, youngId, `?token=${encodeURIComponent(createReportToken(TOKEN_SECRET, youngId))}`);
+    assert.equal(youngRes.status, 200, 'valid token on a 29d-old scan via /api/v1/scans/:id renders the full report');
+    assert.match(youngRes.headers.get('content-type'), /text\/html/);
+    assert.ok((await youngRes.text()).includes('The Verdict'), 'full report rendered for the in-window scan');
+    // No-token free path on an OLD scan: still 200 free payload, never gated.
+    const freeJson = await getJson(app.base, oldId);
+    assert.equal(freeJson.status, 200, 'no-token free JSON on an old scan stays 200');
+    const freeHtml = await getHtml(app.base, oldId);
+    assert.equal(freeHtml.status, 200, 'no-token free HTML on an old scan stays 200');
+    assert.ok((await freeHtml.text()).includes('A.S.S. Score: 42 / 100'), 'free teaser page renders for the old scan');
+  } finally {
+    app.server.close();
+  }
+});
 
 test('report access window: missing/invalid token on an old scan stay 403, missing scan stays 404, free routes stay un-gated', async () => {
   const NOW = '2026-09-23T12:00:00.000Z';
