@@ -29,7 +29,11 @@ import { clientIp } from '../clientIp.js';
  * between the count check and the insert, then scanned. Over the cap → 429
  * with `resetAt` (next UTC midnight). Ledger rows are marked 'completed' with
  * the scan id on success, 'failed' on scan failure — never double-counted by
- * the best-effort webhook/email delivery paths.
+ * the best-effort webhook/email delivery paths. Exceptions: the two content
+ * GATES (D1: target answered with an HTTP error status; D2: target is not an
+ * HTML page) reject the scan because of what the TARGET returned, not because
+ * of a failed request — those roll the ledger row back (db.voidScanEvent) so
+ * a rejection consumes ZERO daily quota (owner-approved D1/D2 rollback).
  *
  * Response shape (PAYWALL — free tier): PUBLIC scan JSON — id, url, score
  * (0-100, higher = worse, 0 = clean, 100 = maximum ass), verdict (grade
@@ -158,7 +162,27 @@ export function scanRouter({
         scanBudgetMs,
       });
       if (!result.ok) {
-        db.markScanEvent(eventKey, { status: 'failed', scanId: null });
+        // Owner-approved D1/D2 quota rollback: the two content GATES (audit
+        // D1 — target answered with an HTTP error status; audit D2 — target
+        // is not an HTML page) reject the scan because of what the TARGET
+        // returned, not because anything went wrong with the request — so
+        // they consume ZERO daily quota. The ledger row is REMOVED (slot
+        // restored, daily count unchanged — same as if the request never
+        // ran). Every OTHER failure (transport/timeout/oversize/redirect
+        // errors, HTML parse failures, zero-word pages, ...) keeps current
+        // behavior: the accepted request keeps its slot, row marked 'failed'.
+        const gateRejection =
+          (result.status === 502 &&
+            result.json?.error?.code === 'fetch_failed' &&
+            /^Target returned HTTP \d+/.test(result.json?.error?.message ?? '')) ||
+          (result.status === 422 &&
+            result.json?.error?.code === 'parse_failed' &&
+            (result.json?.error?.message ?? '').startsWith('Target is not an HTML page'));
+        if (gateRejection) {
+          db.voidScanEvent(eventKey);
+        } else {
+          db.markScanEvent(eventKey, { status: 'failed', scanId: null });
+        }
         return res.status(result.status).json(result.json);
       }
 

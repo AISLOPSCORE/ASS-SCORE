@@ -161,6 +161,10 @@ export function openDb(dbPath) {
     'INSERT OR IGNORE INTO scan_events (event_key, ip, day, scan_id, status, created_at) VALUES (?, ?, ?, ?, ?, ?)'
   );
   const markScanEventStmt = db.prepare('UPDATE scan_events SET status = ?, scan_id = ? WHERE event_key = ?');
+  // D1/D2 gate rejection rollback: removes the accepted-scan ledger row so the
+  // per-IP daily count is exactly as if the request never ran (gate rejections
+  // consume ZERO quota — owner-approved D1/D2 quota rollback).
+  const voidScanEventStmt = db.prepare('DELETE FROM scan_events WHERE event_key = ?');
   const countScanEventsStmt = db.prepare('SELECT COUNT(*) AS n FROM scan_events WHERE day = ? AND ip = ?');
   // Page-view + admin-stats queries (homepage view tracking).
   const insertPageViewStmt = db.prepare('INSERT INTO page_views (ts, ip, ua, path) VALUES (?, ?, ?, ?)');
@@ -358,6 +362,18 @@ export function openDb(dbPath) {
     /** Update the ledger row once the scan completes ('completed' w/ scan id) or fails ('failed'). */
     markScanEvent(eventKey, { status, scanId = null }) {
       markScanEventStmt.run(status, scanId, eventKey);
+    },
+    /**
+     * Remove an accepted-scan ledger row — D1/D2 GATE REJECTIONS ONLY (HTTP
+     * error status response / non-HTML Content-Type). The request was ledgered
+     * before running (count check + insert stay adjacent for race-freedom),
+     * but a gate rejection must consume ZERO daily quota, so the row is
+     * deleted and the per-IP count is exactly as if the request never
+     * happened. Every OTHER failure path keeps its row (marked 'failed').
+     * @returns {boolean} true when a row was deleted.
+     */
+    voidScanEvent(eventKey) {
+      return voidScanEventStmt.run(eventKey).changes > 0;
     },
     // --- Homepage view tracking (admin stats) --------------------------------
     /**
