@@ -259,6 +259,15 @@ export function signalTagFor(category, evidence) {
     if (/^img\[\d+\] generic alt /.test(f)) return 'alt';
     return null;
   }
+  if (category === 'fingerprints') {
+    // Count-token receipts (fingerprints count-tiered rules, 2026-10-01):
+    // evidence carrying the "— N token usages (...)" suffix is a measurable
+    // vocabulary hit — gated whys/fixes (triggers: ["count-token"]) apply
+    // ONLY to these findings; boolean pattern hits stay untagged so they
+    // keep the generic template-sign copy exactly as before.
+    if (/ — \d+ token usages \(/.test(f)) return 'count-token';
+    return null;
+  }
   return null;
 }
 
@@ -433,8 +442,23 @@ const EVIDENCE_PARSERS = {
   },
   fingerprints(f) {
     const m = /^(?:recognizable template sign in the page (\w+): (.+) \((\w+) confidence\)|pattern evidence in (\w+): (.+) \((\w+) confidence, template-like signal\))$/.exec(f);
-    if (m) return { scope: m[1] ?? m[4], label: m[2] ?? m[5], confidence: m[3] ?? m[6] };
-    return {};
+    if (!m) return {};
+    const tokens = { scope: m[1] ?? m[4], label: m[2] ?? m[5], confidence: m[3] ?? m[6] };
+    // Count-token receipts (fingerprints count-tiered rules, 2026-10-01):
+    // "...: <label> — <N> token usages (<token> ×<count>, ...) (<conf> confidence)".
+    // Split the label from the measurable suffix so roasts can cite the real
+    // numbers ({count}, {topToken}, {topCount}, {tokenList}).
+    const cm = /^(.+?) — (\d+) token usages \((.+)\)$/.exec(tokens.label);
+    if (cm) {
+      tokens.label = cm[1];
+      tokens.count = cm[2];
+      tokens.tokenList = cm[3];
+      const parts = cm[3].split(', ');
+      const first = parts[0] ? parts[0].split(' ×') : [];
+      tokens.topToken = first[0] ?? '';
+      tokens.topCount = first[1] ?? '';
+    }
+    return tokens;
   },
   assets(f) {
     let m = /^(?:(\d+) of (\d+) images come from stock photo sites|(\d+) of (\d+) images from stock\/placeholder CDNs)$/.exec(f);

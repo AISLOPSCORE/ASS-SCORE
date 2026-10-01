@@ -327,8 +327,21 @@ test('fingerprints: patterns are compiled from fingerprints.json (extensible, no
     assert.ok(typeof fp.id === 'string' && fp.id.length > 0);
     assert.ok(['high', 'medium', 'low'].includes(fp.confidence));
     assert.ok(['head', 'html', 'text'].includes(fp.scope));
-    assert.ok(Array.isArray(fp.patterns) && fp.patterns.length > 0);
-    for (const p of fp.patterns) new RegExp(p, 'i'); // must compile
+    // Either a boolean rule (patterns[]) or a count-tiered rule
+    // (countTokens[] + tiers[]); never both, never neither.
+    const hasPatterns = Array.isArray(fp.patterns) && fp.patterns.length > 0;
+    const hasCounts = Array.isArray(fp.countTokens) && fp.countTokens.length > 0
+      && Array.isArray(fp.tiers) && fp.tiers.length > 0;
+    assert.ok(hasPatterns !== hasCounts, `${fp.id}: exactly one trigger kind`);
+    if (hasPatterns) {
+      for (const p of fp.patterns) new RegExp(p, 'i'); // must compile
+    } else {
+      for (const t of fp.countTokens) assert.ok(typeof t === 'string' && t.length > 0);
+      for (const tier of fp.tiers) {
+        assert.ok(Number.isInteger(tier.min) && tier.min >= 0);
+        assert.ok(['high', 'medium', 'low'].includes(tier.confidence));
+      }
+    }
   }
 });
 
