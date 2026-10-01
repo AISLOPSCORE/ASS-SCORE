@@ -155,11 +155,14 @@ test('matrix: blog2posts — shadcn receipt + recomputed fingerprints score', ()
   for (const id of ['mui-vocabulary', 'bootstrap-vocabulary', 'tailwind-stock-palette']) {
     assert.equal(byId.has(id), false, `${id} has 0 hits on blog2posts`);
   }
-  // Fixture-computed "headline" proxy: full-weight composite with crossPage=0.
-  // Pass 2 (2026-10-01) moved this 9 -> 10: the in-page repeated-phrase signal
-  // fires on the fixture ("a month of platform native" 3× -> repetitive 5,
-  // +0.625) while the tenweb denominator shift dropped DESIGN 11 -> 10 (-0.1).
-  assert.equal(fixtureBreakdown('blog2posts', 0).composite, 10);
+  // Fixture-computed "headline" proxy: full-weight composite with crossPage
+  // EXPLICITLY injected as 0. The in-page repeated-phrase signal moved to the
+  // crossPage rule (REPETITION card — pass 2, 2026-10-01), so this proxy,
+  // which injects crossPage=0, cannot see it: 9 is the main-equivalent value
+  // (tenweb denominator shift dropped DESIGN 11 -> 10, -0.1). The REAL fixture
+  // scan scores crossPage 5 (+1.5 at weight 0.30) -> composite 11; the
+  // repetitivePhrases matrix asserts that directly.
+  assert.equal(fixtureBreakdown('blog2posts', 0).composite, 9);
 });
 
 test('matrix: getcollectionscopilot — fingerprints stays 0, all 4 new rules 0 hits', () => {

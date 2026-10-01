@@ -102,9 +102,9 @@ const POOLS = Object.freeze(
       legalSafeTotalsRoasts: Object.freeze([...(v.legalSafeTotalsRoasts ?? [])]),
       // Roasts for in-page repeated-PHRASE findings (pass 2, 2026-10-01):
       // bespoke template-citing copy ({phrase}/{count}), routed from
-      // buildCategoryInsights when signalTagFor('repetitive', evidence) ===
-      // 'phrase'. Kept OUT of `roasts` so the legacy sentence/paragraph
-      // findings' deterministic picks stay byte-identical (no array shift).
+      // buildCategoryInsights when signalTagFor('crossPage', evidence) ===
+      // 'phrase'. Kept OUT of `roasts` so the legacy pairwise findings'
+      // deterministic picks stay byte-identical (no array shift).
       phraseRoasts: Object.freeze([...(v.phraseRoasts ?? [])]),
       // Roasts for a DETAIL line whose OWN evidence tags as legal/copyright
       // ("1× copyright line", "2× cookie banner", …) — report-quality fix #3
@@ -161,7 +161,7 @@ const TRIGGER_TOKENS = {
   boilerplate: ['phrase', 'sentence', 'text', 'label'],
   infoDensity: ['mattr', 'stopwordRatio', 'meanLen', 'shortPct', 'examples'],
   repetitive: ['phrase'],
-  crossPage: ['urlA', 'urlB'],
+  crossPage: ['urlA', 'urlB', 'phrase'],
   fingerprints: ['label'],
   assets: ['host', 'stem', 'alt', 'altKind'],
 };
@@ -238,6 +238,9 @@ const BOILERPLATE_LABEL_SIGNALS = {
  *     "img[N] generic filename \"...\""                         -> 'filenames'
  *     "img[N] missing|empty alt (text|attribute)" and
  *     "img[N] generic alt \"...\""                              -> 'alt'
+ *   crossPage:
+ *     "repeated phrase in the page text: ..."                   -> 'phrase'
+ *     pair/pages lines stay untagged (byte-identical pool picks)
  *   every other category: every finding -> null (untagged-only, matches
  *   today's behavior).
  *
@@ -275,10 +278,10 @@ export function signalTagFor(category, evidence) {
     if (/ — \d+ token usages \(/.test(f)) return 'count-token';
     return null;
   }
-  if (category === 'repetitive') {
+  if (category === 'crossPage') {
     // In-page repeated-PHRASE findings (pass 2, 2026-10-01) route to the
-    // bespoke phraseRoasts pool + phrase-gated whys/fixes; the three legacy
-    // signals (openings/identical sentences/paragraphs) stay untagged so
+    // bespoke phraseRoasts pool + phrase-gated whys/fixes; the legacy
+    // pairwise findings (page-pair / pages-compared lines) stay untagged so
     // their generic pool picks are byte-identical.
     if (/^repeated phrase in the page text: /.test(f)) return 'phrase';
     return null;
@@ -440,16 +443,6 @@ const EVIDENCE_PARSERS = {
     if (m) return { kind: 'near-identical sentences', openings: m[1], ...firstDupPair(m[1]) };
     m = /^repeated paragraphs: (.+)$/.exec(f);
     if (m) return { kind: 'repeated paragraphs', openings: m[1], ...firstDupPair(m[1]) };
-    // Pass 2 (2026-10-01) in-page repeated-phrase line. Optional location
-    // suffixes: " — also in the page title" and/or " — in N paragraphs" (both
-    // emitted conditionally by the rule; either may be absent).
-    m = /^repeated phrase in the page text: (\d+)× "(.+)"( — also in the page title)?( — in (\d+) paragraphs?)?$/.exec(f);
-    if (m) {
-      const tokens = { kind: 'phrases', count: m[1], phrase: m[2] };
-      if (m[3] !== undefined) tokens.inTitle = 'the page title';
-      if (m[5] !== undefined) tokens.paragraphCount = m[5];
-      return tokens;
-    }
     m = /^no notable repetitive structure \((\d+) sentences, (\d+) paragraphs\)$/.exec(f);
     if (m) return { sentences: m[1], paragraphs: m[2] };
     return {};
@@ -463,6 +456,17 @@ const EVIDENCE_PARSERS = {
     if (m) return { count: m[1] ?? m[2] };
     m = /^(?:no two pages are more than \d+% the same \((\d+) pages compared\)|no page pairs above \d+% similarity \((\d+) pages compared\))$/.exec(f);
     if (m) return { pages: m[1] ?? m[2] };
+    // Pass 2 (2026-10-01) in-page repeated-phrase line (the REPETITION card's
+    // in-page component — routed here, NOT under repetitive). Optional location
+    // suffixes: " — also in the page title" and/or " — in N paragraphs" (both
+    // emitted conditionally by the rule; either may be absent).
+    m = /^repeated phrase in the page text: (\d+)× "(.+)"( — also in the page title)?( — in (\d+) paragraphs?)?$/.exec(f);
+    if (m) {
+      const tokens = { kind: 'phrases', count: m[1], phrase: m[2] };
+      if (m[3] !== undefined) tokens.inTitle = 'the page title';
+      if (m[5] !== undefined) tokens.paragraphCount = m[5];
+      return tokens;
+    }
     return {};
   },
   fingerprints(f) {
@@ -529,7 +533,10 @@ export function parseEvidenceTokens(category, finding) {
     } else if (category === 'infoDensity') {
       tokens.specificsNoun = n === 1 ? 'detail' : 'details';
       tokens.factsNoun = n === 1 ? 'fact' : 'facts';
-    } else if (category === 'repetitive') {
+    } else if (category === 'repetitive' || (category === 'crossPage' && tokens.kind === 'phrases')) {
+      // Legacy sentence/paragraph findings (repetitive) and pass-2 in-page
+      // repeated-phrase receipts (crossPage — the REPETITION card) both
+      // pluralize repeat/appearance nouns from the finding's count token.
       tokens.repeatsNoun = n === 1 ? 'repeat' : 'repeats';
       tokens.appearancesNoun = n === 1 ? 'appearance' : 'appearances';
     }
@@ -853,12 +860,13 @@ export function buildCategoryInsights({ category, findings = [], id }) {
     } else if (legalSafeBoilerplate && isBoilerplateAggregateLine(evidence) && pool.legalSafeTotalsRoasts.length > 0) {
       roastCandidates = pool.legalSafeTotalsRoasts;
     }
-    // Pass 2 (2026-10-01): an in-page repeated-PHRASE finding draws its roast
-    // from the bespoke phraseRoasts pool (template-citing copy), never the
-    // sentence/paragraph-centric generic roasts. Token-compatible by
-    // construction ({phrase}/{count}/… — see the pool's own copy); the gate
-    // is the finding's OWN 'phrase' tag, exactly like legalSafeRoasts above.
-    if (category === 'repetitive' && signalTag === 'phrase' && pool.phraseRoasts?.length > 0) {
+    // Pass 2 (2026-10-01): an in-page repeated-PHRASE finding (the REPETITION
+    // card's in-page component — internal crossPage key) draws its roast from
+    // the bespoke phraseRoasts pool (template-citing copy), never the
+    // pairwise page-duplication roasts. Token-compatible by construction
+    // ({phrase}/{count}/… — see the pool's own copy); the gate is the
+    // finding's OWN 'phrase' tag, exactly like legalSafeRoasts above.
+    if (category === 'crossPage' && signalTag === 'phrase' && pool.phraseRoasts?.length > 0) {
       roastCandidates = pool.phraseRoasts;
     }
     // Defensive: the eligible set is never empty (every group ships token-free
