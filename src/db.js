@@ -41,12 +41,18 @@ export function openDb(dbPath) {
   // written before this column existed load with business_name null, and the
   // free/paid surfaces never render it (storage only, like the webhook ledger).
   if (!cols.includes('business_name')) db.exec('ALTER TABLE scans ADD COLUMN business_name TEXT');
+  // Admin-generated scans (the /admin/share-card tool, owner 2026-10-01): the
+  // row is marked internal so every PUBLIC read surface and the admin-stats
+  // counts exclude it — admin tool runs must never pollute public metrics.
+  // NOT NULL DEFAULT 0 backfills existing rows to 0 (= public), so pre-migration
+  // rows behave byte-identically to today with no data fix-up.
+  if (!cols.includes('internal')) db.exec('ALTER TABLE scans ADD COLUMN internal INTEGER NOT NULL DEFAULT 0');
 
   const insertStmt = db.prepare(
-    'INSERT INTO scans (id, url, score, breakdown, created_at, partial, note, worst_page, branding, roast, business_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    'INSERT INTO scans (id, url, score, breakdown, created_at, partial, note, worst_page, branding, roast, business_name, internal) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
   );
   const getStmt = db.prepare(
-    'SELECT id, url, score, breakdown, created_at, partial, note, worst_page, branding, roast, business_name FROM scans WHERE id = ?'
+    'SELECT id, url, score, breakdown, created_at, partial, note, worst_page, branding, roast, business_name, internal FROM scans WHERE id = ?'
   );
 
   // Webhook fulfillment ledger (order webhooks -> scans).
@@ -157,6 +163,24 @@ export function openDb(dbPath) {
     );
   `);
 
+  // Admin share-card tool audit trail (owner 2026-10-01): one row per
+  // /admin/share-card scan — who (always 'admin' — the tool has no per-user
+  // identity), when, what URL, resulting score + verdict. Retention NEVER
+  // purges this table (the scan row itself still purges at 30 days like every
+  // other scan; the audit row survives so the trail outlives the data).
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS admin_audit (
+      id         TEXT PRIMARY KEY,
+      scan_id    TEXT,
+      actor      TEXT NOT NULL,
+      ip         TEXT,
+      url        TEXT NOT NULL,
+      score      INTEGER NOT NULL,
+      verdict    TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+  `);
+
   const insertScanEventStmt = db.prepare(
     'INSERT OR IGNORE INTO scan_events (event_key, ip, day, scan_id, status, created_at) VALUES (?, ?, ?, ?, ?, ?)'
   );
@@ -174,10 +198,14 @@ export function openDb(dbPath) {
     "SELECT substr(datetime(ts / 1000, 'unixepoch'), 1, 10) AS day, COUNT(*) AS n FROM page_views WHERE ts >= ? GROUP BY day"
   );
   const recentPageViewsStmt = db.prepare('SELECT ts, ip, ua, path FROM page_views ORDER BY ts DESC LIMIT 50');
-  const countScansTotalStmt = db.prepare('SELECT COUNT(*) AS n FROM scans');
-  const countScansTodayStmt = db.prepare('SELECT COUNT(*) AS n FROM scans WHERE substr(created_at, 1, 10) = ?');
+  // Scan-count queries for admin stats EXCLUDE internal rows (admin-generated
+  // scans must never move the public-facing counters — owner 2026-10-01).
+  const countScansTotalStmt = db.prepare('SELECT COUNT(*) AS n FROM scans WHERE COALESCE(internal,0) = 0');
+  const countScansTodayStmt = db.prepare(
+    'SELECT COUNT(*) AS n FROM scans WHERE COALESCE(internal,0) = 0 AND substr(created_at, 1, 10) = ?'
+  );
   const scanDayCountsStmt = db.prepare(
-    'SELECT substr(created_at, 1, 10) AS day, COUNT(*) AS n FROM scans WHERE created_at >= ? GROUP BY day'
+    'SELECT substr(created_at, 1, 10) AS day, COUNT(*) AS n FROM scans WHERE COALESCE(internal,0) = 0 AND created_at >= ? GROUP BY day'
   );
 
   const insertWebhookEventStmt = db.prepare(
@@ -209,6 +237,9 @@ export function openDb(dbPath) {
   const insertUnmatchedOrderStmt = db.prepare(
     'INSERT OR IGNORE INTO unmatched_orders (session_id, email, received_at) VALUES (?, ?, ?)'
   );
+  const insertAdminAuditStmt = db.prepare(
+    'INSERT INTO admin_audit (id, scan_id, actor, ip, url, score, verdict, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+  );
 
   return {
     // Raw better-sqlite3 Database — used by the retention job (src/retention.js)
@@ -219,7 +250,10 @@ export function openDb(dbPath) {
      * @param {{ id: string, url: string, score: number, breakdown: object,
      *           createdAt: string, partial?: boolean, note?: string,
      *           worstPage?: object, branding?: object, roast?: string,
-     *           businessName?: string }} scan
+     *           businessName?: string, internal?: boolean }} scan
+     *   `internal` marks an admin-generated row (the /admin/share-card tool):
+     *   1 = excluded from every public read surface and the admin-stats counts.
+     *   Default 0 (public) keeps the public scan path byte-identical.
      */
     insertScan(scan) {
       insertStmt.run(
@@ -234,9 +268,10 @@ export function openDb(dbPath) {
         scan.branding === undefined || scan.branding === null ? null : JSON.stringify(scan.branding),
         scan.roast ?? null,
         scan.businessName ?? null,
+        scan.internal === true ? 1 : 0,
       );
     },
-    /** @returns {null | { id, url, score, breakdown, created_at, partial, note, worstPage, branding, roast, businessName }} */
+    /** @returns {null | { id, url, score, breakdown, created_at, partial, note, worstPage, branding, roast, businessName, internal }} */
     getScan(id) {
       const row = getStmt.get(id);
       if (!row) return null;
@@ -248,6 +283,8 @@ export function openDb(dbPath) {
         branding: row.branding ? JSON.parse(row.branding) : undefined,
         roast: row.roast ?? undefined,
         businessName: row.business_name ?? undefined,
+        // Rows written before the migration backfill to 0 (public).
+        internal: Boolean(row.internal),
       };
     },
 
@@ -411,6 +448,27 @@ export function openDb(dbPath) {
     /** Per-UTC-day scan counts with created_at >= sinceIso: [{ date, count }]. */
     scanDayCounts(sinceIso) {
       return scanDayCountsStmt.all(sinceIso).map((r) => ({ date: r.day, count: r.n }));
+    },
+    // --- Admin share-card tool audit trail (owner 2026-10-01) -----------------
+    /**
+     * Append one admin-tool scan to the audit trail. Plain INSERT — the route
+     * generates the id (randomUUID) and is responsible for the (best-effort)
+     * try/catch, because an audit failure must never break the tool response.
+     * Retention never purges this table.
+     * @param {{ id: string, scanId: string, actor: string, ip: string|null,
+     *           url: string, score: number, verdict: string, createdAt: string }} row
+     */
+    insertAdminAudit(row) {
+      insertAdminAuditStmt.run(
+        row.id,
+        row.scanId ?? null,
+        row.actor,
+        row.ip ?? null,
+        row.url,
+        row.score,
+        row.verdict,
+        row.createdAt,
+      );
     },
     close() {
       db.close();

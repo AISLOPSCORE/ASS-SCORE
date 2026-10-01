@@ -159,7 +159,20 @@ export function createApp({ dbPath = './data/ass-score.db', fetcher, webhookDeli
   // lifted the hold 2026-09-23). track is a silent beacon; admin is gated on
   // ADMIN_PASSWORD (disabled/403 until the owner sets it on Railway).
   app.use(trackRouter({ db, now: nowImpl }));
-  app.use(adminRouter({ db, adminPassword, emailSender: emailSenderImpl, now: nowImpl }));
+  // The admin router gets the SAME guard + fetcher + budget the public scan
+  // router uses (the /admin/share-card tool runs a full real scan, owner
+  // 2026-10-01): fetcherImpl (SSRF-safe Fetcher), checkTarget (validateUrl +
+  // resolveAndCheck) and scanBudgetMs. The admin tool NEVER touches the public
+  // scan_events ledger — it calls runScan directly, never POST /api/v1/scan.
+  app.use(adminRouter({
+    db,
+    adminPassword,
+    emailSender: emailSenderImpl,
+    now: nowImpl,
+    fetcher: fetcherImpl,
+    validateTarget: checkTarget,
+    scanBudgetMs,
+  }));
 
   app.use((_req, res) => {
     res.status(404).json({ error: { code: 'not_found', message: 'Route not found' } });

@@ -37,8 +37,12 @@ const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
  * @param {object} deps.fetcher         SSRF-safe Fetcher (fetchHtml(rawUrl, {signal}))
  * @param {string} deps.url             target URL to scan
  * @param {object|null} [deps.branding] normalized white-label branding (or null)
+ * @param {string|null} [deps.businessName] normalized client business name (or null)
  * @param {() => string} [deps.now]     ISO timestamp provider
  * @param {number} [deps.scanBudgetMs]  per-scan time budget
+ * @param {boolean|null} [deps.internal] mark the persisted row as admin-internal
+ *   (the /admin/share-card tool — excluded from every public read surface and
+ *   the admin-stats counts). Default null keeps the public path byte-identical.
  * @returns {Promise<{ok: true, payload: object} | {ok: false, status: number, json: object}>}
  *   - { ok: true, payload } — persisted scan result (also the bytes returned to
  *     API callers and delivered to webhooks/email). `payload.id` is the scan id.
@@ -53,7 +57,7 @@ const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
  *   Genuine internal errors REJECT — callers route them to the centralized
  *   error handler (500), exactly like the scan route always did.
  */
-export async function runScan({ db, fetcher, url, branding = null, businessName = null, now = () => new Date().toISOString(), scanBudgetMs = SCAN_BUDGET_MS }) {
+export async function runScan({ db, fetcher, url, branding = null, businessName = null, now = () => new Date().toISOString(), scanBudgetMs = SCAN_BUDGET_MS, internal = null }) {
   // --- time budget (covers target fetch + discovery + additional fetches) ---
   const budget = createBudget(scanBudgetMs);
   const abortCtrl = new AbortController();
@@ -244,6 +248,10 @@ export async function runScan({ db, fetcher, url, branding = null, businessName 
     // Optional client-provided business name (POST /api/v1/scan businessName).
     // Storage only — never part of the public/paid payload surfaces.
     businessName,
+    // Admin-tool marker (the /admin/share-card flow): null/undefined keeps the
+    // public path byte-identical; true excludes the row from public surfaces +
+    // admin-stats counts.
+    internal,
   });
 
   return { ok: true, payload };

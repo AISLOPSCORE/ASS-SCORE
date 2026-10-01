@@ -1,8 +1,12 @@
-import crypto from 'node:crypto';
-import { Router } from 'express';
+import crypto, { randomUUID } from 'node:crypto';
+import express, { Router } from 'express';
 import { validateEmail } from '../email.js';
-import { toPublicScan } from '../serialize.js';
+import { toPublicScan, publicScore } from '../serialize.js';
 import { isReportExpired } from '../ttl.js';
+import { runScan } from '../scan.js';
+import { validateUrl, resolveAndCheck, SsrfError, InvalidUrlError } from '../fetch/ssrf.js';
+import { verdictLabel, scoreColor } from '../verdict.js';
+import { buildCardSvg, renderCardPng } from '../card.js';
 
 /**
  * Private admin stats page — GET /admin/stats (backend origin only, NOT under
@@ -202,9 +206,133 @@ footer{margin-top:28px;color:${'#5b6b84'};font-size:12px;text-align:center;lette
 </html>`;
 }
 
-export function adminRouter({ db, adminPassword, emailSender, now = () => new Date().toISOString() } = {}) {
+/**
+ * Download filename slug for the share card — mirrors the site's domainSlug()
+ * exactly (site/src/routes/index.tsx): hostname without a leading www., dots
+ * replaced with dashes. Same URL -> same download name on every surface.
+ */
+function domainSlug(url) {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '').replace(/\./g, '-') || 'website';
+  } catch {
+    return 'website';
+  }
+}
+
+/**
+ * Shared shell for the admin share-card pages (form + result) — the same dark
+ * navy design language as the stats dashboard (same variables/palette, kept
+ * self-contained, inline <style> only, no JS, no external assets; noindex).
+ */
+function shareCardPage({ title, bodyHtml }) {
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>${esc(title)}</title>
+<style>
+:root{--bg:${'#0b0f19'};--card:${'#151b2b'};--border:${'#232c3f'};--text:${'#e2e8f0'};--muted:${'#8b9bb4'};
+--red:${BANDS.red};--deepOrange:${BANDS.deepOrange};--orange:${BANDS.orange};--yellow:${BANDS.yellow};--lime:${BANDS.lime};--green:${BANDS.green}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif}
+.page{max-width:820px;margin:0 auto;padding:32px 20px 48px}
+.top{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:24px}
+.brand{font-size:22px;font-weight:800;letter-spacing:.05em}
+.brand .red{color:var(--red)}
+.tag{font-size:11px;letter-spacing:.12em;text-transform:uppercase;background:var(--card);border:1px solid var(--border);border-radius:999px;padding:2px 10px;margin-left:8px;font-weight:700;color:var(--text);vertical-align:2px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:20px}
+.card h1{margin:0 0 6px;font-size:20px;font-weight:800;letter-spacing:.02em}
+.hint{color:var(--muted);font-size:13px;margin:0 0 16px}
+label{display:block;color:var(--muted);font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;margin:0 0 6px}
+input[type=url]{width:100%;padding:12px 14px;border:1px solid var(--border);border-radius:10px;background:${'#0d1322'};color:var(--text);font:14px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+input[type=url]:focus{outline:2px solid var(--yellow);border-color:var(--yellow)}
+button{display:inline-block;background:var(--yellow);color:${'#0b0f19'};border:0;border-radius:10px;padding:12px 22px;font-size:14px;font-weight:800;letter-spacing:.06em;cursor:pointer;margin-top:14px}
+button:hover{background:${'#fde047'}}
+.error{background:rgba(248,113,113,.12);border:1px solid var(--red);color:${'#fecaca'};border-radius:10px;padding:12px 14px;margin:0 0 16px;font-size:13px;overflow-wrap:anywhere}
+.host{font-size:15px;margin:0;overflow-wrap:anywhere}
+.host a{color:var(--lime)}
+.score-label{display:block;color:var(--muted);font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;margin:16px 0 6px}
+.score{display:block;font-size:52px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums}
+.verdict{display:inline-block;font-size:13px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;border-radius:999px;padding:6px 16px;margin-top:10px;color:${'#0b0f19'}}
+.card-img{max-width:100%;height:auto;border:1px solid var(--border);border-radius:12px;margin-top:16px;display:block}
+.rc-ghost{display:inline-block;background:transparent;color:var(--text);border:1px solid var(--border);border-radius:10px;padding:12px 22px;font-size:14px;font-weight:700;letter-spacing:.04em;cursor:pointer;margin:18px 12px 0 0;text-decoration:none;transition:border-color .15s ease,color .15s ease}
+.rc-ghost:hover{border-color:var(--yellow);color:var(--yellow)}
+.note{color:${'#5b6b84'};font-size:12px;margin:14px 0 0}
+.note code{color:${'#8b9bb4'}}
+a.again{color:var(--muted);font-size:13px;text-decoration:none;border-bottom:1px dotted var(--border)}
+footer{margin-top:28px;color:${'#5b6b84'};font-size:12px;text-align:center;letter-spacing:.04em}
+@media (max-width:640px){.score{font-size:40px}}
+</style>
+</head>
+<body>
+<div class="page">
+  <header class="top">
+    <div class="brand"><span class="red">A.S.S. SCORE</span> — ADMIN <span class="tag">internal</span></div>
+  </header>
+  ${bodyHtml}
+  <footer>Internal tool — ass-score.com</footer>
+</div>
+</body>
+</html>`;
+}
+
+/** The form the browser submits — carries ?pw= when the request came in with it. */
+function renderShareCardForm({ action, error = null, urlValue = '' }) {
+  const err = error ? `<div class="error">${esc(error)}</div>` : '';
+  const pwNote = action.includes('pw=')
+    ? ''
+    : '<p class="note">No password embedded in this form — a header-authenticated client (curl/XHR) must supply <code>x-admin-password</code> on the POST. If you opened this page with a header, append <code>?pw=…</code> to the URL to make the browser form work.</p>';
+  return shareCardPage({
+    title: 'Generate Share Card',
+    bodyHtml: `<section class="card">
+  <h1>Generate Share Card</h1>
+  <p class="hint">Runs a full real scan through the same engine the public flow uses (same detectors, same scoring) and generates the downloadable share-card image. Admin scans never appear on public routes and never move the public counters.</p>
+  ${err}
+  <form method="post" action="${esc(action)}">
+    <label for="url">Website URL</label>
+    <input type="url" id="url" name="url" placeholder="https://example.com" value="${esc(urlValue)}" required />
+    <button type="submit">Generate</button>
+  </form>
+  <p class="note">The scan can take up to ~30 seconds.</p>
+  ${pwNote}
+</section>`,
+  });
+}
+
+/** Result page — score + verdict + card image + the download button. */
+function renderShareCardResult({ url, score, verdict, cardPath, downloadName }) {
+  let host = url;
+  try {
+    host = new URL(url).host;
+  } catch {
+    /* fall back to the raw url */
+  }
+  return shareCardPage({
+    title: 'Share Card — generated',
+    bodyHtml: `<section class="card">
+  <h1>Share card generated</h1>
+  <p class="host"><a href="${esc(url)}">${esc(host)}</a></p>
+  <span class="score-label">A.S.S. Score (0 = clean · 100 = maximum ass)</span>
+  <span class="score" style="color:${scoreColor(score)}">${publicScore(score)}</span>
+  <span class="verdict" style="background:${scoreColor(score)}">${esc(verdict)}</span>
+  <img class="card-img" src="${esc(cardPath)}" alt="A.S.S. Score share card for ${esc(host)}" width="1600" height="900" />
+  <a class="rc-ghost" href="${esc(cardPath)}" download="${esc(downloadName)}">Download Share Card</a>
+  <a class="again" href="/admin/share-card">← Generate another</a>
+</section>`,
+  });
+}
+
+export function adminRouter({ db, adminPassword, emailSender, now = () => new Date().toISOString(), fetcher, validateTarget, scanBudgetMs } = {}) {
   const secret = adminPassword ?? process.env.ADMIN_PASSWORD;
   const r = Router();
+  // The share-card tool is a plain HTML form, so this router parses
+  // application/x-www-form-urlencoded bodies (app-level is JSON-only; scoped
+  // here so the rest of the API keeps JSON-only semantics). express.json has
+  // already run app-wide: a JSON POST body still lands parsed in req.body and
+  // urlencoded skips non-urlencoded content types.
+  r.use(express.urlencoded({ extended: false }));
   const forbidden = (res) => res.status(403).json({ error: { code: 'forbidden' } });
   const secretOk = (candidate) => {
     if (typeof secret !== 'string' || typeof candidate !== 'string') return false;
@@ -344,6 +472,176 @@ export function adminRouter({ db, adminPassword, emailSender, now = () => new Da
       console.error(`[admin] deliver to ${mail.email} for scan ${scanId} crashed:`, err);
     }
     return res.status(200).json({ delivered, scanId: scan.id, email: mail.email, ...(note ? { note } : {}) });
+  });
+
+  // --- Generate Share Card tool (owner request 2026-10-01) -------------------
+  // GET/POST /admin/share-card + GET /admin/share-card/:scanId/card. Runs a
+  // FULL REAL scan through the shared engine (same detectors + scoring as the
+  // public flow — runScan called DIRECTLY, never POST /api/v1/scan, so the
+  // public scan_events rate-limit ledger is untouched), marks the row internal
+  // (excluded from every public route + the admin-stats counts), appends an
+  // admin_audit trail row (never purged by retention), and outputs ONLY the
+  // share card — the exact buildCardSvg/renderCardPng the public card route
+  // uses, byte-identical design. Same password gate as /admin/stats; the 403
+  // branch is ALWAYS JSON.
+  //
+  // The SSRF guard is the SAME checkTarget the public scan router runs
+  // (injected from app.js: validateUrl + resolveAndCheck), applied BEFORE the
+  // scan — blocked targets map exactly like runScan's own errors.
+  const checkTarget = validateTarget ?? (async (raw) => {
+    const url = validateUrl(raw);
+    await resolveAndCheck(url);
+    return url;
+  });
+  /** Form action — carries ?pw= when the request came in with the query auth. */
+  const formAction = (req) =>
+    typeof req.query.pw === 'string' && req.query.pw !== ''
+      ? `/admin/share-card?pw=${encodeURIComponent(req.query.pw)}`
+      : '/admin/share-card';
+
+  /**
+   * GET /admin/share-card — the tool's form page (gated). Server-rendered,
+   * dark admin theme, no JS, noindex; never cached (admin pages are private).
+   */
+  r.get('/admin/share-card', (req, res) => {
+    if (!secret) return forbidden(res);
+    const candidate = req.get('x-admin-password') ?? req.query.pw;
+    if (!secretOk(candidate)) return forbidden(res);
+    res.set('Cache-Control', 'no-store');
+    return res.type('html').send(renderShareCardForm({ action: formAction(req) }));
+  });
+
+  /**
+   * POST /admin/share-card — run the scan and output the share card (gated).
+   *
+   * URL validation reuses the SAME validateTarget guard the public scan route
+   * uses (validateUrl + resolveAndCheck — injected from app.js) BEFORE any
+   * network I/O. runScan failures map like the public flow: 400 blocked /
+   * 502 fetch_failed / 422 parse_failed. JSON accept -> { scanId, url, score,
+   * verdict } (no card URL — admin-only surface); text/html accept (browser
+   * form) -> the result page: host, band-colored score, verdict label, the
+   * card image via /admin/share-card/:scanId/card, and the Download button.
+   * On failure with HTML accept the form re-renders with the error inline.
+   */
+  r.post('/admin/share-card', async (req, res, next) => {
+    if (!secret) return forbidden(res);
+    const candidate = req.get('x-admin-password') ?? req.query.pw;
+    if (!secretOk(candidate)) return forbidden(res);
+
+    const rawUrl = typeof req.body?.url === 'string' ? req.body.url.trim() : '';
+    if (rawUrl === '') {
+      const message = 'URL is required';
+      if (wantsHtml(req)) {
+        return res.status(400).type('html').send(renderShareCardForm({ action: formAction(req), error: message }));
+      }
+      return res.status(400).json({ error: { code: 'invalid_request', message } });
+    }
+
+    // SSRF guard BEFORE scanning — same checkTarget the public scan router
+    // runs; blocked targets never touch the DB or the audit trail.
+    let target;
+    try {
+      target = await checkTarget(rawUrl);
+    } catch (err) {
+      if (err instanceof SsrfError || err instanceof InvalidUrlError) {
+        if (wantsHtml(req)) {
+          return res.status(400).type('html').send(renderShareCardForm({ action: formAction(req), error: err.message }));
+        }
+        return res.status(400).json({ error: { code: 'blocked', message: err.message } });
+      }
+      throw err;
+    }
+
+    // Full real scan through the shared engine — internal: true marks the row
+    // so every public read surface and the admin-stats counts exclude it.
+    let result;
+    try {
+      result = await runScan({
+        db,
+        fetcher,
+        url: target.href,
+        now,
+        scanBudgetMs,
+        internal: true,
+      });
+    } catch (err) {
+      next(err); // centralized error handler — genuine internal errors 500
+      return;
+    }
+    if (!result.ok) {
+      const { status, json } = result;
+      const message = json?.error?.message ?? 'Scan failed';
+      if (wantsHtml(req)) {
+        return res.status(status).type('html').send(renderShareCardForm({ action: formAction(req), error: message, urlValue: rawUrl }));
+      }
+      return res.status(status).json(json);
+    }
+
+    const payload = result.payload;
+    const scanId = payload.id;
+    // Verdict = the SAME uppercase display label the report/API surfaces use
+    // (src/verdict.js — verdictBand().shortLabel via verdictLabel()).
+    const verdict = verdictLabel(payload.slopScore);
+    // Audit trail (who/when/what/score+verdict). BEST-EFFORT: an audit
+    // failure is logged and must never 500 the tool.
+    try {
+      db.insertAdminAudit({
+        id: randomUUID(),
+        scanId,
+        actor: 'admin', // the tool has no per-user identity
+        ip: req.ip,
+        url: payload.url,
+        score: payload.slopScore,
+        verdict,
+        createdAt: now(),
+      });
+    } catch (err) {
+      console.error('[admin] audit insert failed:', err);
+    }
+
+    // The share card itself: EXACT same inputs as the public card route
+    // (src/routes/scans.js) — buildCardSvg({ score: publicScore(scan.score),
+    // url: scan.url }) + renderCardPng — so the bytes are identical in design.
+    const cardPath = `/admin/share-card/${scanId}/card`;
+    const downloadName = `ass-score-${domainSlug(payload.url)}.png`;
+    if (wantsHtml(req)) {
+      res.set('Cache-Control', 'no-store');
+      return res.type('html').send(renderShareCardResult({
+        url: payload.url,
+        score: payload.slopScore,
+        verdict,
+        cardPath,
+        downloadName,
+      }));
+    }
+    return res.json({ scanId, url: payload.url, score: publicScore(payload.slopScore), verdict });
+  });
+
+  /**
+   * GET /admin/share-card/:scanId/card — the gated card-image route (PNG).
+   * Uses the EXACT public-card code path (buildCardSvg + renderCardPng), so
+   * the design is byte-identical to the public share card. 404 JSON when the
+   * scan id does not exist; Cache-Control private (admin tool only).
+   */
+  r.get('/admin/share-card/:scanId/card', async (req, res, next) => {
+    if (!secret) return forbidden(res);
+    const candidate = req.get('x-admin-password') ?? req.query.pw;
+    if (!secretOk(candidate)) return forbidden(res);
+    const scan = db.getScan(req.params.scanId);
+    if (!scan) {
+      return res.status(404).json({ error: { code: 'not_found', message: `No scan found with id "${req.params.scanId}"` } });
+    }
+    try {
+      const png = await renderCardPng(buildCardSvg({
+        score: publicScore(scan.score), // public score = stored slop direction (higher = worse, 0 = clean)
+        url: scan.url,
+      }));
+      res.set('Content-Type', 'image/png');
+      res.set('Cache-Control', 'private, max-age=300');
+      res.send(png);
+    } catch (err) {
+      next(err); // PNG render errors never leak internals
+    }
   });
 
   return r;
