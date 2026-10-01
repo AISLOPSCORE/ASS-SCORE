@@ -96,6 +96,22 @@ export function scansRouter({ db, publicBaseUrl, reportTokenSecret, reportBaseUr
     typeof req.query.token === 'string' &&
     verifyReportToken(reportTokenSecret, scanId, req.query.token);
 
+  /**
+   * Fetch a scan that PUBLIC surfaces may serve: missing AND admin-internal
+   * rows (the /admin/share-card tool — owner 2026-10-01) both read as "no
+   * scan". Every public GET uses this, so an admin-generated row 404s with the
+   * EXACT same shape as a missing id (404 not_found) on ALL public read
+   * surfaces — including when a VALID report token is supplied (the guard runs
+   * BEFORE the token branch, so an internal row is 404, never 403/200, and the
+   * existence oracle is unchanged: internal ids look exactly like holes).
+   * Public rows behave byte-identically to today.
+   */
+  const publicScan = (id) => {
+    const s = db.getScan(id);
+    if (!s || s.internal === true) return null;
+    return s;
+  };
+
   /** 403 for a supplied-but-invalid (or missing-on-report-route) token. */
   const forbidden = (res, accept) => {
     const wantsHtml = /text\/html/.test(accept) && !/application\/json/.test(accept);
@@ -142,7 +158,7 @@ export function scansRouter({ db, publicBaseUrl, reportTokenSecret, reportBaseUr
   };
 
   r.get('/api/v1/scans/:id', (req, res) => {
-    const scan = db.getScan(req.params.id);
+    const scan = publicScan(req.params.id);
     if (!scan) {
       return res.status(404).json({ error: { code: 'not_found', message: `No scan found with id "${req.params.id}"` } });
     }
@@ -178,7 +194,7 @@ export function scansRouter({ db, publicBaseUrl, reportTokenSecret, reportBaseUr
 
   // --- Token'd full report (the URL inside the buyer email) -----------------
   r.get('/api/v1/report/:id', (req, res) => {
-    const scan = db.getScan(req.params.id);
+    const scan = publicScan(req.params.id);
     if (!scan) {
       return res.status(404).json({ error: { code: 'not_found', message: `No scan found with id "${req.params.id}"` } });
     }
@@ -200,7 +216,7 @@ export function scansRouter({ db, publicBaseUrl, reportTokenSecret, reportBaseUr
   // via the token'd /api/v1/report/:id route, so this alias can never become a
   // leak path for the paid findings.
   r.get('/report/:id', (req, res) => {
-    const scan = db.getScan(req.params.id);
+    const scan = publicScan(req.params.id);
     if (!scan) {
       return res.status(404).json({ error: { code: 'not_found', message: `No scan found with id "${req.params.id}"` } });
     }
@@ -213,7 +229,7 @@ export function scansRouter({ db, publicBaseUrl, reportTokenSecret, reportBaseUr
 
   // --- Shareable result card (deterministic PNG, sharp-rasterized SVG) -------
   r.get('/api/v1/scans/:id/card', async (req, res, next) => {
-    const scan = db.getScan(req.params.id);
+    const scan = publicScan(req.params.id);
     if (!scan) return missing(res, req.params.id);
     try {
       const png = await renderCardPng(buildCardSvg({
@@ -232,7 +248,7 @@ export function scansRouter({ db, publicBaseUrl, reportTokenSecret, reportBaseUr
   // Text mirrors the site's share fallback exactly (owner-approved): the
   // "(low is good)" clarification rides the same line on every surface.
   r.get('/api/v1/scans/:id/share', (req, res) => {
-    const scan = db.getScan(req.params.id);
+    const scan = publicScan(req.params.id);
     if (!scan) return missing(res, req.params.id);
     const shareUrl = `${shareBase.replace(/\/+$/, '')}/scan/${scan.id}`;
     res.json({
