@@ -602,7 +602,17 @@ export function adminRouter({ db, adminPassword, emailSender, now = () => new Da
     // The share card itself: EXACT same inputs as the public card route
     // (src/routes/scans.js) — buildCardSvg({ score: publicScore(scan.score),
     // url: scan.url }) + renderCardPng — so the bytes are identical in design.
-    const cardPath = `/admin/share-card/${scanId}/card`;
+    // Card URL — carries ?pw= when the request was authenticated by either
+    // method (`candidate` above is already the checked auth value: header
+    // first, then the query). The result page's <img> and Download href are
+    // plain browser requests that CANNOT send the x-admin-password header,
+    // so without the query the card route's gate 403s them and the image
+    // renders broken. Mirrors formAction's carry-the-auth-on-the-URL
+    // approach; header-auth curl/XHR clients get the same working URL.
+    const cardPath =
+      typeof candidate === 'string' && candidate !== ''
+        ? `/admin/share-card/${scanId}/card?pw=${encodeURIComponent(candidate)}`
+        : `/admin/share-card/${scanId}/card`;
     const downloadName = `ass-score-${domainSlug(payload.url)}.png`;
     if (wantsHtml(req)) {
       res.set('Cache-Control', 'no-store');

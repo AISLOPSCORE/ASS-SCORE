@@ -203,14 +203,67 @@ test('admin share-card: result page embeds the card image + Download button with
     const m = html.match(/\/admin\/share-card\/([0-9a-f-]+)\/card/);
     assert.ok(m, 'result page references the gated card route');
     const scanId = m[1];
-    // The img tag points at the gated card route.
-    assert.ok(html.includes(`src="/admin/share-card/${scanId}/card"`), 'card <img> present');
+    // The img tag points at the gated card route, carrying ?pw= so the
+    // browser's headerless <img> fetch passes the card route's gate (the
+    // POST was header-authenticated, so candidate = PASSWORD).
+    assert.ok(html.includes(`src="/admin/share-card/${scanId}/card?pw=${encodeURIComponent(PASSWORD)}"`), 'card <img> present with ?pw= embedded');
     assert.ok(html.includes('alt="A.S.S. Score share card for example.com"'), 'card alt text');
     // The Download button mirrors the site semantics: rc-ghost class + anchor
-    // with the download attribute naming ass-score-<domainSlug>.png.
-    const dl = html.match(/<a class="rc-ghost" href="\/admin\/share-card\/[^"]+\/card" download="([^"]+)">Download Share Card<\/a>/);
+    // with the download attribute naming ass-score-<domainSlug>.png. The href
+    // may carry the optional ?pw= query after /card.
+    const dl = html.match(/<a class="rc-ghost" href="\/admin\/share-card\/[^"]+\/card(?:\?pw=[^"]*)?" download="([^"]+)">Download Share Card<\/a>/);
     assert.ok(dl, 'Download Share Card anchor with download attribute present');
     assert.equal(dl[1], 'ass-score-example-com.png', 'download filename = ass-score-<host slug>.png');
+  } finally {
+    app.server.close();
+  }
+});
+test('admin share-card: browser flow end-to-end (owner-reported bug) — ?pw= POST embeds the auth in the card URL and the headerless <img> fetch succeeds with image/png bytes', async () => {
+  const dbp = tmpDb();
+  const app = startApp({ dbPath: dbp });
+  try {
+    // The exact reported flow: open /admin/share-card?pw=… in a browser; the
+    // form action carries ?pw=, and the POST carries NO x-admin-password
+    // header (browsers cannot set it). Here candidate = req.query.pw.
+    const r = await fetch(`${app.base}/admin/share-card?pw=${encodeURIComponent(PASSWORD)}`, {
+      method: 'POST',
+      headers: { accept: 'text/html', 'content-type': 'application/x-www-form-urlencoded' },
+      body: `url=${encodeURIComponent('https://example.com/')}`,
+    });
+    assert.equal(r.status, 200);
+    const html = await r.text();
+    const src = html.match(/<img class="card-img" src="([^"]+)"/);
+    assert.ok(src, 'card <img> with src present');
+    const scanId = src[1].match(/\/([0-9a-f-]+)\/card\?/)[1];
+    assert.equal(src[1], `/admin/share-card/${scanId}/card?pw=${encodeURIComponent(PASSWORD)}`, 'src carries ?pw= so the headerless browser fetch passes the gate');
+    // Fetch EXACTLY what the browser <img> would: the src URL, no custom
+    // headers — this is the request that used to 403 into a broken image box.
+    const img = await fetch(new URL(src[1], app.base).href);
+    assert.equal(img.status, 200);
+    assert.ok((img.headers.get('content-type') || '').includes('image/png'), 'card served as image/png');
+    const bytes = Buffer.from(await img.arrayBuffer());
+    assert.deepEqual([...bytes.subarray(0, 8)], [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], 'PNG magic bytes');
+    assert.ok(bytes.length > 20_000, `real rendered PNG (${bytes.length} bytes)`);
+    // Download button reuses the SAME working URL (single cardPath).
+    assert.ok(html.includes(`href="${src[1]}" download=`), 'download href = the same ?pw= card URL');
+  } finally {
+    app.server.close();
+  }
+});
+test('admin share-card: the card URL WITHOUT any auth still 403s (gate intact) and succeeds with only ?pw=', async () => {
+  const dbp = tmpDb();
+  const app = startApp({ dbPath: dbp });
+  try {
+    const scanId = await adminScanId(app.base);
+    // No header, no query — the gate must still reject; the fix must not
+    // have weakened the card route's auth.
+    const bare = await fetch(`${app.base}/admin/share-card/${scanId}/card`);
+    assert.equal(bare.status, 403);
+    assert.deepEqual(await bare.json(), { error: { code: 'forbidden' } });
+    // The exact browser request (query only, no header) succeeds.
+    const viaQuery = await fetch(`${app.base}/admin/share-card/${scanId}/card?pw=${encodeURIComponent(PASSWORD)}`);
+    assert.equal(viaQuery.status, 200);
+    assert.ok((viaQuery.headers.get('content-type') || '').includes('image/png'));
   } finally {
     app.server.close();
   }
