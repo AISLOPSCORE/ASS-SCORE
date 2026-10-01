@@ -28,12 +28,12 @@ const NEW_RULE_IDS = ['shadcn-ui-vocabulary', 'mui-vocabulary', 'bootstrap-vocab
 // Each div carries ONE token occurrence, so shadcnPage(n) == exactly n tokens.
 const shadcnPage = (n) => `<!doctype html><html><head><title>t</title></head><body>${'<div data-u="bg-primary"></div>'.repeat(n)}</body></html>`;
 
-test('vocab: TOTAL_FINGERPRINT_WEIGHT recomputes 35 -> 47 (4 new rules at max tier high=3)', () => {
+test('vocab: TOTAL_FINGERPRINT_WEIGHT recomputes 35 -> 49 (4 count rules at max tier high=3 + tenweb medium=2)', () => {
   const countRules = FINGERPRINTS.filter((fp) => Array.isArray(fp.countTokens) && fp.countTokens.length > 0);
   assert.equal(countRules.length, 4);
   assert.deepEqual(countRules.map((fp) => fp.id), NEW_RULE_IDS);
-  assert.equal(TOTAL_FINGERPRINT_WEIGHT, 35 + 4 * CONFIDENCE_WEIGHT.high);
-  assert.equal(TOTAL_FINGERPRINT_WEIGHT, 47);
+  assert.equal(TOTAL_FINGERPRINT_WEIGHT, 35 + 4 * CONFIDENCE_WEIGHT.high + CONFIDENCE_WEIGHT.medium);
+  assert.equal(TOTAL_FINGERPRINT_WEIGHT, 49);
 });
 
 test('vocab: tier boundaries — 0 = no hit; 1-4 = base low; 5-19 = medium; 20+ = high', () => {
@@ -131,7 +131,7 @@ test('vocab: count-token hit record carries counts + resolved confidence; findin
 test('matrix: blog2posts — shadcn receipt + recomputed fingerprints score', () => {
   const r = analyzeFixtureFingerprints('blog2posts');
   const byId = new Map(r.hits.map((h) => [h.id, h]));
-  assert.equal(r.score, 11, 'hitWeight 5 (gradient-utility low + card-grid low + shadcn high) / 47');
+  assert.equal(r.score, 10, 'hitWeight 5 (gradient-utility low + card-grid low + shadcn high) / 49 (tenweb medium raised the denominator 47 -> 49)');
   assert.ok(byId.has('gradient-utility-layout'));
   assert.ok(byId.has('card-grid-layout'));
   const shadcn = byId.get('shadcn-ui-vocabulary');
@@ -156,7 +156,10 @@ test('matrix: blog2posts — shadcn receipt + recomputed fingerprints score', ()
     assert.equal(byId.has(id), false, `${id} has 0 hits on blog2posts`);
   }
   // Fixture-computed "headline" proxy: full-weight composite with crossPage=0.
-  assert.equal(fixtureBreakdown('blog2posts', 0).composite, 9);
+  // Pass 2 (2026-10-01) moved this 9 -> 10: the in-page repeated-phrase signal
+  // fires on the fixture ("a month of platform native" 3× -> repetitive 5,
+  // +0.625) while the tenweb denominator shift dropped DESIGN 11 -> 10 (-0.1).
+  assert.equal(fixtureBreakdown('blog2posts', 0).composite, 10);
 });
 
 test('matrix: getcollectionscopilot — fingerprints stays 0, all 4 new rules 0 hits', () => {
@@ -185,9 +188,9 @@ test('matrix: stripe — same 7 boolean hits, zero new vocab hits, recomputed sc
   for (const id of NEW_RULE_IDS) {
     assert.ok(!ids.includes(id), `${id} must have 0 hits on stripe`);
   }
-  // Denominator 35 -> 47 recomputes the score for the UNCHANGED hit set
-  // (7 low hits): round(100*7/47) = 15.
-  assert.equal(r.score, 15);
+  // Denominator 35 -> 47 -> 49 (tenweb medium) recomputes the score for the
+  // UNCHANGED hit set (7 low hits): round(100*7/49) = 14.
+  assert.equal(r.score, 14);
 });
 
 test('matrix: ass-score.com — fingerprints unchanged (0), overall composite STAYS 11, no new false positives', () => {

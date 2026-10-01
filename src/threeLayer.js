@@ -100,6 +100,12 @@ const POOLS = Object.freeze(
       // phrase … nothing to say" (audit Q3.2). Token-compatible with the
       // totals line ({count}, {signalsNoun}, {words}); see buildCategoryInsights.
       legalSafeTotalsRoasts: Object.freeze([...(v.legalSafeTotalsRoasts ?? [])]),
+      // Roasts for in-page repeated-PHRASE findings (pass 2, 2026-10-01):
+      // bespoke template-citing copy ({phrase}/{count}), routed from
+      // buildCategoryInsights when signalTagFor('repetitive', evidence) ===
+      // 'phrase'. Kept OUT of `roasts` so the legacy sentence/paragraph
+      // findings' deterministic picks stay byte-identical (no array shift).
+      phraseRoasts: Object.freeze([...(v.phraseRoasts ?? [])]),
       // Roasts for a DETAIL line whose OWN evidence tags as legal/copyright
       // ("1× copyright line", "2× cookie banner", …) — report-quality fix #3
       // (2026-10-01): one legal line is standard furniture, never "a
@@ -123,6 +129,7 @@ export const THREE_LAYER_POOLS = Object.freeze(
       keepUps: p.keepUps,
       legalSafeTotalsRoasts: p.legalSafeTotalsRoasts,
       legalSafeRoasts: p.legalSafeRoasts,
+      phraseRoasts: p.phraseRoasts,
     }),
   ])),
 );
@@ -266,6 +273,14 @@ export function signalTagFor(category, evidence) {
     // ONLY to these findings; boolean pattern hits stay untagged so they
     // keep the generic template-sign copy exactly as before.
     if (/ — \d+ token usages \(/.test(f)) return 'count-token';
+    return null;
+  }
+  if (category === 'repetitive') {
+    // In-page repeated-PHRASE findings (pass 2, 2026-10-01) route to the
+    // bespoke phraseRoasts pool + phrase-gated whys/fixes; the three legacy
+    // signals (openings/identical sentences/paragraphs) stay untagged so
+    // their generic pool picks are byte-identical.
+    if (/^repeated phrase in the page text: /.test(f)) return 'phrase';
     return null;
   }
   return null;
@@ -425,6 +440,16 @@ const EVIDENCE_PARSERS = {
     if (m) return { kind: 'near-identical sentences', openings: m[1], ...firstDupPair(m[1]) };
     m = /^repeated paragraphs: (.+)$/.exec(f);
     if (m) return { kind: 'repeated paragraphs', openings: m[1], ...firstDupPair(m[1]) };
+    // Pass 2 (2026-10-01) in-page repeated-phrase line. Optional location
+    // suffixes: " — also in the page title" and/or " — in N paragraphs" (both
+    // emitted conditionally by the rule; either may be absent).
+    m = /^repeated phrase in the page text: (\d+)× "(.+)"( — also in the page title)?( — in (\d+) paragraphs?)?$/.exec(f);
+    if (m) {
+      const tokens = { kind: 'phrases', count: m[1], phrase: m[2] };
+      if (m[3] !== undefined) tokens.inTitle = 'the page title';
+      if (m[5] !== undefined) tokens.paragraphCount = m[5];
+      return tokens;
+    }
     m = /^no notable repetitive structure \((\d+) sentences, (\d+) paragraphs\)$/.exec(f);
     if (m) return { sentences: m[1], paragraphs: m[2] };
     return {};
@@ -827,6 +852,14 @@ export function buildCategoryInsights({ category, findings = [], id }) {
       roastCandidates = pool.legalSafeRoasts;
     } else if (legalSafeBoilerplate && isBoilerplateAggregateLine(evidence) && pool.legalSafeTotalsRoasts.length > 0) {
       roastCandidates = pool.legalSafeTotalsRoasts;
+    }
+    // Pass 2 (2026-10-01): an in-page repeated-PHRASE finding draws its roast
+    // from the bespoke phraseRoasts pool (template-citing copy), never the
+    // sentence/paragraph-centric generic roasts. Token-compatible by
+    // construction ({phrase}/{count}/… — see the pool's own copy); the gate
+    // is the finding's OWN 'phrase' tag, exactly like legalSafeRoasts above.
+    if (category === 'repetitive' && signalTag === 'phrase' && pool.phraseRoasts?.length > 0) {
+      roastCandidates = pool.phraseRoasts;
     }
     // Defensive: the eligible set is never empty (every group ships token-free
     // roasts), but stay crash-proof against future copy edits.

@@ -46,6 +46,17 @@
     ]
   },
   {
+    "id": "tenweb",
+    "label": "10Web builder assets",
+    "confidence": "medium",
+    "scope": "html",
+    "patterns": [
+      "https?:\\/\\/(?:[a-z0-9-]+\\.)*10web\\.(?:com|io)",
+      "name=[\"'][^\"']*generator[\"'][^>]*content=[\"'][^\"']*10web[^\"']*[\"']",
+      "content=[\"'][^\"']*10web[^\"']*[\"'][^>]*name=[\"'][^\"']*generator[\"']"
+    ]
+  },
+  {
     "id": "named-builder-generator",
     "label": "meta generator tag declaring a website builder",
     "confidence": "medium",

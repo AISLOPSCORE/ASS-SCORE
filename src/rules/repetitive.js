@@ -30,6 +30,18 @@ const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const normalizeSentence = (s) =>
   String(s).toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, '').replace(/\s+/g, ' ').trim();
 
+/**
+ * Normalization for the PHRASE detector ONLY (pass 2, 2026-10-01): non-letter/
+ * non-number characters become SPACES (not nothing), so hyphenated compounds
+ * like "platform-native" and "platform native" unify into the same phrase —
+ * the value-prop line "a month of platform-native content" is the SAME claim
+ * repeated as "a month of platform native posts". The three legacy signals
+ * keep the original punctuation-stripping normalizeSentence above so their
+ * scores stay byte-identical.
+ */
+const normalizePhrase = (s) =>
+  String(s).toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ').trim();
+
 function firstWords(s, n) {
   const out = [];
   for (const m of String(s).matchAll(/[A-Za-z0-9]+(?:['’][A-Za-z0-9]+)?|[\p{L}\p{N}]+/gu)) {
@@ -59,17 +71,18 @@ function countContentWords(phrase, stopwords) {
 function countLocations(phrase, paragraphs = [], title = '') {
   let paragraphCount = 0;
   for (const p of paragraphs) {
-    if (normalizeSentence(p).includes(phrase)) paragraphCount += 1;
+    if (normalizePhrase(p).includes(phrase)) paragraphCount += 1;
   }
-  return { title: normalizeSentence(String(title)).includes(phrase), paragraphCount };
+  return { title: normalizePhrase(String(title)).includes(phrase), paragraphCount };
 }
 
 /**
  * Detect 4–12 word phrases / sentence templates that recur PHRASE_MIN_COUNT
  * times on the page. Corpus = the page <title> (when present) + every
  * sentence, windowed WITHIN sentence bounds (a phrase never spans two
- * sentences), normalized exactly like the sentence-level dupes (lowercase,
- * punctuation stripped — so "platform-native" and "platform native" unify).
+ * sentences), normalized with punctuation-to-space (so "platform-native" and
+ * "platform native" unify — the phrase detector's own normalization; the
+ * legacy signals keep their punctuation-stripping normalization).
  *
  * Hard filters (deterministic, evidence-backed):
  *   - phrase length >= PHRASE_MIN_WORDS words;
@@ -92,8 +105,8 @@ function countLocations(phrase, paragraphs = [], title = '') {
  */
 export function findRepeatedPhrases({ title = '', sentences = [], paragraphs = [], stopwords = STOPWORDS } = {}) {
   const corpus = [];
-  if (String(title || '').trim()) corpus.push(normalizeSentence(String(title)));
-  for (const s of sentences) corpus.push(normalizeSentence(s));
+  if (String(title || '').trim()) corpus.push(normalizePhrase(String(title)));
+  for (const s of sentences) corpus.push(normalizePhrase(s));
   const live = corpus.filter((s) => s.length >= PHRASE_MIN_WORDS);
   if (live.length === 0) return [];
 
@@ -135,7 +148,11 @@ export function findRepeatedPhrases({ title = '', sentences = [], paragraphs = [
  * @param {{ text?: string, sentences?: string[], paragraphs?: string[], title?: string, stopwords?: Set<string> }} ctx
  */
 export function analyze({ text = '', sentences = [], paragraphs = [], title = '', stopwords = STOPWORDS } = {}) {
-  if (!text && !title) return { score: 0, findings: [] };
+  // Degenerate pages (no text, or text that carries no sentence split) keep
+  // the original contract byte-identical: { score: 0, findings: [] }. The
+  // phrase signal cannot fire without >= 2 distinct corpus entries of >= 4
+  // words, so a missing sentence list can never contribute anyway.
+  if (!text || sentences.length === 0) return { score: 0, findings: [] };
 
   const sentenceCount = sentences.length;
 
