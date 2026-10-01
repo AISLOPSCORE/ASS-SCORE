@@ -545,7 +545,7 @@ export function adminRouter({ db, adminPassword, emailSender, now = () => new Da
     } catch (err) {
       if (err instanceof SsrfError || err instanceof InvalidUrlError) {
         if (wantsHtml(req)) {
-          return res.status(400).type('html').send(renderShareCardForm({ action: formAction(req), error: err.message }));
+          return res.status(400).type('html').send(renderShareCardForm({ action: formAction(req), error: err.message, urlValue: rawUrl }));
         }
         return res.status(400).json({ error: { code: 'blocked', message: err.message } });
       }
