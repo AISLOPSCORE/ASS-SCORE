@@ -24,7 +24,7 @@ export const CATEGORY_ONE_LINERS = {
   boilerplate: 'Generic wording that could describe any business in any industry.',
   infoDensity: 'Whether your content actually says something specific, or just fills the page.',
   repetitive: 'How often your page repeats itself — same sentence openings, same sentences, same paragraphs.',
-  crossPage: 'How often the same content shows up on multiple pages of your site.',
+  crossPage: 'Whether the same phrases or value props are copy-pasted across multiple pages, or repeated within the same page (e.g. templated testimonials), instead of written fresh.',
   fingerprints: 'Signs your design came from a recognizable template nobody customized.',
   assets: 'Generic images where real, specific photos of your work would say more.',
 };

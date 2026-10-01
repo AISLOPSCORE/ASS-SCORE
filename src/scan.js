@@ -154,9 +154,18 @@ export async function runScan({ db, fetcher, url, branding = null, businessName 
   }
 
   // --- phase-2 rules -----------------------------------------------------------
-  // crossPage: similarity over MAIN content of every fetched page.
+  // crossPage: similarity over MAIN content of every fetched page + the
+  // in-page repeated-phrase component (pass 2, 2026-10-01) which measures the
+  // TARGET page's own sentences (see src/rules/crossPage.js). pages[0] is
+  // always the target (pushed first above); its extractText context is passed
+  // along so the REPETITION card's phrase signal fires even on single-page
+  // scans.
   const crossPage = analyzeCrossPage({
-    pages: pages.map((p) => ({ url: p.url, main: perPage.get(p.url).main })),
+    pages: pages.map((p, i) => ({
+      url: p.url,
+      main: perPage.get(p.url).main,
+      ...(i === 0 ? { sentences: text.sentences, paragraphs: text.paragraphs, title: text.title } : {}),
+    })),
   });
   // fingerprints: evidence on the target page (the URL the customer asked about).
   const fingerprints = analyzeFingerprints({
@@ -182,6 +191,12 @@ export async function runScan({ db, fetcher, url, branding = null, businessName 
   // where duplication score reuses the crossPage mapping 0.80 -> 0, 1.00 -> 100
   // for the page's worst flagged pair; 0 when the page is in no flagged pair).
   // Deterministic tie-break: lowest URL (lexicographic).
+  // DELIBERATE (pass 2, owner 2026-10-01): in-page repeated-PHRASE receipts
+  // live under crossPage (the REPETITION card), so they do NOT surface in the
+  // worst-page panel — the panel's evidence collectors are the four v1 rules
+  // (below) and its page choice never considered the phrase signal; showing
+  // phrase receipts here would double-report the same evidence in the paid
+  // report's ACTUAL FINDINGS. Documented in the PR body.
   let worstPage = null;
   if (pages.length >= 2) {
     const dupByUrl = new Map();
