@@ -77,6 +77,7 @@ const CANONICAL = {
   ],
   fingerprints: [
     'pattern evidence in html: v0.dev builder assets (high confidence, template-like signal)',
+    'recognizable template sign in the page html: shadcn/ui component-library token vocabulary — 223 token usages (text-muted-foreground ×81, text-foreground ×34, bg-primary ×33, bg-card ×29, --radix- ×24, bg-background ×19) (high confidence)',
   ],
   assets: [
     '2 of 4 images from stock/placeholder CDNs',
@@ -102,12 +103,17 @@ test('threeLayer.json: pools cover exactly the seven breakdown categories with 8
   for (const key of THREE_LAYER_KEYS) {
     const pool = THREE_LAYER_POOLS[key];
     assert.ok(pool, `pool ${key}`);
-    assert.ok(Array.isArray(pool.roasts) && pool.roasts.length >= 8 && pool.roasts.length <= 12,
-      `${key}: ${pool.roasts.length} roasts (need 8-12)`);
-    assert.ok(Array.isArray(pool.whys) && pool.whys.length >= 4 && pool.whys.length <= 6,
-      `${key}: ${pool.whys.length} whys (need 4-6)`);
-    assert.ok(Array.isArray(pool.fixes) && pool.fixes.length >= 4 && pool.fixes.length <= 6,
-      `${key}: ${pool.fixes.length} fixes (need 4-6)`);
+    // fingerprints pool carries extra count-token entries (vocab expansion
+    // 2026-10-01: 16 roasts incl. 4 measurable receipts, 7 whys, 7 fixes —
+    // 2 of each gated to count-token findings). All other pools keep the
+    // original copy budget.
+    const [maxRoasts, maxWhysFixes] = key === 'fingerprints' ? [20, 8] : [12, 6];
+    assert.ok(Array.isArray(pool.roasts) && pool.roasts.length >= 8 && pool.roasts.length <= maxRoasts,
+      `${key}: ${pool.roasts.length} roasts (need 8-${maxRoasts})`);
+    assert.ok(Array.isArray(pool.whys) && pool.whys.length >= 4 && pool.whys.length <= maxWhysFixes,
+      `${key}: ${pool.whys.length} whys (need 4-${maxWhysFixes})`);
+    assert.ok(Array.isArray(pool.fixes) && pool.fixes.length >= 4 && pool.fixes.length <= maxWhysFixes,
+      `${key}: ${pool.fixes.length} fixes (need 4-${maxWhysFixes})`);
     // Owner CR (2026-09-16: clean findings are compliments): every category
     // ships a compliments pool, a clean-result why pool, and a keep-it-up pool.
     for (const [name, lo, hi] of [['compliments', 4, 6], ['cleanWhys', 4, 6], ['keepUps', 4, 6]]) {

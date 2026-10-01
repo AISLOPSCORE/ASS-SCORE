@@ -220,5 +220,119 @@
     "patterns": [
       "class=[\"'][^\"']*\\b(?:team|team-grid|team-card|team-section)\\b"
     ]
+  },
+  {
+    "id": "shadcn-ui-vocabulary",
+    "label": "shadcn/ui component-library token vocabulary",
+    "confidence": "low",
+    "scope": "html",
+    "countTokens": [
+      "bg-primary",
+      "bg-card",
+      "bg-background",
+      "bg-destructive",
+      "text-muted-foreground",
+      "text-foreground",
+      "data-slot",
+      "--radix-"
+    ],
+    "tiers": [
+      {
+        "min": 20,
+        "confidence": "high"
+      },
+      {
+        "min": 5,
+        "confidence": "medium"
+      }
+    ]
+  },
+  {
+    "id": "mui-vocabulary",
+    "label": "Material-UI (MUI) component classes",
+    "confidence": "low",
+    "scope": "html",
+    "countTokens": [
+      "MuiButton-root",
+      "MuiPaper-root",
+      "MuiTypography-root",
+      "MuiCard-root",
+      "MuiAppBar-root",
+      "MuiTextField-root",
+      "MuiGrid-root",
+      "MuiContainer-root",
+      "MuiChip-root",
+      "MuiIconButton-root"
+    ],
+    "tiers": [
+      {
+        "min": 20,
+        "confidence": "high"
+      },
+      {
+        "min": 5,
+        "confidence": "medium"
+      }
+    ]
+  },
+  {
+    "id": "bootstrap-vocabulary",
+    "label": "Bootstrap framework classes",
+    "confidence": "low",
+    "scope": "html",
+    "countTokens": [
+      "btn btn-primary",
+      "btn-lg",
+      "navbar navbar-expand",
+      "container-fluid",
+      "card mb-",
+      "form-control",
+      "dropdown-menu",
+      "d-flex",
+      "row g-",
+      "col-md-"
+    ],
+    "tiers": [
+      {
+        "min": 20,
+        "confidence": "high"
+      },
+      {
+        "min": 5,
+        "confidence": "medium"
+      }
+    ]
+  },
+  {
+    "id": "tailwind-stock-palette",
+    "label": "stock Tailwind palette utilities (no custom design tokens)",
+    "confidence": "low",
+    "scope": "html",
+    "countTokens": [
+      "bg-blue-500",
+      "bg-blue-600",
+      "bg-indigo-500",
+      "bg-indigo-600",
+      "text-gray-600",
+      "text-gray-500",
+      "bg-gray-100",
+      "bg-gray-50",
+      "bg-slate-",
+      "bg-zinc-",
+      "text-neutral-",
+      "border-gray-200",
+      "bg-emerald-500",
+      "bg-green-500"
+    ],
+    "tiers": [
+      {
+        "min": 20,
+        "confidence": "high"
+      },
+      {
+        "min": 5,
+        "confidence": "medium"
+      }
+    ]
   }
 ]
