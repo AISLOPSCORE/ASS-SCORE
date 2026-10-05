@@ -269,6 +269,22 @@ function esc(v) {
 }
 
 /**
+ * Crawl-depth disclosure scope (owner 10-05, decision a): the honest "we
+ * evaluated N of M pages" numbers. Returns null UNLESS both counts are stored,
+ * finite, and M >= 1 — old rows (nulls) render no scope anywhere. The wording
+ * is a dry limitation disclosure, never a roast; it must never claim we
+ * reviewed pages we didn't (fetched is always <= discovered by construction:
+ * fetched = pages actually analyzed <= 5; discovered = target + deduped
+ * candidates the site exposed BEFORE the cap, never sliced).
+ */
+function crawlScope(fetched, discovered) {
+  const n = Number(fetched);
+  const m = Number(discovered);
+  if (!Number.isFinite(n) || !Number.isFinite(m) || n < 0 || m < 1) return null;
+  return { fetched: n, discovered: m, pageWord: m === 1 ? 'page' : 'pages' };
+}
+
+/**
  * Per-category classification from the sub-score (0-100, higher = worse).
  * Thresholds (judgment, documented): 0-24 CLEAN, 25-49 WATCH, 50-74 NEEDS
  * ATTENTION, 75-100 PRIORITY — the severity ladder the product uses
@@ -592,6 +608,12 @@ export function worstPageSummary(findings = []) {
 function renderFreeHtmlReport(scan, shareBase = 'https://ass-score.com') {
   const pub = buildFreePayload(scan);
   const band = verdictBand(pub.score);
+  // Crawl-depth disclosure on the free page too (owner 10-05): one dry line,
+  // ONLY when the counts are stored. Never lists pages — just the two numbers.
+  const scope = pub.crawl ? crawlScope(pub.crawl.fetched, pub.crawl.discovered) : null;
+  const scopeLine = scope
+    ? `<p class="scope">This scan evaluated ${scope.fetched} of the ${scope.discovered} ${scope.pageWord} found on this site (up to 5 pages are reviewed per scan by design).</p>`
+    : '';
   const teaserLis = pub.teasers.map((t, i) => {
     const label = CATEGORY_LABELS[t.key] ?? t.key;
     // Clean findings are compliments, not insults (owner rule 2026-09-16):
@@ -631,6 +653,7 @@ function renderFreeHtmlReport(scan, shareBase = 'https://ass-score.com') {
     .ins-why, .ins-fix { font-weight: 700; color: #475569; margin-right: .25rem; }
     .rec-label { font-weight: 700; color: #64748b; font-size: .8rem; }
     .disclaimer { color: #64748b; font-size: .8rem; border-top: 1px solid #e2e8f0; padding-top: .75rem; margin-top: 1.5rem; }
+    .scope { color: #64748b; font-size: .85rem; font-style: italic; }
     .cta { display: inline-block; background: #0f172a; color: #f8fafc; text-decoration: none; padding: 12px 22px; border-radius: 8px; font-weight: 600; margin: .5rem 0; }
     ul { margin: .25rem 0 .75rem; padding-left: 1.1rem; }
   </style>
@@ -641,6 +664,7 @@ function renderFreeHtmlReport(scan, shareBase = 'https://ass-score.com') {
   <p class="score">A.S.S. Score: ${pub.score} / 100</p>
   <p class="verdict">${esc(pub.verdict)}</p>
   <p class="roast">${esc(pub.roast)}</p>
+  ${scopeLine}
   <h2>Your numbers (0 = clean · 100 = maximum ass)</h2>
   <ul>${Object.entries(pub.breakdown).map(([key, rule]) =>
     `<li><strong>${esc(CATEGORY_LABELS[key] ?? key)}</strong> — ${rule.score === null || rule.score === undefined ? (rule.note ? esc(rule.note) : 'skipped') : `${rule.score}/100`}</li>`).join('')}</ul>
@@ -1039,9 +1063,16 @@ function renderHtmlReport(scan) {
 
   // --- 8. METHODOLOGY + mandated DISCLAIMER (never cut, never reworded) ------
   const partialNote = scan.partial && scan.note ? ` Some pages could not be scanned this run: ${esc(scan.note)}.` : '';
+  // Crawl-depth disclosure (owner 10-05): one dry scope line, ONLY when the
+  // counts are stored (old rows render exactly as before — no line).
+  const scope = crawlScope(scan.crawlFetched, scan.crawlDiscovered);
+  const scopeLine = scope
+    ? `<p class="scope">Scope: this report evaluated ${scope.fetched} of the ${scope.discovered} ${scope.pageWord} found on this site (the scanner reviews up to 5 pages per scan by design).</p>`
+    : '';
   const methodologySection = `
   <h2>Methodology</h2>
   <p>Every finding in this report comes from a deterministic, rule-based analysis of the pages we fetched — the same URL always produces the same score. The seven categories look for concrete, documented patterns: filler words, generic marketing wording, thin content that pads the page, repeated text, the same content on multiple pages, recognizable website templates, and generic images. Every finding lists the verbatim evidence behind it, and the overall A.S.S. Score is the weighted rollup of the seven category scores.${partialNote}</p>
+  ${scopeLine}
   <p class="disclaimer">${DISCLAIMER}</p>`;
 
   // --- Phase 2C: focused Category Views (navigation/presentation only) ------

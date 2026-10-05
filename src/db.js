@@ -47,12 +47,20 @@ export function openDb(dbPath) {
   // NOT NULL DEFAULT 0 backfills existing rows to 0 (= public), so pre-migration
   // rows behave byte-identically to today with no data fix-up.
   if (!cols.includes('internal')) db.exec('ALTER TABLE scans ADD COLUMN internal INTEGER NOT NULL DEFAULT 0');
+  // Crawl-depth disclosure (owner 10-05): how many pages were actually
+  // evaluated (crawl_fetched) vs how many the site exposed via sitemap/links
+  // before the 5-page cap (crawl_discovered = 1 + totalDiscovered). Nullable —
+  // rows written before this feature render NO scope line anywhere. The ALTER
+  // is guarded + additive exactly like every other phase column: existing
+  // production rows and the WAL stay intact, no table rebuild.
+  if (!cols.includes('crawl_fetched')) db.exec('ALTER TABLE scans ADD COLUMN crawl_fetched INTEGER');
+  if (!cols.includes('crawl_discovered')) db.exec('ALTER TABLE scans ADD COLUMN crawl_discovered INTEGER');
 
   const insertStmt = db.prepare(
-    'INSERT INTO scans (id, url, score, breakdown, created_at, partial, note, worst_page, branding, roast, business_name, internal) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    'INSERT INTO scans (id, url, score, breakdown, created_at, partial, note, worst_page, branding, roast, business_name, internal, crawl_fetched, crawl_discovered) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
   );
   const getStmt = db.prepare(
-    'SELECT id, url, score, breakdown, created_at, partial, note, worst_page, branding, roast, business_name, internal FROM scans WHERE id = ?'
+    'SELECT id, url, score, breakdown, created_at, partial, note, worst_page, branding, roast, business_name, internal, crawl_fetched, crawl_discovered FROM scans WHERE id = ?'
   );
 
   // Webhook fulfillment ledger (order webhooks -> scans).
@@ -250,10 +258,13 @@ export function openDb(dbPath) {
      * @param {{ id: string, url: string, score: number, breakdown: object,
      *           createdAt: string, partial?: boolean, note?: string,
      *           worstPage?: object, branding?: object, roast?: string,
-     *           businessName?: string, internal?: boolean }} scan
+     *           businessName?: string, internal?: boolean,
+     *           crawlFetched?: number, crawlDiscovered?: number }} scan
      *   `internal` marks an admin-generated row (the /admin/share-card tool):
      *   1 = excluded from every public read surface and the admin-stats counts.
      *   Default 0 (public) keeps the public scan path byte-identical.
+     *   `crawlFetched`/`crawlDiscovered` are the crawl-depth disclosure counts
+     *   (nullable ints — omitted/undefined for old-style rows).
      */
     insertScan(scan) {
       insertStmt.run(
@@ -269,9 +280,12 @@ export function openDb(dbPath) {
         scan.roast ?? null,
         scan.businessName ?? null,
         scan.internal === true ? 1 : 0,
+        // Crawl-depth disclosure (nullable — old rows render without a line).
+        scan.crawlFetched === undefined || scan.crawlFetched === null ? null : Number(scan.crawlFetched),
+        scan.crawlDiscovered === undefined || scan.crawlDiscovered === null ? null : Number(scan.crawlDiscovered),
       );
     },
-    /** @returns {null | { id, url, score, breakdown, created_at, partial, note, worstPage, branding, roast, businessName, internal }} */
+    /** @returns {null | { id, url, score, breakdown, created_at, partial, note, worstPage, branding, roast, businessName, internal, crawlFetched, crawlDiscovered }} */
     getScan(id) {
       const row = getStmt.get(id);
       if (!row) return null;
@@ -285,6 +299,10 @@ export function openDb(dbPath) {
         businessName: row.business_name ?? undefined,
         // Rows written before the migration backfill to 0 (public).
         internal: Boolean(row.internal),
+        // Crawl-depth disclosure: null (old rows) -> undefined, so every read
+        // surface skips the scope line/field for scans without the data.
+        crawlFetched: row.crawl_fetched ?? undefined,
+        crawlDiscovered: row.crawl_discovered ?? undefined,
       };
     },
 
