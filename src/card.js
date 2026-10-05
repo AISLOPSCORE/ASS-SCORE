@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import sharp from 'sharp';
-import { clampScore, verdictBand } from './verdict.js';
+import { clampScore, verdictBand, VERDICT_BANDS } from './verdict.js';
 
 /**
  * Share card — "A.S.S. SCORE" branded 16:9 poster (1600×900), server-side
@@ -42,6 +42,31 @@ const DISCLAIMER_LINES = [
   'This tool identifies writing and design patterns commonly associated with generic or templated content.',
   'It does not detect AI authorship and is not proof that any content was AI-generated.',
 ];
+
+/**
+ * Ramp stops — the A.S.S. scale strip (0-100) recolored per verdict band.
+ * Built FROM VERDICT_BANDS (the single source of truth) so the bar can never
+ * drift from the band table again: each band renders as one hard-stop segment
+ * with a double stop at every band boundary at offset (max+1)/100 — the
+ * transition sits exactly between score `max` and score `max+1` (9/10, 19/20,
+ * 29/30, …), and at the boundary the later (higher) band's color wins (verified
+ * against the librsvg rasterizer at every boundary score 10/20/…/90). Returns
+ * [{offset, color}] ordered by offset, ready for <stop offset=… stop-color=…>.
+ */
+export function buildRampStops(bands = VERDICT_BANDS) {
+  const stops = [];
+  for (let i = 0; i < bands.length; i += 1) {
+    if (i === 0) stops.push({ offset: 0, color: bands[i].color });
+    if (i < bands.length - 1) {
+      const boundary = (bands[i].max + 1) / 100; // e.g. 9/10 -> 0.10
+      stops.push({ offset: boundary, color: bands[i].color });
+      stops.push({ offset: boundary, color: bands[i + 1].color });
+    } else {
+      stops.push({ offset: 1, color: bands[i].color });
+    }
+  }
+  return stops;
+}
 
 /**
  * Donkey mascot — the approved share-card cutout (owner-approved final asset,
@@ -157,6 +182,11 @@ export function buildCardSvg({ score, url }) {
   const TRACK_X = 84; const TRACK_Y = 610; const TRACK_W = 596; // ends at 680: clear of the sign's rotated left edge (~700-705)
   const M_X = TRACK_X + Math.max(0, Math.min(1, s / 100)) * TRACK_W; // you-are-here marker
   const MARK_TXT_X = Math.min(M_X, TRACK_X + TRACK_W - 64); // label never tucks under the paper sign at high scores
+  // Ramp: 10 hard-stop segments built from VERDICT_BANDS (no hex literals here,
+  // so the bar and the band table can never drift apart again).
+  const rampStops = buildRampStops()
+    .map((st) => `<stop offset="${st.offset}" stop-color="${st.color}"/>`)
+    .join('');
   const STAMP_FS = 34; const STAMP_PAD_X = 42; const STAMP_H = 64;
   const stampW = label.length * 0.6 * STAMP_FS + STAMP_PAD_X * 2;
   const STAMP_X = 84; const STAMP_Y = 700;
@@ -202,11 +232,7 @@ export function buildCardSvg({ score, url }) {
       <stop offset=".55" stop-color="${color}" stop-opacity=".06"/>
       <stop offset="1" stop-color="${color}" stop-opacity="0"/>
     </radialGradient>
-    <linearGradient id="ramp" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0" stop-color="#4ade80"/><stop offset=".23" stop-color="#a3e635"/>
-      <stop offset=".47" stop-color="#facc15"/><stop offset=".70" stop-color="#fb923c"/>
-      <stop offset=".86" stop-color="#f97316"/><stop offset="1" stop-color="#f87171"/>
-    </linearGradient>
+    <linearGradient id="ramp" x1="0" y1="0" x2="1" y2="0">${rampStops}</linearGradient>
   </defs>
 
   <rect x="0" y="0" width="1600" height="900" fill="#000000"/>
@@ -216,7 +242,7 @@ export function buildCardSvg({ score, url }) {
     <text x="82" y="88" font-family="Anton" font-size="54" fill="#d4f000" letter-spacing="2">A.S.S. SCORE</text>
     <g transform="translate(84,104)"><svg width="430" height="16" viewBox="0 0 150 16" preserveAspectRatio="none">${scrib('#d4f000', true)}</svg></g>
   </g>
-  <text x="1516" y="870" text-anchor="end" font-family="Inter" font-weight="700" font-size="16" fill="rgba(255,255,255,.38)" letter-spacing="1.5">ass-score.com</text>
+  <text x="1516" y="870" text-anchor="end" font-family="Inter" font-weight="700" font-size="28" fill="#facc15" letter-spacing="2">ass-score.com</text>
 
   <text x="86" y="168" font-family="Caveat" font-weight="600" font-size="24" fill="rgba(255,255,255,.55)" letter-spacing="1">SCANNED WEBSITE</text>
   <text x="84" y="216" font-family="Inter" font-weight="800" font-size="34" fill="#ffffff">${host}</text>
