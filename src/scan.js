@@ -115,7 +115,7 @@ export async function runScan({ db, fetcher, url, branding = null, businessName 
   }
 
   // --- discovery + additional fetches (budget-aware, concurrent) -------------
-  const pages = [{ url: page.url, html: page.body }]; // target first, deterministic order
+  let pages = [{ url: page.url, html: page.body }]; // target first, deterministic order
   const skipped = [];
   // Candidates the site exposed, BEFORE the MAX_ADDITIONAL_PAGES slice
   // (see discoverPages' totalDiscovered). 0 when discovery never ran (budget
@@ -151,6 +151,28 @@ export async function runScan({ db, fetcher, url, branding = null, businessName 
   } finally {
     clearTimeout(abortTimer);
   }
+
+  // --- redirect/canonical-URL deduplication (owner PROMPT 1, 2026-10-05) -------
+  // The fetcher follows redirects and records the FINAL fetched URL
+  // (res.url = post-redirect), so two DISTINCT candidate URLs can converge onto
+  // ONE final document (a sitemap spelling that 301s to the canonical URL —
+  // the TechBullion case: /category/cryptocurrency/ and a misspelled sibling
+  // both resolved to https://techbullion.com/cryptocurrency/, which was then
+  // compared against ITSELF → "100.0% similar" → crossPage 100 → composite
+  // inflated 13 → 43). Dedupe the WHOLE scanned set by final URL, FIRST
+  // occurrence wins in deterministic order (pages[0] — the target — is always
+  // kept; then additional pages in discovered order). A converged duplicate is
+  // dropped from `pages`, so it never enters crossPage, the worst-page panel,
+  // or the v1 per-page loop. crawlFetched therefore counts DISTINCT final
+  // documents actually analyzed.
+  const seenFinalUrls = new Set();
+  const dedupedPages = [];
+  for (const p of pages) {
+    if (seenFinalUrls.has(p.url)) continue;
+    seenFinalUrls.add(p.url);
+    dedupedPages.push(p);
+  }
+  pages = dedupedPages;
 
   // Crawl-depth disclosure counts (owner 10-05, option a — keep MAX_TOTAL_PAGES
   // = 5, disclose what was and wasn't evaluated):
