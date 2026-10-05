@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
  * site) and update the expected numbers in fingerprintVocab.test.js.
  */
 import { analyzeFingerprints } from '../../src/rules/fingerprints.js';
+import { visualRepetitionHits } from '../../src/rules/visualRepetition.js';
 import { extractHead, extractText } from '../../src/text.js';
 import { runRules } from '../../src/rules/index.js';
 import { analyzeAssets } from '../../src/rules/assets.js';
@@ -23,13 +24,17 @@ export function loadFixture(name) {
   return fs.readFileSync(path.join(FIXTURES_DIR, `${name}-home.html`), 'utf8');
 }
 
-/** Replicate the scan pipeline's TARGET-PAGE fingerprints analysis exactly. */
+/**
+ * Target-page fingerprints exactly like scan.js: the JSON-rule hits plus the
+ * round-1 visual-repetition extra hits (same extraHits composition call).
+ */
 export function analyzeFixtureFingerprints(name) {
   const html = loadFixture(name);
   return analyzeFingerprints({
     html,
     head: extractHead(html),
     text: extractText(html).text,
+    extraHits: visualRepetitionHits(html),
   });
 }
 
@@ -43,7 +48,12 @@ export function analyzeFixtureFingerprints(name) {
 export function fixtureBreakdown(name, crossPageScore = 0) {
   const html = loadFixture(name);
   const text = extractText(html);
-  const fingerprints = analyzeFingerprints({ html, head: extractHead(html), text: text.text });
+  const fingerprints = analyzeFingerprints({
+    html,
+    head: extractHead(html),
+    text: text.text,
+    extraHits: visualRepetitionHits(html),
+  });
   const rules = runRules(text);
   const assets = analyzeAssets(html);
   const breakdown = {

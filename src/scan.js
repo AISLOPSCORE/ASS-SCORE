@@ -5,6 +5,7 @@ import { computeSlopScore } from './scorer.js';
 import { discoverPages } from './rules/discover.js';
 import { analyzeCrossPage, DUPLICATION_THRESHOLD } from './rules/crossPage.js';
 import { analyzeFingerprints } from './rules/fingerprints.js';
+import { visualRepetitionHits } from './rules/visualRepetition.js';
 import { analyzeAssets } from './rules/assets.js';
 import { createBudget } from './budget.js';
 import { SsrfError, InvalidUrlError } from './fetch/ssrf.js';
@@ -168,10 +169,13 @@ export async function runScan({ db, fetcher, url, branding = null, businessName 
     })),
   });
   // fingerprints: evidence on the target page (the URL the customer asked about).
+  // Round-1 DESIGN signals (2026-10-05) run as extra count-rule hits on the
+  // target page's HTML only — same scope as the rest of DESIGN.
   const fingerprints = analyzeFingerprints({
     html: page.body,
     head: extractHead(page.body),
     text: text.text,
+    extraHits: visualRepetitionHits(page.body),
   });
   // assets: stock/placeholder imagery on the target page (HTML-only, no downloads).
   const assets = analyzeAssets(page.body);
