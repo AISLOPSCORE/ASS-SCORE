@@ -171,16 +171,27 @@ test('scoring: assets contributes to the composite when crossPage runs, never ou
   assert.ok(Number.isInteger(allSlop.slopScore) && allSlop.slopScore >= 0 && allSlop.slopScore <= 100);
 });
 
-test('scoring: single-page scan (crossPage null) excludes assets like fingerprints — v1 reproduced', () => {
+test('scoring: single-page scan (crossPage null) excludes assets like fingerprints — v1 reproduced, minus the approved C1 credit', () => {
   const single = computeSlopScore({
     filler: { score: 50 }, boilerplate: { score: 50 }, infoDensity: { score: 50 },
     repetitive: { score: 50 }, crossPage: { score: null, findings: [], note: 'insufficient pages' },
     fingerprints: { score: 100 }, assets: { score: 100 },
   });
   assert.equal(single.components.assets.weight, 0, 'assets excluded from the single-page composite');
-  assert.equal(single.slopScore, computeSlopScore({
+  // Phase-2 C1 (owner 2026-10-05): on this branch infoDensity AND fingerprints
+  // SCORES still exist (only fingerprints' WEIGHT is 0), so i 50 /\ fp 100
+  // fires the +4 template-stack corroboration credit — the single-page score
+  // is now v1 + 4 exactly, and drops back to v1 the moment either bar falls.
+  const v1Only = computeSlopScore({
     filler: { score: 50 }, boilerplate: { score: 50 }, infoDensity: { score: 50 }, repetitive: { score: 50 },
-  }).slopScore, 'single-page score == pure v1 score');
+  });
+  assert.equal(single.slopScore, v1Only.slopScore + 4, 'single-page score == v1 score + 4 (C1 fires on i>=45 /\ fp>=15 in the fallback branch)');
+  const subBar = computeSlopScore({
+    filler: { score: 50 }, boilerplate: { score: 50 }, infoDensity: { score: 50 },
+    repetitive: { score: 50 }, crossPage: { score: null, findings: [], note: 'insufficient pages' },
+    fingerprints: { score: 14 }, assets: { score: 100 },
+  });
+  assert.equal(subBar.slopScore, v1Only.slopScore, 'fingerprints 14 -> C1 does not fire -> exact v1 parity');
 });
 
 // ------------------------------------------------------------------ roast pools
