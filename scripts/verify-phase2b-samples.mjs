@@ -33,7 +33,7 @@ assert.ok(!sloppy.includes('"><'), 'sloppy: no raw quote-bracket sequence (sacre
 assert.ok(sloppy.includes('class="fc-state fc-state-priority"'), 'sloppy: PRIORITY badge from existing classification');
 assert.ok(['cat-filler', 'cat-boilerplate', 'cat-infodensity', 'cat-repetitive', 'cat-crosspage', 'cat-fingerprints', 'cat-assets']
   .every((a) => sloppy.includes(`id="${a}"`)), 'sloppy: all 7 Phase 2A anchor targets remain');
-assert.ok(sloppy.includes('A.S.S. Score: 89 / 100') && sloppy.includes('EXTREMELY ASS'), 'sloppy: hero unchanged');
+assert.ok(sloppy.includes('A.S.S. Score: 89 / 100') && sloppy.includes('CATASTROPHICALLY ASSY'), 'sloppy: hero unchanged');
 assert.ok(sloppy.includes('does not detect AI authorship'), 'sloppy: mandated disclaimer verbatim');
 
 // Every card region carries the four zones + its own ordinal.
@@ -65,11 +65,11 @@ for (const r of receiptSeq) {
   prev = at;
 }
 
-// ---- clean (7/100 CLEANEST): zero cards, compliments only
+// ---- clean (7/100 CLEAN): zero cards, compliments only
 assert.equal(cards(clean), 0, 'clean: zero finding cards');
 assert.equal(roasts(clean), 0, 'clean: zero roast layers');
 assert.ok(!clean.includes('How to fix it:'), 'clean: no fix zone');
-assert.ok(clean.includes('A.S.S. Score: 7 / 100') && clean.includes('CLEANEST'), 'clean: hero unchanged');
+assert.ok(clean.includes('A.S.S. Score: 7 / 100') && clean.includes('CLEAN'), 'clean: hero unchanged');
 assert.ok(clean.includes('does not detect AI authorship'), 'clean: mandated disclaimer verbatim');
 assert.ok(clean.includes('COPY — CLEAN:'), 'clean: compliments still render in What\'s Working');
 

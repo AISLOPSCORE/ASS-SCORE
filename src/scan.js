@@ -79,7 +79,7 @@ export async function runScan({ db, fetcher, url, branding = null, businessName 
 
   // --- HTTP-status gate (audit D1) -----------------------------------------
   // A 4xx/5xx page is the ERROR page, not the site: scoring it would report
-  // the site itself as "CLEANEST". Same shape as the other fetch-failure
+  // the site itself as "CLEAN". Same shape as the other fetch-failure
   // returns (502 fetch_failed) so client handling stays uniform; no row.
   if (page.status >= 400) {
     clearTimeout(abortTimer);

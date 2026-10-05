@@ -6,8 +6,8 @@
  *
  * Usage: node scripts/render-report-samples.mjs [outDir]
  *   outDir defaults to /home/team/shared/phase2c-samples
- * Writes <outDir>/clean.html  (score 7  -> CLEANEST) and
- *         <outDir>/sloppy.html (score 89 -> EXTREMELY ASS).
+ * Writes <outDir>/clean.html  (score 7  -> CLEAN) and
+ *         <outDir>/sloppy.html (score 89 -> CATASTROPHICALLY ASSY).
  *
  * Deterministic: same fixtures + IDs always produce identical HTML.
  */
@@ -44,7 +44,7 @@ async function paidHtml(base, id) {
   return res.text();
 }
 
-/** Clean fixture — low score (7/100 -> CLEANEST), nothing to roast. */
+/** Clean fixture — low score (7/100 -> CLEAN), nothing to roast. */
 const CLEAN_BREAKDOWN = {
   filler: { score: 0, findings: ['0 filler phrase occurrence(s) in 108 words (0.0 per 300 words)'] },
   boilerplate: { score: 0, findings: ['0 boilerplate signal(s) in 108 words (0.0 per 300 words)'] },
@@ -60,7 +60,7 @@ const CLEAN_BREAKDOWN = {
   assets: { score: 0, findings: ['0 of 2 images flagged for stock/placeholder signals'] },
 };
 
-/** Sloppy fixture — high score (89/100 -> EXTREMELY ASS), all state colors. */
+/** Sloppy fixture — high score (89/100 -> CATASTROPHICALLY ASSY), all state colors. */
 const SLOPPY_BREAKDOWN_89 = {
   filler: { score: 88, findings: ['3× "cutting-edge"', '2× "seamless"'] },
   boilerplate: { score: 62, findings: ['1× hedge phrase "we aim to"'] },

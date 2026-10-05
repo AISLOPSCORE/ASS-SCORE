@@ -271,11 +271,11 @@ function esc(v) {
 /**
  * Per-category classification from the sub-score (0-100, higher = worse).
  * Thresholds (judgment, documented): 0-24 CLEAN, 25-49 WATCH, 50-74 NEEDS
- * ATTENTION, 75-100 PRIORITY — deliberately aligned with the product-wide
- * 6-band verdict table, so a category inside the CLEAN/CLEANEST bands reads
- * clean, GETTING ASSY reads watch, VERY/EXTREMELY ASS reads needs attention,
- * and CATASTROPHICALLY ASS reads priority. A category with zero findings
- * always reads CLEAN ("Nothing meaningful to roast here.").
+ * ATTENTION, 75-100 PRIORITY — the severity ladder the product uses
+ * everywhere (clean -> watch -> needs attention -> priority, mirroring the
+ * verdict band ramp), so a category's state and the report's overall verdict
+ * read consistently. A category with zero findings always reads CLEAN
+ * ("Nothing meaningful to roast here.").
  */
 function categoryClass(score, findingsCount) {
   if (!Number.isFinite(Number(score)) || score === null || findingsCount === 0) return 'CLEAN';
@@ -322,18 +322,22 @@ function verdictConclusion(scan, pubScore, band, negativeTotal) {
   const worstName = worst ? CATEGORY_LABELS[worst[0]] ?? worst[0] : null;
   const worstScore = worst ? publicScore(worst[1]) : null;
   if (negativeTotal === 0) {
-    return band.shortLabel === 'CLEANEST'
-      ? `${pubScore}/100 — CLEANEST is rare, and this site earned it with zero negative findings across the whole report.`
+    return band.shortLabel === 'CLEAN'
+      ? `${pubScore}/100 — CLEAN is rare, and this site earned it with zero negative findings across the whole report.`
       : `${pubScore}/100 — no specific problems flagged this scan: the score comes from the detailed measurements below, and every category line reads clean or neutral.`;
   }
   const n = negativeTotal;
   const byBand = {
-    'CATASTROPHICALLY ASS': `At ${pubScore}/100 this is about as bad as it gets — ${n} finding${n === 1 ? '' : 's'} with receipts, and the weakest area is ${worstName} at ${worstScore}/100.`,
-    'EXTREMELY ASS': `This site lands at ${pubScore}/100 — ${worstName} (${worstScore}/100) is doing most of the damage across ${n} finding${n === 1 ? '' : 's'}.`,
-    'VERY ASS': `${pubScore}/100 is a lot of ass — ${worstName} (${worstScore}/100) is the biggest offender in a list of ${n} finding${n === 1 ? '' : 's'}.`,
-    'GETTING ASSY': `At ${pubScore}/100 this site is getting assy — ${worstName} (${worstScore}/100) leads ${n} finding${n === 1 ? '' : 's'} keeping it out of the clean bands.`,
+    'BEYOND ASS': `${pubScore}/100 is beyond ass — ${n} finding${n === 1 ? '' : 's'} with receipts, and ${worstName} (${worstScore}/100) is the loudest alarm of all.`,
+    'CATASTROPHICALLY ASSY': `At ${pubScore}/100 this is about as bad as it gets — ${n} finding${n === 1 ? '' : 's'} with receipts, and the weakest area is ${worstName} at ${worstScore}/100.`,
+    'EXTREMELY ASSY': `This site lands at ${pubScore}/100 — ${worstName} (${worstScore}/100) is doing most of the damage across ${n} finding${n === 1 ? '' : 's'}.`,
+    'HEAVILY ASSY': `${pubScore}/100 is heavily assy — ${worstName} (${worstScore}/100) is dragging most of the weight across ${n} finding${n === 1 ? '' : 's'}.`,
+    'VERY ASSY': `${pubScore}/100 is a lot of ass — ${worstName} (${worstScore}/100) is the biggest offender in a list of ${n} finding${n === 1 ? '' : 's'}.`,
+    'PRETTY ASSY': `${pubScore}/100 is pretty assy — ${worstName} (${worstScore}/100) headlines ${n} finding${n === 1 ? '' : 's'} worth fixing.`,
+    'ASSY': `At ${pubScore}/100 the ass is measurable — ${worstName} (${worstScore}/100) is the main offender across ${n} finding${n === 1 ? '' : 's'}.`,
+    'SLIGHTLY ASSY': `${pubScore}/100 is only slightly assy — ${worstName} (${worstScore}/100) leads ${n} finding${n === 1 ? '' : 's'} holding it back.`,
+    'MOSTLY CLEAN': `${pubScore}/100 is close to clean — just ${n} finding${n === 1 ? '' : 's'} to tidy up, worst of all ${worstName} at ${worstScore}/100.`,
     'CLEAN': `${pubScore}/100 is genuinely decent — just ${n} finding${n === 1 ? '' : 's'} to tidy up, worst of all ${worstName} at ${worstScore}/100.`,
-    'CLEANEST': `${pubScore}/100 — CLEANEST is rare: only ${n} finding${n === 1 ? '' : 's'} across the whole report, and every one is fixable.`,
   };
   return byBand[band.shortLabel] ?? `This site scores ${pubScore}/100 on the A.S.S. Score.`;
 }
@@ -341,12 +345,16 @@ function verdictConclusion(scan, pubScore, band, negativeTotal) {
 /** Final Verdict kicker — band-scoped, references the real score. */
 function finalVerdictSentence(pubScore, band) {
   const byBand = {
-    'CATASTROPHICALLY ASS': `A ${pubScore}/100 A.S.S. Score is a badge nobody asked for — but every point is fixable, and the findings above are the roadmap.`,
-    'EXTREMELY ASS': `At ${pubScore}/100 your site is fighting you. Fix the findings above and watch the number drop.`,
-    'VERY ASS': `${pubScore}/100 is a lot of ass for one website — the findings above are your to-do list.`,
-    'GETTING ASSY': `${pubScore}/100 isn't clean yet, but it's close enough to smell the finish line. Keep fixing.`,
-    'CLEAN': `${pubScore}/100 and genuinely decent — fix the few findings above and you're basically done.`,
-    'CLEANEST': `${pubScore}/100 — this is what a good website looks like. Keep doing whatever you're doing.`,
+    'BEYOND ASS': `A ${pubScore}/100 A.S.S. Score is a badge nobody asked for — but every point is fixable, and the findings above are the roadmap.`,
+    'CATASTROPHICALLY ASSY': `${pubScore}/100 is about as bad as it gets — but every point is fixable, and the findings above are the roadmap.`,
+    'EXTREMELY ASSY': `At ${pubScore}/100 your site is fighting you. Fix the findings above and watch the number drop.`,
+    'HEAVILY ASSY': `${pubScore}/100 is heavy — the findings above are the roadmap, and every point is fixable.`,
+    'VERY ASSY': `${pubScore}/100 is a lot of ass for one website — the findings above are your to-do list.`,
+    'PRETTY ASSY': `${pubScore}/100 is a fair amount of ass — the findings above are your to-do list.`,
+    'ASSY': `${pubScore}/100 has real ass in it now — the findings above are your checklist.`,
+    'SLIGHTLY ASSY': `${pubScore}/100 isn't clean yet, but it's close enough to smell the finish line. Keep fixing.`,
+    'MOSTLY CLEAN': `${pubScore}/100 is close to clean — the findings above are a short to-do list, not a fire drill.`,
+    'CLEAN': `${pubScore}/100 — this is what a good website looks like. Keep doing whatever you're doing.`,
   };
   return byBand[band.shortLabel] ?? `This site scores ${pubScore}/100 on the A.S.S. Score.`;
 }
@@ -726,7 +734,7 @@ function renderHtmlReport(scan) {
   // shared verdict module (src/verdict.js).
   const pubScore = publicScore(scan.score);
   const publicVerdict = verdictBand(pubScore);
-  const verdictClass = { 'CATASTROPHICALLY ASS': 'b-catastrophic', 'EXTREMELY ASS': 'b-extreme', 'VERY ASS': 'b-very', 'GETTING ASSY': 'b-mild', 'CLEAN': 'b-clean', 'CLEANEST': 'b-cleanest' }[publicVerdict.shortLabel] ?? 'b-very';
+  const verdictClass = { 'BEYOND ASS': 'b-beyond', 'CATASTROPHICALLY ASSY': 'b-catastrophic', 'EXTREMELY ASSY': 'b-extreme', 'HEAVILY ASSY': 'b-heavily-assy', 'VERY ASSY': 'b-very', 'PRETTY ASSY': 'b-pretty-assy', 'ASSY': 'b-assy', 'SLIGHTLY ASSY': 'b-slightly-assy', 'MOSTLY CLEAN': 'b-mostly-clean', 'CLEAN': 'b-clean' }[publicVerdict.shortLabel] ?? 'b-very';
   const verdictLine = `<p class="verdict ${verdictClass}">${verdictLabel(pubScore)}</p>`;
 
   // Deterministic personality line (stored, or derived for pre-roast rows).
@@ -1180,10 +1188,10 @@ function renderHtmlReport(scan) {
       --ink:#f4f4f5;             /* primary text */
       --ink-dim:#b8b8c0;         /* secondary */
       --ink-faint:#8b8b95;       /* captions/meta */
-      --good:#4ade80;            /* CLEAN / CLEANEST (low = best) */
-      --warn:#facc15;            /* WATCH / GETTING ASSY */
-      --mid:#fb923c;             /* NEEDS ATTENTION / VERY ASS */
-      --worse:#f87171;           /* PRIORITY / EXTREMELY+ ASS */
+      --good:#4ade80;            /* category state: CLEAN (low = best) */
+      --warn:#facc15;            /* category state: WATCH */
+      --mid:#fb923c;             /* category state: NEEDS ATTENTION */
+      --worse:#f87171;           /* category state: PRIORITY (high = worst) */
       --neutral:#8b8b95;         /* skipped / no data */
       --font-display:"Anton","Impact","Arial Black",sans-serif;
       --font-hand:"Caveat","Comic Sans MS",cursive;
@@ -1218,12 +1226,16 @@ function renderHtmlReport(scan) {
     .hero-val { font-size: clamp(4.3rem, 15vw, 7.4rem); line-height: .9; letter-spacing: .01em; }
     .hero-den { font-size: clamp(1.35rem, 4vw, 2.1rem); color: var(--ink-faint); letter-spacing: .02em; }
     .hero .verdict { display: inline-block; font-family: var(--font-display); font-size: clamp(1.2rem, 3.6vw, 1.65rem); font-weight: 400; text-transform: uppercase; letter-spacing: .1em; margin: 1.15rem 0 .75rem; padding: .55rem 1.7rem; border-radius: 999px; border: 2px solid rgba(0,0,0,.18); }
-    .hero .b-catastrophic { color: #150a0a; background: #f87171; }
-    .hero .b-extreme { color: #150a0a; background: #f97316; }
-    .hero .b-very { color: #150a0a; background: #fb923c; }
-    .hero .b-mild { color: #150a0a; background: #facc15; }
-    .hero .b-clean { color: #0f1103; background: #a3e635; }
-    .hero .b-cleanest { color: #07110a; background: #4ade80; }
+    .hero .b-clean { color: #07110a; background: #4ade80; }
+    .hero .b-mostly-clean { color: #0f1103; background: #a3e635; }
+    .hero .b-slightly-assy { color: #150a0a; background: #facc15; }
+    .hero .b-assy { color: #150a0a; background: #eab308; }
+    .hero .b-pretty-assy { color: #150a0a; background: #fb923c; }
+    .hero .b-very { color: #150a0a; background: #f97316; }
+    .hero .b-heavily-assy { color: #150a0a; background: #f87171; }
+    .hero .b-extreme { color: #150a0a; background: #ef4444; }
+    .hero .b-catastrophic { color: #fff; background: #dc2626; }
+    .hero .b-beyond { color: #fff; background: #b91c1c; }
     /* the severity gauge: fill width = score (0 clean -> 100 full+red) */
     .hero-gauge { width: min(430px, 100%); height: 13px; margin: .35rem auto 0; border-radius: 999px; background: rgba(255,255,255,.07); border: 1px solid var(--line-strong); overflow: hidden; }
     .hero-gauge-fill { display: block; height: 100%; border-radius: 999px; background: var(--band, #f87171); }
@@ -1233,8 +1245,9 @@ function renderHtmlReport(scan) {
     .hero .pages a:hover { color: var(--ass); border-color: var(--ass); }
     .score { font-size: 2.6rem; font-weight: 700; }
     .verdict { font-size: 1.15rem; font-weight: 700; margin: .25rem 0 .75rem; }
-    .b-catastrophic { color: #f87171; } .b-extreme { color: #f97316; } .b-very { color: #fb923c; }
-    .b-mild { color: #facc15; } .b-clean { color: #a3e635; } .b-cleanest { color: #4ade80; }
+    .b-clean { color: #4ade80; } .b-mostly-clean { color: #a3e635; } .b-slightly-assy { color: #facc15; } .b-assy { color: #eab308; }
+    .b-pretty-assy { color: #fb923c; } .b-very { color: #f97316; } .b-heavily-assy { color: #f87171; } .b-extreme { color: #ef4444; }
+    .b-catastrophic { color: #dc2626; } .b-beyond { color: #b91c1c; }
     .roast { font-family: var(--font-hand); font-size: 1.38rem; line-height: 1.45; color: var(--ink); margin: .6rem 0 .3rem; }
     .hint { color: var(--ink-faint); font-size: .85rem; margin: -.35rem 0 1rem; }
     .conclusion { color: var(--ink-dim); font-size: .97rem; max-width: 78ch; margin: .4rem 0 0; }

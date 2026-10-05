@@ -140,7 +140,7 @@ export function buildCardSvg({ score, url }) {
   const s = clampScore(score);
   const band = verdictBand(s);
   const color = band.color; // band accent drives number, stamp, glow, sign strip
-  const label = band.shortLabel; // exact band name on the stamp (e.g. CLEANEST)
+  const label = band.shortLabel; // exact band name on the stamp (e.g. MOSTLY CLEAN)
   const l1 = band.line1; // donkey sign line 1 (e.g. GOOD JOB.)
   const l2 = band.line2; // donkey sign line 2 (e.g. (RARE THESE DAYS))
   const treat = band.treat; // accent set per band (celebrate/positive/mixed/warn/chaos/alarm)

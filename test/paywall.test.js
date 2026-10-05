@@ -424,7 +424,7 @@ test('teasers are PROBLEM-ONLY: clean compliments never sampled; CLEAN-band cate
   };
   assert.deepEqual(pickTeasers(zero, 'scan-zero-1'), [], 'no problem candidates -> NO teasers');
   const free = buildFreePayload({
-    id: 'scan-zero-1', url: 'https://clean.example/', score: 0, verdict: 'CLEANEST', breakdown: zero,
+    id: 'scan-zero-1', url: 'https://clean.example/', score: 0, verdict: 'CLEAN', breakdown: zero,
   });
   assert.deepEqual(free.teasers, [], 'free payload carries an EMPTY teasers array (key present)');
 
@@ -530,7 +530,7 @@ test('buildFreePayload: strips paid fields even when present on the input; keeps
     id: 'scan-1',
     url: 'https://example.com/',
     score: 55,
-    verdict: 'VERY ASS',
+    verdict: 'HEAVILY ASSY',
     roast: 'a roast line',
     created_at: '2026-09-16T00:00:00.000Z',
     partial: true,

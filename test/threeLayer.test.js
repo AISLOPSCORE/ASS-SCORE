@@ -670,7 +670,7 @@ test('E2E (Case B): clean fixture -> no free teasers (problem-only rule), compli
     // Scoring unchanged: the deterministic engine (untouched rules + weights)
     // gives this fixture 0 — the compliment routing never alters scores.
     assert.equal(json.score, 0, 'clean fixture scores 0 (engine unchanged)');
-    assert.equal(json.verdict, 'CLEANEST');
+    assert.equal(json.verdict, 'CLEAN');
 
     // FREE JSON: PROBLEM-ONLY teaser rule (owner) — a clean site has no
     // problem findings, so the free teasers array is EMPTY. Compliment
