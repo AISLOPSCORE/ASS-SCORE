@@ -300,10 +300,13 @@ test('matrix: blog2posts — REPETITION (crossPage) 0 -> 5, STRUCTURE (repetitiv
   assert.equal(rep.score, 0);
   assert.equal(rep.findings[0], 'no notable repetitive structure (31 sentences, 148 paragraphs)');
   assert.equal(rep.findings.some((f) => f.startsWith('repeated phrase in the page text:')), false);
-  // Overall composite: 9 (crossPage=0 proxy — main-equivalent) -> 11 (real
-  // crossPage=5: +1.5 at weight 0.30). Flagged consequence, owner-aware.
-  assert.equal(fixtureBreakdown('blog2posts', 0).composite, 9);
-  assert.equal(fixtureBreakdown('blog2posts', 5).composite, 11);
+  // Overall composite: 10 (crossPage=0 proxy — main-equivalent) -> 12 (real
+  // crossPage=5: +1.5 at weight 0.30). Round-1 DESIGN signals (2026-10-05)
+  // raised DESIGN 10 -> 20 (+1.0 at weight 0.10), so both pins moved by +1 vs
+  // the pre-round-1 suite (9 -> 10, 11 -> 12), matching the spec's live
+  // prediction 11 -> 12 (raw 10.6 -> 11.6). Flagged consequence, owner-aware.
+  assert.equal(fixtureBreakdown('blog2posts', 0).composite, 10);
+  assert.equal(fixtureBreakdown('blog2posts', 5).composite, 12);
 });
 
 test('matrix: stripe — REPETITION (crossPage) fires 3 phrase receipts; STRUCTURE (repetitive) back to legacy 25', () => {

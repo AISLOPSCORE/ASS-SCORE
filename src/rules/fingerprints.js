@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { VISUAL_REPETITION_MAX_WEIGHT } from './visualRepetition.js';
 /**
  * Build/Tool fingerprints rule.
  *
@@ -31,6 +32,14 @@ import { fileURLToPath } from 'node:url';
  *   head  — raw <head> inner HTML
  *   html  — the whole raw HTML document
  *   text  — the extracted page text
+ *
+ * Round-1 DESIGN signals (2026-10-05, owner-approved): TWO additional
+ * count-tiered rules live in src/rules/visualRepetition.js (repeated
+ * stock-icon rendering + repeated identical class sequences). They are DOM
+ * analyzers, not JSON literals — fingerprints.json stays at 29 rules. Their
+ * hits arrive via the optional `extraHits` array and join the JSON-rule hits
+ * BEFORE the confidence-weight sum and receipt rendering, so they score and
+ * quote exactly like the vocabulary rules (denominator 55 = 49 + 3 + 3).
  *
  * Wording rule (HARD): findings are pattern-evidence only — "template-like",
  * "AI-builder-associated", "unmodified-template marker", "token usages".
@@ -70,7 +79,7 @@ function ruleMaxWeight(fp) {
 export const TOTAL_FINGERPRINT_WEIGHT = FINGERPRINTS.reduce(
   (sum, fp) => sum + ruleMaxWeight(fp),
   0,
-);
+) + VISUAL_REPETITION_MAX_WEIGHT;
 // Cache compiled regexes: deterministic, built once from the JSON strings.
 // Boolean patterns stay regex sources (matched case-insensitively, first
 // match); count tokens are escaped literals matched GLOBALLY so every
@@ -103,9 +112,11 @@ export function resolveTierConfidence(fp, total) {
  * @param {string} [opts.html] full raw HTML of the page
  * @param {string} [opts.head] raw <head> inner HTML (see extractHead)
  * @param {string} [opts.text] extracted page text
+ * @param {Array} [opts.extraHits] pre-resolved count-rule hits from the
+ *   visual-repetition DOM analyzers (id/label/confidence/scope/counts shape)
  * @returns {{ score: number, findings: string[], hits: Array<{id,label,confidence,scope,pattern?|counts?}> }}
  */
-export function analyzeFingerprints({ html = '', head = '', text = '' } = {}) {
+export function analyzeFingerprints({ html = '', head = '', text = '', extraHits = [] } = {}) {
   const hitWeightMap = new Map(); // id -> hit record
   const lower = { head: head.toLowerCase(), html: html.toLowerCase(), text: text.toLowerCase() };
   for (const fp of COMPILED) {
@@ -149,6 +160,14 @@ export function analyzeFingerprints({ html = '', head = '', text = '' } = {}) {
         break;
       }
     }
+  }
+  // Round-1 DESIGN extra hits (visual repetition): join AFTER the JSON-rule
+  // hits — same scoring, same count-token receipt rendering. extraHits are
+  // already resolved (id/label/confidence/scope/counts) and never collide
+  // with JSON rule ids; null hits are dropped by the caller (visualRepetitionHits).
+  for (const hit of extraHits) {
+    if (!hit || confidenceWeight(hit.confidence) === 0) continue;
+    hitWeightMap.set(hit.id, hit);
   }
   const hits = [...hitWeightMap.values()]; // insertion order == fingerprint list order
   const hitWeight = hits.reduce((sum, h) => sum + confidenceWeight(h.confidence), 0);

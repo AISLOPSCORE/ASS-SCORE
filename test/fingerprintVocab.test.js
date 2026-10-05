@@ -28,12 +28,12 @@ const NEW_RULE_IDS = ['shadcn-ui-vocabulary', 'mui-vocabulary', 'bootstrap-vocab
 // Each div carries ONE token occurrence, so shadcnPage(n) == exactly n tokens.
 const shadcnPage = (n) => `<!doctype html><html><head><title>t</title></head><body>${'<div data-u="bg-primary"></div>'.repeat(n)}</body></html>`;
 
-test('vocab: TOTAL_FINGERPRINT_WEIGHT recomputes 35 -> 49 (4 count rules at max tier high=3 + tenweb medium=2)', () => {
+test('vocab: TOTAL_FINGERPRINT_WEIGHT recomputes 35 -> 49 -> 55 (4 count rules at max tier high=3 + tenweb medium=2 + round-1 visual-repetition rules 3+3)', () => {
   const countRules = FINGERPRINTS.filter((fp) => Array.isArray(fp.countTokens) && fp.countTokens.length > 0);
   assert.equal(countRules.length, 4);
   assert.deepEqual(countRules.map((fp) => fp.id), NEW_RULE_IDS);
-  assert.equal(TOTAL_FINGERPRINT_WEIGHT, 35 + 4 * CONFIDENCE_WEIGHT.high + CONFIDENCE_WEIGHT.medium);
-  assert.equal(TOTAL_FINGERPRINT_WEIGHT, 49);
+  assert.equal(TOTAL_FINGERPRINT_WEIGHT, 35 + 4 * CONFIDENCE_WEIGHT.high + CONFIDENCE_WEIGHT.medium + 6);
+  assert.equal(TOTAL_FINGERPRINT_WEIGHT, 55);
 });
 
 test('vocab: tier boundaries — 0 = no hit; 1-4 = base low; 5-19 = medium; 20+ = high', () => {
@@ -128,10 +128,13 @@ test('vocab: count-token hit record carries counts + resolved confidence; findin
 // Cached-fixture regression matrix (raw saved HTML; no live fetches).
 // ---------------------------------------------------------------------------
 
-test('matrix: blog2posts — shadcn receipt + recomputed fingerprints score', () => {
+test('matrix: blog2posts — shadcn + round-1 visual-repetition receipts + recomputed fingerprints score', () => {
   const r = analyzeFixtureFingerprints('blog2posts');
   const byId = new Map(r.hits.map((h) => [h.id, h]));
-  assert.equal(r.score, 10, 'hitWeight 5 (gradient-utility low + card-grid low + shadcn high) / 49 (tenweb medium raised the denominator 47 -> 49)');
+  // hitWeight 11 (gradient-utility low + card-grid low + shadcn high + round-1
+  // stock-icon-repetition high + class-sequence-repetition high) / 55 (tenweb
+  // medium raised the denominator 47 -> 49, round-1 rules 49 -> 55).
+  assert.equal(r.score, 20);
   assert.ok(byId.has('gradient-utility-layout'));
   assert.ok(byId.has('card-grid-layout'));
   const shadcn = byId.get('shadcn-ui-vocabulary');
@@ -158,11 +161,11 @@ test('matrix: blog2posts — shadcn receipt + recomputed fingerprints score', ()
   // Fixture-computed "headline" proxy: full-weight composite with crossPage
   // EXPLICITLY injected as 0. The in-page repeated-phrase signal moved to the
   // crossPage rule (REPETITION card — pass 2, 2026-10-01), so this proxy,
-  // which injects crossPage=0, cannot see it: 9 is the main-equivalent value
-  // (tenweb denominator shift dropped DESIGN 11 -> 10, -0.1). The REAL fixture
-  // scan scores crossPage 5 (+1.5 at weight 0.30) -> composite 11; the
-  // repetitivePhrases matrix asserts that directly.
-  assert.equal(fixtureBreakdown('blog2posts', 0).composite, 9);
+  // which injects crossPage=0, cannot see it: 10 is the main-equivalent value
+  // (round-1 visual repetition raised DESIGN 10 -> 20, +1.0 at weight 0.10).
+  // The REAL fixture scan scores crossPage 5 (+1.5 at weight 0.30) -> composite
+  // 11; the repetitivePhrases matrix asserts that directly.
+  assert.equal(fixtureBreakdown('blog2posts', 0).composite, 10);
 });
 
 test('matrix: getcollectionscopilot — fingerprints stays 0, all 4 new rules 0 hits', () => {
@@ -175,7 +178,7 @@ test('matrix: getcollectionscopilot — fingerprints stays 0, all 4 new rules 0 
   }
 });
 
-test('matrix: stripe — same 7 boolean hits, zero new vocab hits, recomputed score 15', () => {
+test('matrix: stripe — same 7 boolean hits, zero vocab + zero visual-repetition hits, recomputed score 13', () => {
   const r = analyzeFixtureFingerprints('stripe');
   const ids = r.hits.map((h) => h.id);
   assert.deepEqual(ids.slice(0, 7).sort(), [
@@ -187,13 +190,14 @@ test('matrix: stripe — same 7 boolean hits, zero new vocab hits, recomputed sc
     'stats-band-layout',
     'testimonial-layout',
   ].sort());
-  assert.equal(ids.length, 7, 'no additional hits');
+  assert.equal(ids.length, 7, 'no additional hits (visual repetition gated: hds-*/BEM/link-list — Stripe trips NOTHING new)');
   for (const id of NEW_RULE_IDS) {
     assert.ok(!ids.includes(id), `${id} must have 0 hits on stripe`);
   }
-  // Denominator 35 -> 47 -> 49 (tenweb medium) recomputes the score for the
-  // UNCHANGED hit set (7 low hits): round(100*7/49) = 14.
-  assert.equal(r.score, 14);
+  // Denominator 35 -> 47 -> 49 -> 55 (tenweb medium, then the two round-1
+  // rules' max-tier weights) recomputes the score for the UNCHANGED hit set
+  // (7 low hits): round(100*7/55) = 13.
+  assert.equal(r.score, 13);
 });
 
 test('matrix: ass-score.com — fingerprints unchanged (0), overall composite STAYS 11, no new false positives', () => {
