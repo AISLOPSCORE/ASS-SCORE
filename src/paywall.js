@@ -158,6 +158,11 @@ function teaserFrom(candidate, id, slot) {
  *   - createdAt                          — scan timestamp
  *   - partial / note                     — partial-scan status (UX-critical,
  *                                          not findings)
+ *   - crawl                              — { fetched, discovered } crawl-depth
+ *                                          disclosure (owner 10-05): N pages
+ *                                          actually evaluated of the M the site
+ *                                          exposed; ONLY when both are stored
+ *                                          (old rows get no crawl field)
  *   - breakdown.<cat>.score              — category NUMBER only (0–100,
  *                                          higher = worse; null when skipped)
  *   - breakdown.<cat>.note               — skip note (e.g. crossPage on a
@@ -172,6 +177,8 @@ function teaserFrom(candidate, id, slot) {
  *   - top-level pages / worstPage / pairs — paid-side analysis, not free
  *   - branding                           — agency config for the paid report
  *   - the full /api/v1/report/:id HTML   — token-only route
+ *   The crawl-door opens exactly ONE door: the two numbers. No page lists, no
+ *   findings, no URLs — paywall intact.
  *
  * The input must already be the PUBLIC scan shape (score 0-100 higher =
  * worse, verdict present) with insights attached (three-layer findings live
@@ -181,6 +188,7 @@ function teaserFrom(candidate, id, slot) {
  *
  * @param {{ id: string, url: string, score: number, verdict: string, roast?: string,
  *          createdAt?: string, created_at?: string, partial?: boolean, note?: string,
+ *          crawlFetched?: number, crawlDiscovered?: number,
  *          breakdown?: Record<string, {score?: number, note?: string}> }} scan
  * @returns {object} the free JSON payload
  */
@@ -209,6 +217,16 @@ export function buildFreePayload(scan) {
   };
   if (typeof scan.partial === 'boolean') json.partial = scan.partial;
   if (typeof scan.note === 'string') json.note = scan.note;
+  // Crawl-depth disclosure (owner 10-05): surfaced ONLY when both counts are
+  // stored — old rows (null) get no crawl field anywhere. The free tier shows
+  // exactly these two numbers and nothing else about the crawl.
+  if (scan.crawlFetched !== undefined && scan.crawlFetched !== null &&
+      scan.crawlDiscovered !== undefined && scan.crawlDiscovered !== null) {
+    json.crawl = {
+      fetched: Number(scan.crawlFetched),
+      discovered: Number(scan.crawlDiscovered),
+    };
+  }
   return json;
 }
 

@@ -96,8 +96,23 @@ export function parseSitemap(xml) {
  * @param {AbortSignal} [opts.signal] budget abort signal (shared with pipeline)
  *
  * @returns {Promise<{ additional: string[], source: 'sitemap'|'links'|'none',
- *                      sitemapErrors: string[] }>}
+ *                      sitemapErrors: string[], totalDiscovered: number }>}
  *   additional — up to 4 absolute URLs in deterministic order.
+ *   totalDiscovered — the FULL count of deduped same-host candidate pages this
+ *   site exposed (sitemap entries + target-page link candidates), BEFORE the
+ *   MAX_ADDITIONAL_PAGES slice. It is exactly "how many additional pages this
+ *   site showed us" — the target page itself is excluded, duplicates/external/
+ *   non-HTML are dropped (the same seen-set logic that builds `additional`).
+ *   The cap (MAX_ADDITIONAL_PAGES = 4) NEVER reduces it: a 24-entry sitemap
+ *   reports totalDiscovered 23 while `additional` stays 4. A site that
+ *   exposed nothing (no sitemap entries, no same-host links) reports 0.
+ *   NOTE: the scanner itself still never analyzes more than MAX_TOTAL_PAGES (5)
+ *   pages per scan — `additional` is capped at 4, and `totalDiscovered` is the
+ *   uncapped denominator the "N of M" crawl-depth disclosure reports on.
+ *   NOTE: candidates are the pages REACHABLE FROM WHAT WE FETCHED — the target
+ *   page + sitemap. Pages deeper than one hop (linked only from additional
+ *   pages we never fetched) are not counted, so totalDiscovered is a floor of
+ *   the site's real size, not an upper bound.
  */
 export async function discoverPages({ targetUrl, targetHtml, fetcher, signal } = {}) {
   const base = new URL(targetUrl);
@@ -171,6 +186,11 @@ export async function discoverPages({ targetUrl, targetHtml, fetcher, signal } =
   const candidates = [...sitemapCands, ...linkCands];
   const additional = candidates.slice(0, MAX_ADDITIONAL_PAGES);
   const source = usedSitemap ? 'sitemap' : (additional.length > 0 ? 'links' : 'none');
+  // Full discovery count BEFORE the cap: every deduped same-host candidate the
+  // site exposed (sitemap + target-page links), excluding the target itself.
+  // seen.size === candidates.length — every href in `seen` was pushed into
+  // exactly one of the two candidate lists (both add to the same set).
+  const totalDiscovered = seen.size;
 
-  return { additional, source, sitemapErrors };
+  return { additional, source, sitemapErrors, totalDiscovered };
 }

@@ -117,6 +117,10 @@ export async function runScan({ db, fetcher, url, branding = null, businessName 
   // --- discovery + additional fetches (budget-aware, concurrent) -------------
   const pages = [{ url: page.url, html: page.body }]; // target first, deterministic order
   const skipped = [];
+  // Candidates the site exposed, BEFORE the MAX_ADDITIONAL_PAGES slice
+  // (see discoverPages' totalDiscovered). 0 when discovery never ran (budget
+  // expired first), so crawl_discovered always stays >= 1 and honest.
+  let totalDiscovered = 0;
 
   try {
     if (budget.expired()) {
@@ -128,6 +132,7 @@ export async function runScan({ db, fetcher, url, branding = null, businessName 
         fetcher,
         signal: abortCtrl.signal,
       });
+      totalDiscovered = discovery.totalDiscovered;
       const additional = discovery.additional; // <= 4, deterministic order
       if (additional.length > 0) {
         // Concurrent; budget expiry aborts whatever is still in flight.
@@ -146,6 +151,19 @@ export async function runScan({ db, fetcher, url, branding = null, businessName 
   } finally {
     clearTimeout(abortTimer);
   }
+
+  // Crawl-depth disclosure counts (owner 10-05, option a — keep MAX_TOTAL_PAGES
+  // = 5, disclose what was and wasn't evaluated):
+  //   crawlFetched    = pages actually included in this scan (target +
+  //                     additional pages that fetched successfully) — always
+  //                     >= 1 and <= MAX_TOTAL_PAGES.
+  //   crawlDiscovered = the target + every deduped same-host candidate the
+  //                     site exposed via sitemap/links BEFORE the cap — the
+  //                     honest "N of M" denominator. NEVER reduced by the cap.
+  // Both persist so every read surface (paid report methodology, free result
+  // page, free JSON) can state the scope; old rows (null) render no line.
+  const crawlFetched = pages.length;
+  const crawlDiscovered = 1 + totalDiscovered;
 
   // --- per-page main content + v1 rules (Worst Page needs them) -------------
   const perPage = new Map(); // url -> { rules, main }
@@ -245,6 +263,10 @@ export async function runScan({ db, fetcher, url, branding = null, businessName 
   // Response object AND webhook payload — delivered bytes-exact as returned.
   const payload = { id, url: page.url, slopScore, breakdown: enrichedBreakdown, roast, createdAt };
   if (branding) payload.branding = branding;
+  // Crawl-depth disclosure counts ride the payload AND the DB row (only the
+  // two numbers; page lists never leave the paid surfaces).
+  payload.crawlFetched = crawlFetched;
+  payload.crawlDiscovered = crawlDiscovered;
   if (pages.length >= 2) {
     payload.pages = pages.map((p) => p.url);
     payload.worstPage = worstPage;
@@ -271,6 +293,10 @@ export async function runScan({ db, fetcher, url, branding = null, businessName 
     // public path byte-identical; true excludes the row from public surfaces +
     // admin-stats counts.
     internal,
+    // Crawl-depth disclosure: how many pages were evaluated vs how many the
+    // site exposed (nullable ints — old rows render no scope line).
+    crawlFetched,
+    crawlDiscovered,
   });
 
   return { ok: true, payload };
