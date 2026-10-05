@@ -7,11 +7,12 @@ import path from 'node:path';
 import sharp from 'sharp';
 import { createApp } from '../src/app.js';
 import { validateUrl } from '../src/fetch/ssrf.js';
-import { verdictFor, verdictLabel, scoreColor, verdictBand } from '../src/verdict.js';
+import { verdictFor, verdictLabel, scoreColor, verdictBand, VERDICT_BANDS } from '../src/verdict.js';
 import {
   escapeXml,
   displayUrl,
   buildCardSvg,
+  buildRampStops,
   renderCardPng,
   DISCLAIMER,
   CARD_WIDTH,
@@ -186,6 +187,81 @@ test('QA anchors: 7 -> CLEAN/GOOD JOB., 50 -> VERY ASSY/OK, THIS IS A LOT., 93 -
   assert.ok(s93.includes('(EVERYTHING IS ASS.)'), '93 donkey line2 = (EVERYTHING IS ASS.)');
   assert.ok(s93.includes('#b91c1c'), '93 uses the darkest-red band color');
   assert.equal(verdictBand(93).treat, 'alarm');
+});
+
+// ------------------------------------------------------- ramp (share-card fix
+// 10-05): the 0-100 scale strip is recolored per verdict band, FROM the single
+// source of truth (VERDICT_BANDS). The old hardcoded 4-stop smooth gradient is
+// gone — the bar color at any score equals verdictBand(score).color.
+
+test('ramp: buildRampStops mirrors VERDICT_BANDS — 10 colors in order, double stops at every band boundary', () => {
+  const stops = buildRampStops();
+  assert.equal(stops.length, 20, '1 start stop + 9 double boundary stops + 1 end stop');
+  assert.deepEqual(stops[0], { offset: 0, color: VERDICT_BANDS[0].color });
+  assert.deepEqual(stops[stops.length - 1], { offset: 1, color: VERDICT_BANDS[VERDICT_BANDS.length - 1].color });
+  // The 10 segment colors appear in band order — no gaps, no reorders.
+  const colors = [];
+  for (const s of stops) if (!colors.length || s.color !== colors[colors.length - 1]) colors.push(s.color);
+  assert.deepEqual(colors, VERDICT_BANDS.map((b) => b.color));
+  // Double stops sit at every band boundary (max+1)/100 — old color, then new
+  // color, so the transition lands exactly between score `max` and `max+1`
+  // (9/10, 19/20, 29/30, …) and the later (higher) band wins on the boundary.
+  for (let i = 0; i < VERDICT_BANDS.length - 1; i += 1) {
+    const boundary = (VERDICT_BANDS[i].max + 1) / 100;
+    assert.deepEqual(stops.filter((s) => s.offset === boundary), [
+      { offset: boundary, color: VERDICT_BANDS[i].color },
+      { offset: boundary, color: VERDICT_BANDS[i + 1].color },
+    ], `boundary ${boundary} (between score ${VERDICT_BANDS[i].max} and ${VERDICT_BANDS[i + 1].max + 1})`);
+  }
+});
+
+test('ramp: bar color under the marker equals the verdict band color for every integer score 0-100', () => {
+  const stops = buildRampStops();
+  // SVG gradient semantics: the color at fraction f is the LAST stop whose
+  // offset is <= f (a double stop's later color wins exactly at a boundary).
+  const colorAt = (f) => {
+    for (let i = stops.length - 1; i >= 0; i -= 1) if (f >= stops[i].offset) return stops[i].color;
+    return stops[0].color;
+  };
+  for (let s = 0; s <= 100; s += 1) {
+    assert.equal(colorAt(s / 100), scoreColor(s), `score ${s} marker color`);
+  }
+});
+
+test('ramp: the card SVG embeds the VERDICT_BANDS-derived stops (anti-drift)', () => {
+  const svg = buildCardSvg({ score: 27, url: 'https://www.example.com' });
+  for (const b of VERDICT_BANDS) {
+    assert.ok(svg.includes(`stop-color="${b.color}"`), `SVG includes band color ${b.color} (${b.shortLabel})`);
+  }
+  assert.ok(svg.includes('<linearGradient id="ramp"'), 'ramp gradient present');
+  assert.ok(!svg.includes('offset=".23"') && !svg.includes('offset=".47"'), 'old hardcoded 4-stop ramp is gone');
+});
+
+test('ramp: rendered pixel under the marker matches the band color (5/9/10/27/50/75/95)', async () => {
+  // Track rect is #facc15-style band color at 92% opacity over black.
+  const blend = (hex) => [1, 3, 5].map((i) => Math.round(parseInt(hex.slice(i, i + 2), 16) * 0.92));
+  for (const score of [5, 9, 10, 27, 50, 75, 95]) {
+    const png = await renderCardPng(buildCardSvg({ score, url: 'https://www.example.com' }));
+    const { data, info } = await sharp(png).raw().toBuffer({ resolveWithObject: true });
+    const mx = Math.round(84 + (score / 100) * 596); // marker x (TRACK_X=84, TRACK_W=596)
+    const expected = blend(scoreColor(score));
+    let matched = 0;
+    let total = 0;
+    // Sample just right of the marker tip and below it, inside the flat track
+    // body (y 620-621; the white marker triangle ends at y 618).
+    for (const dx of [0, 1]) {
+      for (const y of [620, 621]) {
+        const i = (y * info.width + (mx + dx)) * info.channels;
+        total += 1;
+        if (
+          Math.abs(data[i] - expected[0]) <= 6 &&
+          Math.abs(data[i + 1] - expected[1]) <= 6 &&
+          Math.abs(data[i + 2] - expected[2]) <= 6
+        ) matched += 1;
+      }
+    }
+    assert.equal(matched, total, `score ${score}: pixels under the marker are ${scoreColor(score)} (${matched}/${total})`);
+  }
 });
 
 test('renderCardPng: valid PNG, right size, byte-identical across renders', async () => {
@@ -386,8 +462,11 @@ test('card polish (b): ass-score.com URL moved out of the top-right text band in
     const accentFloors = { 7: 80, 50: 40, 93: 200 };
     const accentInk = countRegion(data, info, 1380, 70, 1520, 100, accentPreds[score]);
     assert.ok(accentInk > accentFloors[score], `score ${score}: top-right still carries accent ink (${accentInk} px)`);
-    const bottomRight = countRegion(data, info, 1280, 852, 1520, 872, grayish);
-    assert.ok(bottomRight > 200, `score ${score}: URL text present in the bottom-right band (${bottomRight} px)`);
+    // Bottom-right: the ass-score.com watermark is now the brand mustard-yellow
+    // (#facc15, full opacity — owner share-card fix 10-05), NOT dim grayish
+    // white, so it survives cropping/compression at small sizes.
+    const bottomRight = countRegion(data, info, 1280, 852, 1520, 872, (r, g, b2) => matchRgb(r, g, b2, [0xfa, 0xcc, 0x15], 40));
+    assert.ok(bottomRight > 150, `score ${score}: URL text present in yellow in the bottom-right band (${bottomRight} px)`);
   }
 });
 
