@@ -10,9 +10,9 @@
  *   sitePublicDir defaults to /home/team/shared/site/public
  *
  * Writes:
- *   <outDir>/clean.html            (score 7  -> CLEANEST, all categories clean)
- *   <outDir>/sloppy.html           (score 89 -> EXTREMELY ASS, every state)
- *   <outDir>/mid.html              (score 50 -> VERY ASS, mid-band reference)
+ *   <outDir>/clean.html            (score 7  -> CLEAN, all categories clean)
+ *   <outDir>/sloppy.html           (score 89 -> CATASTROPHICALLY ASSY, every state)
+ *   <outDir>/mid.html              (score 50 -> VERY ASSY, mid-band reference)
  *   <sitePublicDir>/phase2d2-preview-clean.html   (owner review preview)
  *   <sitePublicDir>/phase2d2-preview-sloppy.html  (owner review preview)
  *
@@ -52,7 +52,7 @@ async function paidHtml(base, id) {
   return res.text();
 }
 
-/** Clean fixture — low score (7/100 -> CLEANEST), nothing to roast. */
+/** Clean fixture — low score (7/100 -> CLEAN), nothing to roast. */
 const CLEAN_BREAKDOWN = {
   filler: { score: 0, findings: ['0 filler phrase occurrence(s) in 108 words (0.0 per 300 words)'] },
   boilerplate: { score: 0, findings: ['0 boilerplate signal(s) in 108 words (0.0 per 300 words)'] },
@@ -68,7 +68,7 @@ const CLEAN_BREAKDOWN = {
   assets: { score: 0, findings: ['0 of 2 images flagged for stock/placeholder signals'] },
 };
 
-/** Sloppy fixture — high score (89/100 -> EXTREMELY ASS), all state colors. */
+/** Sloppy fixture — high score (89/100 -> CATASTROPHICALLY ASSY), all state colors. */
 const SLOPPY_BREAKDOWN_89 = {
   filler: { score: 88, findings: ['3× "cutting-edge"', '2× "seamless"'] },
   boilerplate: { score: 62, findings: ['1× hedge phrase "we aim to"'] },
@@ -79,7 +79,7 @@ const SLOPPY_BREAKDOWN_89 = {
   assets: { score: 82, findings: ['2 of 2 images from stock/placeholder CDNs'] },
 };
 
-/** Mid fixture — score 50 (VERY ASS), mid-band hero + NEEDS ATTENTION mix. */
+/** Mid fixture — score 50 (VERY ASSY), mid-band hero + NEEDS ATTENTION mix. */
 const MID_BREAKDOWN = {
   filler: { score: 55, findings: ['3× "cutting-edge"'] },
   boilerplate: { score: 40, findings: ['1× hedge phrase "we aim to"'] },

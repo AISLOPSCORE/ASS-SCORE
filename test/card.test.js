@@ -50,18 +50,26 @@ const post = (base, body) =>
 
 test('verdict bands: HIGHER = WORSE scale with exact boundary labels', () => {
   const cases = [
-    [0, 'Cleanest', 'CLEANEST'],
-    [9, 'Cleanest', 'CLEANEST'],
-    [10, 'Clean', 'CLEAN'],
-    [24, 'Clean', 'CLEAN'],
-    [25, 'Getting assy', 'GETTING ASSY'],
-    [49, 'Getting assy', 'GETTING ASSY'],
-    [50, 'Very ass', 'VERY ASS'],
-    [74, 'Very ass', 'VERY ASS'],
-    [75, 'Extremely ass', 'EXTREMELY ASS'],
-    [89, 'Extremely ass', 'EXTREMELY ASS'],
-    [90, 'Catastrophically ass', 'CATASTROPHICALLY ASS'],
-    [100, 'Catastrophically ass', 'CATASTROPHICALLY ASS'],
+    [0, 'Clean', 'CLEAN'],
+    [9, 'Clean', 'CLEAN'],
+    [10, 'Mostly clean', 'MOSTLY CLEAN'],
+    [19, 'Mostly clean', 'MOSTLY CLEAN'],
+    [20, 'Slightly assy', 'SLIGHTLY ASSY'],
+    [29, 'Slightly assy', 'SLIGHTLY ASSY'],
+    [30, 'Assy', 'ASSY'],
+    [39, 'Assy', 'ASSY'],
+    [40, 'Pretty assy', 'PRETTY ASSY'],
+    [49, 'Pretty assy', 'PRETTY ASSY'],
+    [50, 'Very assy', 'VERY ASSY'],
+    [59, 'Very assy', 'VERY ASSY'],
+    [60, 'Heavily assy', 'HEAVILY ASSY'],
+    [69, 'Heavily assy', 'HEAVILY ASSY'],
+    [70, 'Extremely assy', 'EXTREMELY ASSY'],
+    [79, 'Extremely assy', 'EXTREMELY ASSY'],
+    [80, 'Catastrophically assy', 'CATASTROPHICALLY ASSY'],
+    [89, 'Catastrophically assy', 'CATASTROPHICALLY ASSY'],
+    [90, 'Beyond ass', 'BEYOND ASS'],
+    [100, 'Beyond ass', 'BEYOND ASS'],
   ];
   for (const [score, label, shortLabel] of cases) {
     assert.equal(verdictFor(score), label, `score ${score}`);
@@ -73,22 +81,28 @@ test('verdict bands: HIGHER = WORSE scale with exact boundary labels', () => {
     assert.ok(labels.has(verdictFor(s)), `score ${s} mapped to unlisted verdict "${verdictFor(s)}"`);
   }
   // Out-of-range / non-integer inputs clamp deterministically (public scale):
-  assert.equal(verdictFor(-5), 'Cleanest');
-  assert.equal(verdictFor(150), 'Catastrophically ass');
-  assert.equal(verdictFor(73.6), 'Very ass'); // rounds to 74
-  assert.equal(verdictFor('59'), 'Very ass');
-  assert.equal(verdictFor(NaN), 'Cleanest');
+  assert.equal(verdictFor(-5), 'Clean');
+  assert.equal(verdictFor(150), 'Beyond ass');
+  assert.equal(verdictFor(73.6), 'Extremely assy'); // rounds to 74
+  assert.equal(verdictFor('59'), 'Very assy');
+  assert.equal(verdictFor(NaN), 'Clean');
 });
 
-test('scoreColor: green for low/good bands -> red for high/bad, color flips at every boundary', () => {
-  assert.equal(scoreColor(5), '#4ade80', 'low (cleanest/good) -> green');
-  assert.equal(scoreColor(10), '#a3e635', 'clean -> lime');
-  assert.equal(scoreColor(25), '#facc15', 'getting assy -> yellow');
-  assert.equal(scoreColor(60), '#fb923c', 'mid -> orange (VERY ASS)');
-  assert.equal(scoreColor(90), '#f87171', 'high (bad) -> red');
+test('scoreColor: green for low/good bands -> dark red for high/bad, color flips at every boundary', () => {
+  assert.equal(scoreColor(5), '#4ade80', 'low (clean/good) -> green');
+  assert.equal(scoreColor(10), '#a3e635', 'mostly clean -> lime');
+  assert.equal(scoreColor(25), '#facc15', 'slightly assy -> yellow');
+  assert.equal(scoreColor(35), '#eab308', 'assy -> dark yellow');
+  assert.equal(scoreColor(45), '#fb923c', 'pretty assy -> orange');
+  assert.equal(scoreColor(55), '#f97316', 'very assy -> deep orange');
+  assert.equal(scoreColor(65), '#f87171', 'heavily assy -> red');
+  assert.equal(scoreColor(75), '#ef4444', 'extremely assy -> deeper red');
+  assert.equal(scoreColor(85), '#dc2626', 'catastrophically assy -> dark red');
+  assert.equal(scoreColor(90), '#b91c1c', 'high (bad) -> darkest red');
   assert.equal(scoreColor(100), scoreColor(90));
-  // Color flips at EVERY band boundary (9/10, 24/25, 49/50, 74/75, 89/90):
-  for (const [low, high] of [[9, 10], [24, 25], [49, 50], [74, 75], [89, 90]]) {
+  // Color flips at EVERY band boundary (9/10, 19/20, 29/30, 39/40, 49/50,
+  // 59/60, 69/70, 79/80, 89/90):
+  for (const [low, high] of [[9, 10], [19, 20], [29, 30], [39, 40], [49, 50], [59, 60], [69, 70], [79, 80], [89, 90]]) {
     assert.notEqual(scoreColor(low), scoreColor(high), `color must flip at ${low}/${high}`);
   }
   assert.match(scoreColor(73), /^#[0-9a-f]{6}$/i);
@@ -127,9 +141,9 @@ test('buildCardSvg: escaped URL, exact band name, messages, scale + disclaimer, 
   assert.ok(svgA.includes('/p&lt;q&quot;r'), 'full url kept only in the aria-label (escaped)');
   assert.ok(svgA.includes('>73<'), 'score rendered as text');
   assert.ok(svgA.includes('/ 100'), 'scale rendered');
-  assert.ok(svgA.includes('VERY ASS'), 'exact band name embedded (73 -> VERY ASS)');
-  assert.ok(svgA.includes('WE NEED TO TALK.'), 'donkey line 1 for VERY ASS');
-  assert.ok(svgA.includes('(SERIOUSLY.)'), 'donkey line 2 for VERY ASS');
+  assert.ok(svgA.includes('EXTREMELY ASSY'), 'exact band name embedded (73 -> EXTREMELY ASSY)');
+  assert.ok(svgA.includes('YIKES.'), 'donkey line 1 for EXTREMELY ASSY');
+  assert.ok(svgA.includes('(GET THE FIRE EXTINGUISHER.)'), 'donkey line 2 for EXTREMELY ASSY');
   assert.ok(svgA.includes('A.S.S. SCORE') && svgA.includes('ass-score.com'), 'product branding');
   assert.ok(svgA.includes('0 = LEAST ASS') && svgA.includes('100 = MAX ASS'), 'ass-scale strip cue');
   assert.ok(svgA.includes('you are here'), 'scale marker present');
@@ -151,26 +165,26 @@ test('buildCardSvg: escaped URL, exact band name, messages, scale + disclaimer, 
   assert.ok(svgA.includes('for https://example.com/p&lt;q&quot;r'), 'aria-label carries the raw url (escaped)');
 });
 
-test('QA anchors: 7 -> CLEANEST/GOOD JOB., 50 -> VERY ASS/WE NEED TO TALK., 93 -> CATASTROPHICALLY ASS/YIKES.', () => {
+test('QA anchors: 7 -> CLEAN/GOOD JOB., 50 -> VERY ASSY/OK, THIS IS A LOT., 93 -> BEYOND ASS/ABANDON HOPE.', () => {
   const s7 = buildCardSvg({ score: 7, url: 'https://handbuiltgoods.example.com' });
-  assert.ok(s7.includes('CLEANEST'), '7 stamp = CLEANEST');
+  assert.ok(s7.includes('CLEAN'), '7 stamp = CLEAN');
   assert.ok(s7.includes('GOOD JOB.'), '7 donkey line1 = GOOD JOB.');
   assert.ok(s7.includes('(RARE THESE DAYS)'), '7 donkey line2 = (RARE THESE DAYS)');
   assert.ok(s7.includes('#4ade80'), '7 uses the green band color');
   assert.equal(verdictBand(7).treat, 'celebrate');
 
   const s50 = buildCardSvg({ score: 50, url: 'https://brightsparkagency.example.com' });
-  assert.ok(s50.includes('VERY ASS'), '50 stamp = VERY ASS');
-  assert.ok(s50.includes('WE NEED TO TALK.'), '50 donkey line1 = WE NEED TO TALK.');
-  assert.ok(s50.includes('(SERIOUSLY.)'), '50 donkey line2 = (SERIOUSLY.)');
-  assert.ok(s50.includes('#fb923c'), '50 uses the orange band color');
+  assert.ok(s50.includes('VERY ASSY'), '50 stamp = VERY ASSY (the hinge)');
+  assert.ok(s50.includes('OK, THIS IS A LOT.'), '50 donkey line1 = OK, THIS IS A LOT.');
+  assert.ok(s50.includes('(OF ASS.)'), '50 donkey line2 = (OF ASS.)');
+  assert.ok(s50.includes('#f97316'), '50 uses the deep-orange band color');
   assert.equal(verdictBand(50).treat, 'warn');
 
   const s93 = buildCardSvg({ score: 93, url: 'https://supergrowth-ai.example.com' });
-  assert.ok(s93.includes('CATASTROPHICALLY ASS'), '93 stamp = CATASTROPHICALLY ASS');
-  assert.ok(s93.includes('YIKES.'), '93 donkey line1 = YIKES.');
-  assert.ok(s93.includes('THIS IS BAD.'), '93 donkey line2 = THIS IS BAD.');
-  assert.ok(s93.includes('#f87171'), '93 uses the red band color');
+  assert.ok(s93.includes('BEYOND ASS'), '93 stamp = BEYOND ASS');
+  assert.ok(s93.includes('ABANDON HOPE.'), '93 donkey line1 = ABANDON HOPE.');
+  assert.ok(s93.includes('(EVERYTHING IS ASS.)'), '93 donkey line2 = (EVERYTHING IS ASS.)');
+  assert.ok(s93.includes('#b91c1c'), '93 uses the darkest-red band color');
   assert.equal(verdictBand(93).treat, 'alarm');
 });
 
@@ -239,12 +253,12 @@ test('POST scan -> GET /share: pre-filled text + public result URL (public score
 
 test('POST scan -> GET /card: pixel check — the poster shows the score in its band color', async () => {
   // The card fixture scores internal 75 (slop-heavy) -> PUBLIC 75, which is
-  // in the deep-orange "extremely ass" band (75-89, #f97316). If the route
-  // passed an inverted score (100 - 75 = 25 -> yellow "getting assy" band),
+  // in the red "extremely assy" band (70-79, #ef4444). If the route
+  // passed an inverted score (100 - 75 = 25 -> yellow "slightly assy" band),
   // the giant number + stamp would render in a yellow band color instead.
   const created = await (await post(api.base, { url: 'https://example.com/' })).json();
   assert.equal(created.score, 75, 'fixture scores 75 (higher = worse)');
-  assert.equal(created.verdict, 'EXTREMELY ASS');
+  assert.equal(created.verdict, 'EXTREMELY ASSY');
 
   const res = await fetch(`${api.base}/api/v1/scans/${created.id}/card`);
   assert.equal(res.status, 200);
@@ -253,9 +267,9 @@ test('POST scan -> GET /card: pixel check — the poster shows the score in its 
   assert.equal(info.width, CARD_WIDTH);
   assert.equal(info.height, CARD_HEIGHT);
 
-  // Count pixels inside the giant-number region that match the deep-orange
-  // band color #f97316 (tolerance ±10/channel) — the big digits + stamp.
-  const target = [0xf9, 0x73, 0x16];
+  // Count pixels inside the giant-number region that match the red band
+  // color #ef4444 (tolerance ±10/channel) — the big digits + stamp.
+  const target = [0xef, 0x44, 0x44];
   let orangePixels = 0;
   for (let y = 380; y < 780; y += 1) {
     for (let x = 84; x < 700; x += 1) {
@@ -269,7 +283,7 @@ test('POST scan -> GET /card: pixel check — the poster shows the score in its 
       }
     }
   }
-  assert.ok(orangePixels > 500, `expected the deep-orange band color on the poster, got ${orangePixels} px`);
+  assert.ok(orangePixels > 500, `expected the red band color on the poster, got ${orangePixels} px`);
 });
 
 test('publicBaseUrl option overrides the share-link base', async () => {
@@ -308,8 +322,8 @@ test('GET /card and /share for a missing id -> 404 with the same JSON error shap
 
 const CARDS = [
   { score: 7, url: 'https://www.example.com', band: [0x4a, 0xde, 0x80], treat: 'celebrate' },
-  { score: 50, url: 'https://www.example.com', band: [0xfb, 0x92, 0x3c], treat: 'warn' },
-  { score: 93, url: 'https://www.example.com', band: [0xf8, 0x71, 0x71], treat: 'alarm' },
+  { score: 50, url: 'https://www.example.com', band: [0xf9, 0x73, 0x16], treat: 'warn' },
+  { score: 93, url: 'https://www.example.com', band: [0xb9, 0x1c, 0x1c], treat: 'alarm' },
 ];
 
 async function cardRaw(svg) {
@@ -333,7 +347,7 @@ const grayish = (r, g, b) => Math.abs(r - g) <= 12 && Math.abs(g - b) <= 12 && M
 const matchRgb = (r, g, b, [tr, tg, tb], tol = 14) =>
   Math.abs(r - tr) <= tol && Math.abs(g - tg) <= tol && Math.abs(b - tb) <= tol;
 
-test('card polish (a): old top-left accent box (870-945, 92-135) is ink-empty for CLEANEST / VERY ASS / CATASTROPHICALLY ASS', async () => {
+test('card polish (a): old top-left accent box (870-945, 92-135) is ink-empty for CLEAN / VERY ASSY / BEYOND ASS', async () => {
   const accentColors = { celebrate: null, warn: [0xfa, 0xcc, 0x15], alarm: [0xff, 0x3d, 0x8e] }; // old TL white / TLyellow / TLpink2
   for (const { score, treat } of CARDS) {
     const { data, info } = await cardRaw(await renderCardPng(buildCardSvg({ score, url: 'https://www.example.com' })));

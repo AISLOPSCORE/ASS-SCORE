@@ -233,7 +233,7 @@ test('pre-flip stored rows read correctly with NO migration: stored 30 -> public
   assert.equal(res.status, 200);
   const json = await res.json();
   assert.equal(json.score, 30, 'stored 30 reads as public 30 (same direction, no inversion)');
-  assert.equal(json.verdict, 'GETTING ASSY', '30 falls in the 25-49 getting-assy band');
+  assert.equal(json.verdict, 'ASSY', '30 falls in the 30-39 assy band');
   assert.equal(json.breakdown.filler.score, 30, 'per-category scores read straight from the row');
   assert.equal(json.breakdown.boilerplate.score, 50);
   assert.equal(json.breakdown.crossPage.score, null, 'skipped module passes through');
@@ -245,7 +245,7 @@ test('pre-flip stored rows read correctly with NO migration: stored 30 -> public
   // HTML on the old row (free page): headline + verdict label.
   const html = await (await fetch(`${api.base}/api/v1/scans/${oldId}`, { headers: { accept: 'text/html' } })).text();
   assert.ok(html.includes('A.S.S. Score: 30 / 100'), 'old row headline shows the score');
-  assert.ok(html.includes('GETTING ASSY'), 'old row report shows the verdict label');
+  assert.ok(html.includes('ASSY'), 'old row report shows the verdict label');
 
   // The legacy finding surfaces ONLY via the token'd full report.
   const token = createReportToken(TOKEN_SECRET, oldId);

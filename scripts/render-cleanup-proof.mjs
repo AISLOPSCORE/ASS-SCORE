@@ -37,7 +37,7 @@ async function mk(id, score, breakdown, worstPage) {
 }
 
 // NEW-format fixtures: evidence strings exactly as the fixed rules emit
-// (plural-correct, curly-quoted labels). Clean = 7/100 CLEANEST, sloppy = 89.
+// (plural-correct, curly-quoted labels). Clean = 7/100 CLEAN, sloppy = 89.
 const CLEAN = {
   filler: { score: 0, findings: ['0 filler phrase occurrences in 108 words (0.0 per 300 words)'] },
   boilerplate: { score: 0, findings: ['0 boilerplate signals in 108 words (0.0 per 300 words)'] },

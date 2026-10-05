@@ -69,7 +69,7 @@ validated BEFORE any scanning; invalid values are
 **Score direction (public A.S.S. Score): 0-100, HIGHER = WORSE.** 0 = clean /
 actually good, 100 = maximum ass. Every scan response carries `score` (the
 public A.S.S. Score, a clamped 0-100 integer) and `verdict` (the grade label,
-e.g. `VERY ASS`). `breakdown.<category>.score` is on the same scale (higher =
+e.g. `SLIGHTLY ASSY`). `breakdown.<category>.score` is on the same scale (higher =
 worse); `findings`/`evidence`/`pages`/`pairs`/`roast`/`partial` describe
 problems and are unchanged. **Storage matches the public direction**: the DB
 column and the stored breakdown hold the same higher = worse scores, so rows
@@ -86,7 +86,7 @@ Response `200` (single-page site — the v1 shape, unchanged for single-page sca
   "id": "7d5f2b1a-...",
   "url": "https://example.com/",
   "score": 70,
-  "verdict": "VERY ASS",
+  "verdict": "EXTREMELY ASSY",
   "breakdown": {
     "filler":       { "score": 0, "findings": ["0 filler phrase occurrence(s) in 112 words (0.0 per 300 words)"] },
     "boilerplate":  { "score": 0, "findings": ["0 boilerplate signal(s) in 112 words (0.0 per 300 words)"] },
@@ -103,7 +103,7 @@ Multi-page scans add four top-level fields (all webhook-delivered too):
 
 ```json
 {
-  "id": "...", "url": "https://site.example/", "score": 48, "verdict": "GETTING ASSY", "breakdown": { "...": "..." },
+  "id": "...", "url": "https://site.example/", "score": 48, "verdict": "PRETTY ASSY", "breakdown": { "...": "..." },
   "pages": ["https://site.example/", "https://site.example/about", "https://site.example/blog"],
   "worstPage": { "url": "https://site.example/blog", "score": 71, "findings": ["...up to 6 top findings..."] },
   "partial": false,
@@ -154,7 +154,7 @@ the response body returned to the caller (including `pages`/`partial`/`note`/
 `worstPage` when multi-page):
 
 ```json
-{ "id": "…", "url": "https://example.com/", "score": 94, "verdict": "CATASTROPHICALLY ASS", "breakdown": {…}, "createdAt": "…" }
+{ "id": "…", "url": "https://example.com/", "score": 94, "verdict": "BEYOND ASS", "breakdown": {…}, "createdAt": "…" }
 ```
 
 Request the webhook endpoint receives:
@@ -624,15 +624,21 @@ curl -s http://localhost:4000/api/v1/scans/<id>/card -o card.png
 
 **Verdict bands** (single source of truth: `src/verdict.js`, consumed by the
 JSON response, the HTML report and the share card — higher = worse, green =
-low/good, red = high/bad; owner-unified 6-band system, ratified 2026-09-15):
+low/good, dark red = high/bad; owner 10-point band scale, directed 2026-10-05:
+50 is the hinge — below it the site is still defensible, at 50+ it is not;
+90-100 is only for total collapse; names only, no emoji/logos rendered):
 | Score | Verdict | Accent |
 | --- | --- | --- |
-| 90-100 | CATASTROPHICALLY ASS / certified slop | red |
-| 75-89 | EXTREMELY ASS | deep orange |
-| 50-74 | VERY ASS | orange |
-| 25-49 | GETTING ASSY | yellow |
-| 10-24 | CLEAN | lime |
-| 0-9 | CLEANEST / most original | green |
+| 90-100 | BEYOND ASS | dark red |
+| 80-89 | CATASTROPHICALLY ASSY | dark red |
+| 70-79 | EXTREMELY ASSY | red |
+| 60-69 | HEAVILY ASSY | red |
+| 50-59 | VERY ASSY | deep orange |
+| 40-49 | PRETTY ASSY | orange |
+| 30-39 | ASSY | yellow |
+| 20-29 | SLIGHTLY ASSY | yellow |
+| 10-19 | MOSTLY CLEAN | lime |
+| 0-9 | CLEAN | green |
 
 ### `GET /api/v1/scans/:id/share`
 

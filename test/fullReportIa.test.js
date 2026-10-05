@@ -73,7 +73,7 @@ const CLEAN_BREAKDOWN = {
 };
 
 /**
- * Sloppy fixture — 89/100 EXTREMELY ASS, every card state represented (PRIORITY
+ * Sloppy fixture — 89/100 CATASTROPHICALLY ASSY, every card state represented (PRIORITY
  * red, NEEDS ATTENTION orange, WATCH amber, CLEAN green, skipped gray) so the
  * Phase 2A dashboard shell tests cover all classes the existing classification
  * can produce.
@@ -207,7 +207,7 @@ test('4. metric below threshold -> no negative finding (neutral evidence only)',
     assert.ok(paid.includes('Measurements:'), 'metric readings render as neutral measurements');
     assert.ok(paid.includes('vocabulary diversity (MATTR-50): 0.766'), 'MATTR reading present as evidence');
     // The detector score still communicates (band), but never as a fabricated finding.
-    assert.ok(paid.includes('GETTING ASSY'), 'score band reflects the detector signal');
+    assert.ok(paid.includes('>ASSY<'), 'score band reflects the detector signal');
   } finally {
     app.server.close();
   }
@@ -308,9 +308,9 @@ test('7. multi-page site -> correct page prioritization', async () => {
 test('8. score direction remains 0 best / 100 worst', async () => {
   // Locked direction: 0 = best/cleanest, 100 = worst. A low score is never
   // described as poor; a high score is.
-  assert.equal(verdictBand(0).shortLabel, 'CLEANEST', '0 -> CLEANEST');
-  assert.equal(verdictBand(7).shortLabel, 'CLEANEST', '7 -> CLEANEST');
-  assert.equal(verdictBand(100).shortLabel, 'CATASTROPHICALLY ASS', '100 -> CATASTROPHICALLY ASS');
+  assert.equal(verdictBand(0).shortLabel, 'CLEAN', '0 -> CLEAN');
+  assert.equal(verdictBand(7).shortLabel, 'CLEAN', '7 -> CLEAN');
+  assert.equal(verdictBand(100).shortLabel, 'BEYOND ASS', '100 -> BEYOND ASS');
 
   // Low-score report (0): clean findings, positive final verdict, no "poor".
   const dbLow = tmpDb();
@@ -318,7 +318,7 @@ test('8. score direction remains 0 best / 100 worst', async () => {
   const appLow = startApp(dbLow);
   try {
     const low = await paidHtml(appLow.base, 'ia-dir-low');
-    assert.ok(low.includes('CLEANEST'), 'low score shows the cleanest grade');
+    assert.ok(low.includes('CLEAN'), 'low score shows the clean grade');
     assert.ok(low.includes('this is what a good website looks like'), 'final verdict praises the low score');
     assert.ok(!/poor/i.test(low) && !/bad\b/i.test(low), 'a low score is never described as poor/bad');
   } finally {
@@ -343,7 +343,7 @@ test('8. score direction remains 0 best / 100 worst', async () => {
   const appHigh = startApp(dbHigh);
   try {
     const high = await paidHtml(appHigh.base, 'ia-dir-high');
-    assert.ok(high.includes('CATASTROPHICALLY ASS'), 'high score shows the catastrophic grade');
+    assert.ok(high.includes('BEYOND ASS'), 'high score shows the beyond-ass grade');
     assert.ok(high.includes('badge nobody asked for'), 'final verdict calls the high score bad');
   } finally {
     appHigh.server.close();
@@ -364,12 +364,12 @@ test('P2A.1: hero shows the scan score + verdict unchanged and the mandated disc
   try {
     const clean = await paidHtml(app.base, 'p2a-clean');
     assert.ok(clean.includes('A.S.S. Score: 7 / 100'), 'clean hero shows score 7');
-    assert.ok(clean.includes('CLEANEST'), 'clean hero shows the CLEANEST band');
+    assert.ok(clean.includes('CLEAN'), 'clean hero shows the CLEAN band');
     assert.ok(clean.includes('does not detect AI authorship'), 'exact disclaimer on clean report');
 
     const sloppy = await paidHtml(app.base, 'p2a-sloppy');
     assert.ok(sloppy.includes('A.S.S. Score: 89 / 100'), 'sloppy hero shows score 89');
-    assert.ok(sloppy.includes('EXTREMELY ASS'), 'sloppy hero shows the EXTREMELY ASS band');
+    assert.ok(sloppy.includes('CATASTROPHICALLY ASSY'), 'sloppy hero shows the CATASTROPHICALLY ASSY band');
     assert.ok(sloppy.includes('does not detect AI authorship'), 'exact disclaimer on sloppy report');
   } finally {
     app.server.close();
@@ -610,10 +610,10 @@ test('P2B.4: Phase 2A assertions hold unchanged under the card redesign (hero, 7
   const app = startApp(dbPath);
   try {
     const clean = await paidHtml(app.base, 'p2b-clean');
-    assert.ok(clean.includes('A.S.S. Score: 7 / 100') && clean.includes('CLEANEST'), 'clean hero unchanged');
+    assert.ok(clean.includes('A.S.S. Score: 7 / 100') && clean.includes('CLEAN'), 'clean hero unchanged');
     assert.ok(clean.includes('does not detect AI authorship'), 'exact disclaimer unchanged');
     const sloppy = await paidHtml(app.base, 'p2b-sloppy');
-    assert.ok(sloppy.includes('A.S.S. Score: 89 / 100') && sloppy.includes('EXTREMELY ASS'), 'sloppy hero unchanged');
+    assert.ok(sloppy.includes('A.S.S. Score: 89 / 100') && sloppy.includes('CATASTROPHICALLY ASSY'), 'sloppy hero unchanged');
     // 7 category cards + in-page anchors still intact.
     const hrefs = [...sloppy.matchAll(/<a class="cat-card[^"]*" href="#(cat-[a-z]+)">/g)].map((m) => m[1]);
     assert.deepEqual(hrefs,

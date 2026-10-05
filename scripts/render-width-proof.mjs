@@ -193,8 +193,8 @@ for (const name of ['sloppy', 'clean']) {
 const lines = [];
 lines.push('REPORT WIDTH FIX \u2014 MEASURED RESULTS');
 lines.push('date: 2026-09-23 | tool: headless chromium 153 (CDP, Emulation.setDeviceMetricsOverride) against the');
-lines.push('REAL token\'d paid report rendered by the local app (fixtures: clean = 7/100 CLEANEST,');
-lines.push('sloppy = 89/100 EXTREMELY ASS). CLI --window-size clamps to 500px min; CDP emulation is used');
+lines.push('REAL token\'d paid report rendered by the local app (fixtures: clean = 7/100 CLEAN,');
+lines.push('sloppy = 89/100 CATASTROPHICALLY ASSY). CLI --window-size clamps to 500px min; CDP emulation is used');
 lines.push('so the 390 row is measured at exactly 390 CSS px (mobile layout branch).');
 lines.push('CSS under test (src/routes/scans.js renderHtmlReport <style>, body rule):');
 lines.push('  body { ... max-width: min(1280px, calc(100% - 2.5rem)); margin: 0 auto; padding: 2rem 1.25rem 4rem; ... overflow-x: clip; }');

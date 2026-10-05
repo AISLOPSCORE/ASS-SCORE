@@ -235,9 +235,9 @@ test('E2E: hedge-y fixture -> free JSON carries scores + teasers; findings persi
   assert.equal(res.status, 200);
   const json = await res.json();
   // Public contract (higher = worse): hedge fixture scores 75, which is the
-  // extremely-ass band (75-89).
+  // extremely-assy band (70-79).
   assert.equal(json.score, 75, 'hedge fixture scores 75');
-  assert.equal(json.verdict, 'EXTREMELY ASS');
+  assert.equal(json.verdict, 'EXTREMELY ASSY');
 
   // FREE contract: category NUMBERS only — the hedge findings are PAID.
   const bp = json.breakdown.boilerplate;
@@ -306,9 +306,9 @@ test('E2E: specifics-rich fixture -> no gap finding anywhere; clean-copy page un
     assert.equal(res.status, 200);
     const json = await res.json();
     // Public contract (higher = worse): specifics-rich fixture scores 10
-    // -> the clean band (10-24).
+    // -> the mostly-clean band (10-19).
     assert.equal(json.score, 10, 'specifics fixture scores 10');
-    assert.equal(json.verdict, 'CLEAN');
+    assert.equal(json.verdict, 'MOSTLY CLEAN');
     // FREE payload: numeric only — no findings, so no gap finding by construction.
     for (const entry of Object.values(json.breakdown)) {
       assert.ok(!('findings' in entry) && !('insights' in entry), 'free breakdown numeric only');
