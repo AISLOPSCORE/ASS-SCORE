@@ -106,6 +106,9 @@ export function parseSitemap(xml) {
  *   The cap (MAX_ADDITIONAL_PAGES = 4) NEVER reduces it: a 24-entry sitemap
  *   reports totalDiscovered 23 while `additional` stays 4. A site that
  *   exposed nothing (no sitemap entries, no same-host links) reports 0.
+ *   NOTE: the scanner itself still never analyzes more than MAX_TOTAL_PAGES (5)
+ *   pages per scan — `additional` is capped at 4, and `totalDiscovered` is the
+ *   uncapped denominator the "N of M" crawl-depth disclosure reports on.
  *   NOTE: candidates are the pages REACHABLE FROM WHAT WE FETCHED — the target
  *   page + sitemap. Pages deeper than one hop (linked only from additional
  *   pages we never fetched) are not counted, so totalDiscovered is a floor of
