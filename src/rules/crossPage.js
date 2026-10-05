@@ -212,6 +212,15 @@ export function analyzeCrossPage({ pages = [] } = {}) {
   // All unordered pairs, i<j in the deterministic page order.
   for (let i = 0; i < pages.length; i += 1) {
     for (let j = i + 1; j < pages.length; j += 1) {
+      // DEFENSIVE GUARD (owner PROMPT 1, 2026-10-05): never compare a document
+      // against itself. scan.js dedupes the scanned set by final fetched URL
+      // (post-redirect) before calling this, so a converged duplicate can't
+      // even arrive here — but if a same-URL pair ever slips through (e.g. a
+      // future caller passes a page list with duplicate URL entries), skipping
+      // it makes a 1.0 (self-)similarity literally impossible. The TechBullion
+      // exploit was exactly this: two sitemap spellings 301-converged onto one
+      // final URL, and the engine scored that document against itself → 100.
+      if (pages[i].url === pages[j].url) continue;
       const wordsA = pages[i].main?.words ?? [];
       const wordsB = pages[j].main?.words ?? [];
       const sim = roundSimilarity(shingleJaccard(wordsA, wordsB));
