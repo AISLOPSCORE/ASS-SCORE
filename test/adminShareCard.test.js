@@ -250,6 +250,59 @@ test('admin share-card: browser flow end-to-end (owner-reported bug) — ?pw= PO
     app.server.close();
   }
 });
+test('admin share-card: "Generate another" carries ?pw= on the result page (query-auth POST, owner-reported bug), and the link actually works while the gate stays intact', async () => {
+  const dbp = tmpDb();
+  const app = startApp({ dbPath: dbp });
+  try {
+    // The exact reported flow: open /admin/share-card?pw=… in a browser; the
+    // POST carries NO x-admin-password header (browsers cannot set it), so
+    // candidate = req.query.pw. The result page's "Generate another" link
+    // must carry the same ?pw= (it used to be hardcoded to /admin/share-card,
+    // which dropped the auth and 403'd the GET form — the owner's bug).
+    const r = await fetch(`${app.base}/admin/share-card?pw=${encodeURIComponent(PASSWORD)}`, {
+      method: 'POST',
+      headers: { accept: 'text/html', 'content-type': 'application/x-www-form-urlencoded' },
+      body: `url=${encodeURIComponent('https://example.com/')}`,
+    });
+    assert.equal(r.status, 200);
+    const html = await r.text();
+    const again = `<a class="again" href="/admin/share-card?pw=${encodeURIComponent(PASSWORD)}">← Generate another</a>`;
+    assert.ok(html.includes(again), 'result page has the exact Generate-another link with ?pw=');
+    assert.ok(!html.includes('<a class="again" href="/admin/share-card">'), 'the old hardcoded auth-less link is gone');
+
+    // The link is functional: follow it exactly like the browser would (GET,
+    // no custom headers) and the pw-carrying form renders (not a 403).
+    const viaLink = await fetch(new URL(`/admin/share-card?pw=${encodeURIComponent(PASSWORD)}`, app.base).href, {
+      headers: { accept: 'text/html' },
+    });
+    assert.equal(viaLink.status, 200);
+    assert.ok((await viaLink.text()).includes('Generate Share Card'), 'following the link lands on the pw-carrying form');
+
+    // Gate unchanged: a bare GET with no auth still 403s JSON.
+    const bare = await fetch(`${app.base}/admin/share-card`, { headers: { accept: 'text/html' } });
+    assert.equal(bare.status, 403);
+    assert.deepEqual(await bare.json(), { error: { code: 'forbidden' } });
+  } finally {
+    app.server.close();
+  }
+});
+test('admin share-card: "Generate another" mirrors cardPath — header-authenticated POST (no query) still embeds the password in ?pw=', async () => {
+  const dbp = tmpDb();
+  const app = startApp({ dbPath: dbp });
+  try {
+    // Header auth, no query: candidate = the x-admin-password header value,
+    // so the again href must carry THAT value in ?pw= (exactly like the card
+    // <img>/Download cardPath already does). Without it, the browser's plain
+    // navigation would 403 on the GET form.
+    const r = await adminScan(app.base, { accept: 'text/html', headers: { 'x-admin-password': PASSWORD } });
+    assert.equal(r.status, 200);
+    const html = await r.text();
+    assert.ok(html.includes(`<a class="again" href="/admin/share-card?pw=${encodeURIComponent(PASSWORD)}">← Generate another</a>`), 'again href carries the header value in ?pw=, mirroring cardPath');
+    assert.ok(!html.includes('<a class="again" href="/admin/share-card">'), 'no auth-less hardcoded link');
+  } finally {
+    app.server.close();
+  }
+});
 test('admin share-card: the card URL WITHOUT any auth still 403s (gate intact) and succeeds with only ?pw=', async () => {
   const dbp = tmpDb();
   const app = startApp({ dbPath: dbp });

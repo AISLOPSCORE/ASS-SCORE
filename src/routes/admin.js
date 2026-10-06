@@ -323,8 +323,13 @@ function renderShareCardForm({ action, error = null, urlValue = '' }) {
   });
 }
 
-/** Result page — score + verdict + card image + the download button. */
-function renderShareCardResult({ url, score, verdict, cardPath, downloadName }) {
+/** Result page — score + verdict + card image + the download button.
+ *  againHref carries ?pw= when the POST was authenticated by either method
+ *  (computed from the already-checked `candidate`, exactly like cardPath), so
+ *  the browser's "Generate another" navigation does NOT drop the auth and
+ *  trip the GET form's 403 gate. Header-auth clients get the same working
+ *  URL. */
+function renderShareCardResult({ url, score, verdict, cardPath, downloadName, againHref = '/admin/share-card' }) {
   let host = url;
   try {
     host = new URL(url).host;
@@ -341,7 +346,7 @@ function renderShareCardResult({ url, score, verdict, cardPath, downloadName }) 
   <span class="verdict" style="background:${scoreColor(score)}">${esc(verdict)}</span>
   <img class="card-img" src="${esc(cardPath)}" alt="A.S.S. Score share card for ${esc(host)}" width="1600" height="900" />
   <a class="rc-ghost" href="${esc(cardPath)}" download="${esc(downloadName)}">Download Share Card</a>
-  <a class="again" href="/admin/share-card">← Generate another</a>
+  <a class="again" href="${esc(againHref)}">← Generate another</a>
 </section>`,
   });
 }
@@ -718,6 +723,14 @@ export function adminRouter({ db, adminPassword, emailSender, now = () => new Da
       typeof candidate === 'string' && candidate !== ''
         ? `/admin/share-card/${scanId}/card?pw=${encodeURIComponent(candidate)}`
         : `/admin/share-card/${scanId}/card`;
+    // "Generate another" — same carry-the-auth-on-the-URL design as cardPath
+    // (see the comment above it): the result page's link is a plain browser
+    // navigation that CANNOT send the x-admin-password header, so without the
+    // query the GET form's gate 403s and the owner lands on "forbidden".
+    const againHref =
+      typeof candidate === 'string' && candidate !== ''
+        ? `/admin/share-card?pw=${encodeURIComponent(candidate)}`
+        : '/admin/share-card';
     const downloadName = `ass-score-${domainSlug(payload.url)}.png`;
     if (wantsHtml(req)) {
       res.set('Cache-Control', 'no-store');
@@ -727,6 +740,7 @@ export function adminRouter({ db, adminPassword, emailSender, now = () => new Da
         verdict,
         cardPath,
         downloadName,
+        againHref,
       }));
     }
     return res.json({ scanId, url: payload.url, score: publicScore(payload.slopScore), verdict });
