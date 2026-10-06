@@ -7,6 +7,7 @@ import { runScan } from '../scan.js';
 import { validateUrl, resolveAndCheck, SsrfError, InvalidUrlError } from '../fetch/ssrf.js';
 import { verdictLabel, scoreColor } from '../verdict.js';
 import { buildCardSvg, renderCardPng } from '../card.js';
+import { renderHtmlReport, breakdownFor } from '../reportHtml.js';
 
 /**
  * Private admin stats page — GET /admin/stats (backend origin only, NOT under
@@ -329,7 +330,7 @@ function renderShareCardForm({ action, error = null, urlValue = '' }) {
  *  the browser's "Generate another" navigation does NOT drop the auth and
  *  trip the GET form's 403 gate. Header-auth clients get the same working
  *  URL. */
-function renderShareCardResult({ url, score, verdict, cardPath, downloadName, againHref = '/admin/share-card' }) {
+function renderShareCardResult({ url, score, verdict, cardPath, downloadName, reportHref = '', againHref = '/admin/share-card' }) {
   let host = url;
   try {
     host = new URL(url).host;
@@ -346,6 +347,7 @@ function renderShareCardResult({ url, score, verdict, cardPath, downloadName, ag
   <span class="verdict" style="background:${scoreColor(score)}">${esc(verdict)}</span>
   <img class="card-img" src="${esc(cardPath)}" alt="A.S.S. Score share card for ${esc(host)}" width="1600" height="900" />
   <a class="rc-ghost" href="${esc(cardPath)}" download="${esc(downloadName)}">Download Share Card</a>
+  ${reportHref ? `<a class="rc-ghost" href="${esc(reportHref)}">View full report</a>` : ''}
   <a class="again" href="${esc(againHref)}">← Generate another</a>
 </section>`,
   });
@@ -731,6 +733,15 @@ export function adminRouter({ db, adminPassword, emailSender, now = () => new Da
       typeof candidate === 'string' && candidate !== ''
         ? `/admin/share-card?pw=${encodeURIComponent(candidate)}`
         : '/admin/share-card';
+    // "View full report" — the owner's entry point into the FULL report
+    // (owner request 2026-10-07): same carry-the-auth-on-the-URL design as
+    // cardPath/againHref, pointing at GET /admin/report/:scanId (which serves
+    // the exact paid-buyer report for this internal row — no token, no
+    // 30-day window). Header-auth clients get the same working URL.
+    const reportHref =
+      typeof candidate === 'string' && candidate !== ''
+        ? `/admin/report/${scanId}?pw=${encodeURIComponent(candidate)}`
+        : `/admin/report/${scanId}`;
     const downloadName = `ass-score-${domainSlug(payload.url)}.png`;
     if (wantsHtml(req)) {
       res.set('Cache-Control', 'no-store');
@@ -740,6 +751,7 @@ export function adminRouter({ db, adminPassword, emailSender, now = () => new Da
         verdict,
         cardPath,
         downloadName,
+        reportHref,
         againHref,
       }));
     }
@@ -773,5 +785,36 @@ export function adminRouter({ db, adminPassword, emailSender, now = () => new Da
     }
   });
 
+  /**
+   * GET /admin/report/:scanId — the FULL report HTML for an admin-generated
+   * (internal) scan, served directly on the admin surface (owner request
+   * 2026-10-07: "I need access to the full report on the backend admin screen,
+   * once I generate a scorecard"). Body = the EXACT same report a $12 buyer
+   * gets from GET /api/v1/report/:id — the shared renderHtmlReport from
+   * src/reportHtml.js (the paid route calls the same function with the same
+   * breakdownFor decorator, so the bytes cannot diverge) — but with NO report
+   * token and NO 30-day access window: admin access to internal rows is
+   * permanent (the row already survives retention per the internal-row
+   * design). Scope rule: only rows created by the admin tool (internal: true
+   * — the row the share-card POST created). A missing scan id AND a
+   * non-internal scan BOTH read as 404 not_found (JSON), mirroring the
+   * publicScan convention that internal ids look exactly like holes; the
+   * admin surface never renders reports for public/paid scans (different
+   * access model). Same gate as every admin route (secret unset -> 403;
+   * secretOk(candidate) fail -> 403 JSON; the 403 branch is ALWAYS JSON).
+   */
+  r.get('/admin/report/:scanId', (req, res) => {
+    if (!secret) return forbidden(res);
+    const candidate = req.get('x-admin-password') ?? req.query.pw;
+    if (!secretOk(candidate)) return forbidden(res);
+    const scan = db.getScan(req.params.scanId);
+    if (!scan || scan.internal !== true) {
+      return res.status(404).json({ error: { code: 'not_found', message: `No scan found with id "${req.params.scanId}"` } });
+    }
+    res.set('Cache-Control', 'no-store');
+    // breakdownFor = the same withInsights decorator the paid route applies
+    // (stored insights win; pre-insight rows derive deterministically).
+    return res.type('html').send(renderHtmlReport({ ...scan, breakdown: breakdownFor(scan) }));
+  });
   return r;
 }

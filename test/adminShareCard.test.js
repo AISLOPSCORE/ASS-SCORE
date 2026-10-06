@@ -579,4 +579,139 @@ test('admin share-card: the form page renders with noindex, the URL input and th
   } finally {
     app.server.close();
   }
+});// ---------------------------------------------------------------------------
+// 8. Admin full report (owner request 2026-10-07) — GET /admin/report/:scanId
+// ---------------------------------------------------------------------------
+test('admin report: gate — no/wrong auth on GET /admin/report/:scanId is 403 JSON (real internal id AND junk id)', async () => {
+  const dbp = tmpDb();
+  const app = startApp({ dbPath: dbp });
+  try {
+    const scanId = await adminScanId(app.base); // a REAL internal row exists
+    // Gate runs BEFORE the row lookup: bare and wrong-auth requests 403 JSON
+    // for the real id and a junk id alike (never HTML, never an oracle).
+    for (const id of [scanId, 'no-such-scan']) {
+      const bare = await fetch(`${app.base}/admin/report/${id}`, { headers: { accept: 'text/html' } });
+      assert.equal(bare.status, 403);
+      assert.ok(!(bare.headers.get('content-type') || '').includes('text/html'), '403 is never HTML');
+      assert.deepEqual(await bare.json(), { error: { code: 'forbidden' } });
+      const wrong = await fetch(`${app.base}/admin/report/${id}`, { headers: { accept: 'text/html', 'x-admin-password': 'wrong' } });
+      assert.equal(wrong.status, 403);
+      assert.deepEqual(await wrong.json(), { error: { code: 'forbidden' } });
+    }
+  } finally {
+    app.server.close();
+  }
+});
+test('admin report: disabled (403 JSON) while ADMIN_PASSWORD is unset', async () => {
+  const app = createApp({ dbPath: tmpDb(), now: () => TICK });
+  const server = app.listen(0);
+  try {
+    const port = server.address().port;
+    const r = await fetch(`http://127.0.0.1:${port}/admin/report/whatever`, { headers: { accept: 'text/html' } });
+    assert.equal(r.status, 403);
+    assert.deepEqual(await r.json(), { error: { code: 'forbidden' } });
+  } finally {
+    server.close();
+  }
+});
+test('admin report: share-card result page links "View full report" with ?pw=, and the link serves the FULL report (three layers, not the share-card page)', async () => {
+  const dbp = tmpDb();
+  const app = startApp({ dbPath: dbp });
+  try {
+    // Generate a scorecard exactly like the owner does (?pw= browser flow —
+    // POST carries NO x-admin-password header, candidate = req.query.pw).
+    const r = await fetch(`${app.base}/admin/share-card?pw=${encodeURIComponent(PASSWORD)}`, {
+      method: 'POST',
+      headers: { accept: 'text/html', 'content-type': 'application/x-www-form-urlencoded' },
+      body: `url=${encodeURIComponent('https://example.com/')}`,
+    });
+    assert.equal(r.status, 200);
+    const html = await r.text();
+    const scanId = html.match(/\/admin\/share-card\/([0-9a-f-]+)\/card/)[1];
+    // The new owner entry point: rc-ghost "View full report" next to the
+    // Download button, carrying the auth exactly like cardPath/againHref.
+    const link = `<a class="rc-ghost" href="/admin/report/${scanId}?pw=${encodeURIComponent(PASSWORD)}">View full report</a>`;
+    assert.ok(html.includes(link), 'result page has the exact View-full-report link with ?pw=');
+    assert.ok(!html.includes(`href="/admin/report/${scanId}">`), 'no auth-less report link emitted');
+    // rc-ghost styling is reused (same class the Download button uses).
+    assert.equal((html.match(/class="rc-ghost"/g) ?? []).length, 2, 'Download + View full report both rc-ghost');
+    // Follow the link exactly like the browser would (GET, no custom headers):
+    // the FULL report renders — NO token needed, NO 30-day gate.
+    const viaLink = await fetch(new URL(`/admin/report/${scanId}?pw=${encodeURIComponent(PASSWORD)}`, app.base).href, {
+      headers: { accept: 'text/html' },
+    });
+    assert.equal(viaLink.status, 200);
+    assert.ok((viaLink.headers.get('content-type') || '').includes('text/html'), 'report served as HTML');
+    assert.equal(viaLink.headers.get('cache-control'), 'no-store', 'admin report is never cached');
+    const report = await viaLink.text();
+    // Core full-report sections (owner IA — the same sequence the paid report asserts).
+    for (const marker of ['The Verdict', 'Page That Needs The Most Work', 'What To Fix First',
+      'Your Breakdown', "What's Working", 'The Actual Findings', 'Final Verdict', 'Methodology']) {
+      assert.ok(report.includes(marker), `full report contains ${marker}`);
+    }
+    // Three-layer finding structure: THE ROAST / WHY IT MATTERS / HOW TO FIX
+    // IT layers with receipts (the slop fixture produces real findings).
+    assert.ok(report.includes('How to fix it:'), 'HOW TO FIX IT label present');
+    assert.ok((report.match(/<p class="ins-roast">/g) ?? []).length >= 1, 'at least one THE ROAST layer');
+    assert.ok((report.match(/class="ins-why"/g) ?? []).length >= 1, 'WHY IT MATTERS layer present');
+    assert.ok((report.match(/class="ins-fix"/g) ?? []).length >= 1, 'HOW TO FIX IT layer present');
+    // It is the REPORT page, NOT the share-card result page.
+    assert.ok(!report.includes('Share card generated'), 'not the share-card result page');
+    assert.ok(!report.includes('class="card-img"'), 'no share-card image markup in the report');
+    // No token, no expiry: the paid-report gate does not apply here (the
+    // admin route never looks at ?token — a report even renders for a scan
+    // whose created_at is far outside the 30-day buyer window).
+    const db = openDb(dbp);
+    db.raw.prepare('UPDATE scans SET created_at = ? WHERE id = ?').run('2025-01-01T00:00:00.000Z', scanId);
+    const viaLinkStale = await fetch(new URL(`/admin/report/${scanId}?pw=${encodeURIComponent(PASSWORD)}`, app.base).href);
+    assert.equal(viaLinkStale.status, 200, 'admin report has no 30-day access window');
+    assert.ok((await viaLinkStale.text()).includes('The Verdict'));
+    db.close();
+  } finally {
+    app.server.close();
+  }
+});
+test('admin report: a scan that is NOT internal (plain public scan) is 404 JSON — never rendered on the admin surface', async () => {
+  const dbp = tmpDb();
+  const app = startApp({ dbPath: dbp });
+  try {
+    const scanRes = await fetch(`${app.base}/api/v1/scan`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ url: 'https://example.com/' }),
+    });
+    assert.equal(scanRes.status, 200);
+    const { id } = await scanRes.json();
+    const db = openDb(dbp);
+    assert.equal(db.getScan(id).internal, false, 'public rows are NOT internal');
+    db.close();
+    const r = await fetch(`${app.base}/admin/report/${id}`, { headers: { 'x-admin-password': PASSWORD } });
+    assert.equal(r.status, 404);
+    assert.deepEqual(await r.json(), { error: { code: 'not_found', message: `No scan found with id "${id}"` } });
+    // header-auth AND ?pw= behave the same (the branch is the same 404).
+    const rq = await fetch(`${app.base}/admin/report/${id}?pw=${encodeURIComponent(PASSWORD)}`);
+    assert.equal(rq.status, 404);
+    assert.deepEqual(await rq.json(), { error: { code: 'not_found', message: `No scan found with id "${id}"` } });
+  } finally {
+    app.server.close();
+  }
+});
+test('admin report: missing scan id is 404 JSON; internal row still 404s on the paid route even with a valid token (no access-model leak)', async () => {
+  const dbp = tmpDb();
+  const app = startApp({ dbPath: dbp });
+  try {
+    const missing = await fetch(`${app.base}/admin/report/no-such-scan`, { headers: { 'x-admin-password': PASSWORD } });
+    assert.equal(missing.status, 404);
+    assert.deepEqual(await missing.json(), { error: { code: 'not_found', message: 'No scan found with id "no-such-scan"' } });
+    // The admin-created row serves on /admin/report/... but remains invisible
+    // to the PUBLIC token'd report route (valid token included) — the two
+    // access models do not bleed into each other.
+    const scanId = await adminScanId(app.base);
+    const token = createReportToken(TOKEN_SECRET, scanId);
+    const pub = await fetch(`${app.base}/api/v1/report/${scanId}?token=${encodeURIComponent(token)}`, { headers: { accept: 'text/html' } });
+    assert.equal(pub.status, 404, 'internal row still hole-shaped on the public paid route');
+    assert.deepEqual(await pub.json(), { error: { code: 'not_found', message: `No scan found with id "${scanId}"` } });
+  } finally {
+    app.server.close();
+  }
 });
