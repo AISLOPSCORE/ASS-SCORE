@@ -1,6 +1,7 @@
 import { shingleJaccard, roundSimilarity } from './similarity.js';
 import { STOPWORDS } from '../text.js';
 import { applySkeletonTerm } from './skeletonFamily.js';
+import { stripWS, quoteWindow } from './readableQuotes.js';
 /**
  * Cross-Page Duplication rule.
  *
@@ -171,6 +172,13 @@ export function findRepeatedPhrases({ title = '', sentences = [], paragraphs = [
  * scan — pages[0]). A page without a sentence corpus (unit-test callers that
  * only pass main words) has nothing to measure and fires nothing.
  *
+ * The receipt QUOTE comes from the readable corpus when the page carries one
+ * (owner-approved Option B, 2026-10-07): the detector quotes the readable
+ * sentence window containing the fired normalized phrase (mirror of
+ * copySlop.sentenceContaining) instead of the normalized phrase itself —
+ * `3× "Advertise now $29.99 · 30 day plan"` instead of `3× "advertise now
+ * 29 99 30"`. Detection, counts and locations all stay on the analysis corpus.
+ *
  * @returns {{ extras: number, receipts: string[] }}
  */
 function analyzeInPagePhrases(page = {}) {
@@ -181,7 +189,8 @@ function analyzeInPagePhrases(page = {}) {
   if (extras > 0) {
     for (const p of phrases) {
       const location = countLocations(p.phrase, paragraphs, title);
-      const bits = [`repeated phrase in the page text: ${p.count}× "${p.phrase}"`];
+      const quoted = readablePhraseQuote(p.phrase, page.readable) ?? p.phrase;
+      const bits = [`repeated phrase in the page text: ${p.count}× "${quoted}"`];
       if (location.title) bits.push('also in the page title');
       if (location.paragraphCount > 0) {
         bits.push(`in ${location.paragraphCount} paragraph${location.paragraphCount === 1 ? '' : 's'}`);
@@ -193,13 +202,43 @@ function analyzeInPagePhrases(page = {}) {
 }
 
 /**
+ * The readable sentence (fallback: paragraph) whose normalized form contains
+ * the fired phrase. normalizePhrase maps punctuation to SPACES, so it unifies
+ * "now$29.99" and "now $29.99" — but a boundary with NO punctuation ("Sign
+ * up" + "Free" -> "upFree") merges words, so a whitespace-stripped containment
+ * fallback covers that case too (both sides strip to the same canonical run).
+ * Trailing sentence period dropped, window truncated at 80 chars.
+ * @returns {string|null} readable quote, or null (caller keeps the phrase)
+ */
+function readablePhraseQuote(phrase, readable = null) {
+  if (!readable) return null;
+  const pStripped = stripWS(phrase);
+  const matches = (s) => {
+    const n = normalizePhrase(s);
+    if (n.includes(phrase)) return true;
+    return Boolean(pStripped) && stripWS(n).includes(pStripped);
+  };
+  for (const s of readable.sentences ?? []) {
+    if (matches(s)) return quoteWindow(s).replace(/\.$/, '');
+  }
+  for (const p of readable.paragraphs ?? []) {
+    if (matches(p)) return quoteWindow(p).replace(/\.$/, '');
+  }
+  return null;
+}
+
+/**
  * @param {object} opts
  * @param {Array<{ url: string, main: { words: string[] },
- *                 sentences?: string[], paragraphs?: string[], title?: string }>} opts.pages
+ *                 sentences?: string[], paragraphs?: string[], title?: string,
+ *                 readable?: { text: string, sentences: string[], paragraphs: string[] } }>} opts.pages
  *   every page fetched for the scan (target + up to 4 additional), with its
  *   main-content token array. Deterministic caller order. The TARGET page
  *   (pages[0]) may additionally carry its extracted sentence/paragraph/title
- *   context so the in-page repeated-phrase component can fire.
+ *   context so the in-page repeated-phrase component can fire, and an OPTIONAL
+ *   `readable` corpus (extractReadableText) that supplies boundary-spaced
+ *   QUOTE strings for the phrase receipts only — detection/score math is
+ *   untouched (absent -> current normalized-phrase quotes).
  * @param {null | { fired: boolean, skeletonScore: number, receipts: string[] }|null} [opts.skeleton]
  *   the round-2 skeleton detector result (from scan.js; null when the scan
  *   has < 2 pages). Only the score and the fired receipts are used here.

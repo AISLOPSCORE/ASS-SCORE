@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { extractText, extractMainText, extractHead } from './text.js';
+import { extractText, extractMainText, extractHead, extractReadableText } from './text.js';
 import { runRules } from './rules/index.js';
 import { computeSlopScore } from './scorer.js';
 import { discoverPages } from './rules/discover.js';
@@ -115,6 +115,21 @@ export async function runScan({ db, fetcher, url, branding = null, businessName 
     return { ok: false, status: 422, json: { error: { code: 'parse_failed', message: 'The page contained no extractable text' } } };
   }
 
+  // --- readable variant (owner-approved Option B, 2026-10-07) -----------------
+  // Boundary-spaced extraction consumed ONLY by quote/evidence strings
+  // (findings that quote page text read like the page: "Advertise now $29.99"
+  // instead of "advertise now 29 99 30"). NEVER feeds a score: every rule's
+  // detection and score math reads the analysis corpus `text` above; the
+  // readable variant is passed alongside for quote-building only. Same input
+  // as extractText, so a parse that already succeeded cannot fail here; a
+  // defensive null fallback keeps the current (normalized-quote) behavior.
+  let readable = null;
+  try {
+    readable = extractReadableText(page.body);
+  } catch {
+    readable = null;
+  }
+
   // --- discovery + additional fetches (budget-aware, concurrent) -------------
   let pages = [{ url: page.url, html: page.body }]; // target first, deterministic order
   const skipped = [];
@@ -192,7 +207,14 @@ export async function runScan({ db, fetcher, url, branding = null, businessName 
   const perPage = new Map(); // url -> { rules, main }
   for (const p of pages) {
     const main = extractMainText(p.html);
-    perPage.set(p.url, { rules: runRules(main), main });
+    // Readable variant for quote strings (boundary-spaced; scores untouched).
+    let pReadable = null;
+    try {
+      pReadable = extractReadableText(p.html);
+    } catch {
+      pReadable = null;
+    }
+    perPage.set(p.url, { rules: runRules(main, pReadable), main, readable: pReadable });
   }
 
   // --- phase-2 rules -----------------------------------------------------------
@@ -212,7 +234,7 @@ export async function runScan({ db, fetcher, url, branding = null, businessName 
     pages: pages.map((p, i) => ({
       url: p.url,
       main: perPage.get(p.url).main,
-      ...(i === 0 ? { sentences: text.sentences, paragraphs: text.paragraphs, title: text.title } : {}),
+      ...(i === 0 ? { sentences: text.sentences, paragraphs: text.paragraphs, title: text.title, readable } : {}),
     })),
     skeleton,
   });
@@ -230,7 +252,7 @@ export async function runScan({ db, fetcher, url, branding = null, businessName 
 
   // --- v1 breakdown on the target + new categories ---------------------------
   const breakdown = {
-    ...runRules(text),
+    ...runRules(text, readable),
     crossPage,
     fingerprints,
     assets,

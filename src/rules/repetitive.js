@@ -4,7 +4,14 @@
  * sentences (normalized equality — same words, punctuation and case stripped),
  * and repeated paragraphs. Each signal maps to a 0–100 subscore; final score is
  * a weighted blend (openings 40%, sentence-level dupes 40%, paragraph dupes 20%).
+ *
+ * Quote strings (findings) come from the READABLE corpus when the caller passes
+ * one (owner-approved Option B, 2026-10-07): detection and score math always
+ * read the provided analysis-corpus args; the readable variant only supplies
+ * evidence quotes that read like the page (boundary-spaced, original case).
  */
+
+import { readableSentenceFor, readableOpeningSentenceFor, readableParagraphFor, readableOpeningQuote, quoteWindow } from './readableQuotes.js';
 
 const OPENING_WORDS = 3;
 
@@ -34,8 +41,10 @@ function findDuplicates(items) {
 
 /**
  * @param {{ text?: string, sentences?: string[], paragraphs?: string[] }} ctx
+ * @param {{ text?: string, sentences?: string[], paragraphs?: string[] }|null} [readable]
+ *   readable corpus — quoted evidence only, never scores.
  */
-export function analyze({ text = '', sentences = [], paragraphs = [] } = {}) {
+export function analyze({ text = '', sentences = [], paragraphs = [] } = {}, readable = null) {
   if (!text || sentences.length === 0) return { score: 0, findings: [] };
 
   const sentenceCount = sentences.length;
@@ -66,17 +75,38 @@ export function analyze({ text = '', sentences = [], paragraphs = [] } = {}) {
 
   const score = Math.round(openingSub * 0.4 + sentSub * 0.4 + paraSub * 0.2);
 
+  // --- readable quote lookups (boundary-spaced evidence only) -----------------
+  const readableSentences = readable?.sentences?.length ? readable.sentences : null;
+  const readableParas = readable?.paragraphs?.length ? readable.paragraphs : null;
+  // Opening quote = first 3 words of the readable sentence, original case.
+  const openingQuote = (d) => {
+    const rs = readableOpeningSentenceFor(d.value, readableSentences ?? []);
+    return rs ? readableOpeningQuote(rs) : `${d.value}…`;
+  };
+  // Near-identical quote = the readable sentence (truncated at 60 as today).
+  const sentenceQuote = (d) => {
+    const rq = readableSentenceFor(d.value, readableSentences ?? []);
+    const base = rq ?? d.value;
+    return `${base.slice(0, 60)}${base.length > 60 ? '…' : ''}`;
+  };
+  // Paragraph quote = the readable paragraph (truncated at 60 as today).
+  const paragraphQuote = (d) => {
+    const rq = readableParagraphFor(d.value, readableParas ?? []);
+    const base = rq ?? d.value;
+    return `${quoteWindow(base, 60)}`;
+  };
+
   const findings = [];
   if (openingSub > 0) {
     const dupOpenings = findDuplicates(sentences.map((s) => firstWords(s, OPENING_WORDS)).filter(Boolean));
-    findings.push(`repeated sentence openings: ${dupOpenings.slice(0, 3).map((d) => `${d.count}× "${d.value}…"`).join(', ')}`);
+    findings.push(`repeated sentence openings: ${dupOpenings.slice(0, 3).map((d) => `${d.count}× "${openingQuote(d)}"`).join(', ')}`);
   }
   if (sentSub > 0) {
-    findings.push(`near-identical sentences: ${dupSentences.slice(0, 3).map((d) => `${d.count}× "${d.value.slice(0, 60)}${d.value.length > 60 ? '…' : ''}"`).join(', ')}`);
+    findings.push(`near-identical sentences: ${dupSentences.slice(0, 3).map((d) => `${d.count}× "${sentenceQuote(d)}"`).join(', ')}`);
   }
   if (paraSub > 0) {
     const dupParas = findDuplicates(paragraphs.map((p) => p.toLowerCase().replace(/\s+/g, ' ').trim()).filter(Boolean));
-    findings.push(`repeated paragraphs: ${dupParas.slice(0, 3).map((d) => `${d.count}× "${d.value.slice(0, 60)}${d.value.length > 60 ? '…' : ''}"`).join(', ')}`);
+    findings.push(`repeated paragraphs: ${dupParas.slice(0, 3).map((d) => `${d.count}× "${paragraphQuote(d)}"`).join(', ')}`);
   }
   if (findings.length === 0) {
     findings.push(`no notable repetitive structure (${sentenceCount} sentences, ${paragraphs.length} paragraphs)`);

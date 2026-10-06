@@ -67,6 +67,65 @@ export function extractText(html) {
 }
 
 /**
+ * Boundary-spaced extraction for QUOTE/EVIDENCE strings ONLY (owner-approved
+ * Option B, 2026-10-07 — see /home/team/shared/text-extraction-bug/
+ * investigation.md §6-7). cheerio's `.text()` concatenates adjacent elements
+ * with NO separator, so `<button>Advertise now</button><span>$29.99 · 30</span>`
+ * (JSX/minified production HTML) extracts as "Advertise now$29.99 · 30" — fine
+ * for token analysis, garbage when quoted to a customer. This variant inserts
+ * ONE space between adjacent element siblings that lack a whitespace text node
+ * between them, so quote/evidence strings read like the page ("Advertise now
+ * $29.99 · 30"). It NEVER feeds any score: the analysis corpus
+ * (extractText/extractMainText) stays byte-identical so all scoring math,
+ * weights, C1/C2, phrase detection and the QA anchors are untouched.
+ *
+ * Same shape as extractText's text/sentences/paragraphs (title excluded — the
+ * <title> is a single text node and never suffers the concat defect; callers
+ * that quote the title use the analysis corpus).
+ *
+ * @returns {{ text: string, sentences: string[], paragraphs: string[] }}
+ */
+export function extractReadableText(html) {
+  const $ = cheerio.load(String(html), { decodeEntities: true });
+  $(NON_TEXT_TAGS).remove();
+
+  const bodyEl = $('body');
+  const raw = joinWithBoundarySpaces($, (bodyEl.length > 0 ? bodyEl : $('html'))[0]);
+  const text = raw.replace(/\s+/g, ' ').trim();
+
+  const paragraphs = [];
+  $(PARA_TAGS).each((_, el) => {
+    const t = joinWithBoundarySpaces($, el).replace(/\s+/g, ' ').trim();
+    if (t.length > 0) paragraphs.push(t);
+  });
+
+  return { text, sentences: splitSentences(text), paragraphs };
+}
+
+/**
+ * Depth-first walk of an element that inserts ONE space between adjacent ELEMENT
+ * siblings that have no whitespace text node between them (the Option A join
+ * from investigation.md — measured to make quote sentences read like the page).
+ * Text-node content is emitted verbatim; element boundaries with a text node
+ * in between keep their own (possibly empty) whitespace.
+ */
+function joinWithBoundarySpaces($, node) {
+  let out = '';
+  (function walk(n) {
+    if (n.type === 'text') { out += n.data ?? ''; return; }
+    if (n.type !== 'tag') return;
+    let prevWasElement = false;
+    for (const child of n.children ?? []) {
+      const isEl = child.type === 'tag';
+      if (isEl && prevWasElement) out += ' ';
+      walk(child);
+      prevWasElement = isEl;
+    }
+  })(node);
+  return out;
+}
+
+/**
  * Extract the raw inner HTML of <head> (deterministic string). Used by the
  * fingerprints rule for head-scoped patterns (e.g. meta generator tags).
  */
