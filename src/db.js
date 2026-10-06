@@ -175,7 +175,10 @@ export function openDb(dbPath) {
   // /admin/share-card scan — who (always 'admin' — the tool has no per-user
   // identity), when, what URL, resulting score + verdict. Retention NEVER
   // purges this table (the scan row itself still purges at 30 days like every
-  // other scan; the audit row survives so the trail outlives the data).
+  // other scan; the audit row survives so the trail outlives the data). The
+  // same table also records /admin/stats/reset actions (verdict =
+  // 'stats_reset', empty url, score 0) — a cutover audit trail that also
+  // survives forever.
   db.exec(`
     CREATE TABLE IF NOT EXISTS admin_audit (
       id         TEXT PRIMARY KEY,
@@ -189,6 +192,19 @@ export function openDb(dbPath) {
     );
   `);
 
+  // Admin-stats EPOCAH CUTOVER (owner 2026-10-07): tiny key-value store. The
+  // only key today is `stats_epoch` — the ISO moment the owner restarted
+  // customer-acquisition tracking from zero. When set, EVERY admin-stats
+  // counter filters to rows at/after it; when absent (fresh/dev DBs, or prod
+  // before the cutover runs) the counters behave exactly as before. Rows are
+  // NEVER deleted — the epoch is a counting floor, not a wipe.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS settings (
+      key   TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
+  `);
+
   const insertScanEventStmt = db.prepare(
     'INSERT OR IGNORE INTO scan_events (event_key, ip, day, scan_id, status, created_at) VALUES (?, ?, ?, ?, ?, ?)'
   );
@@ -198,7 +214,12 @@ export function openDb(dbPath) {
   // consume ZERO quota — owner-approved D1/D2 quota rollback).
   const voidScanEventStmt = db.prepare('DELETE FROM scan_events WHERE event_key = ?');
   const countScanEventsStmt = db.prepare('SELECT COUNT(*) AS n FROM scan_events WHERE day = ? AND ip = ?');
-  // Page-view + admin-stats queries (homepage view tracking).
+  // Page-view + admin-stats queries (homepage view tracking). Every aggregate
+  // gains an OPTIONAL epoch floor (the admin-stats cutover): `sinceTs`/`sinceIso`
+  // params — null/absent = no filter (fresh/dev DBs, pre-cutover), exactly the
+  // old behavior. The paired statements exist because better-sqlite3 prepared
+  // statements are static — the method picks the filtered one when a floor is
+  // given and never builds SQL strings.
   const insertPageViewStmt = db.prepare('INSERT INTO page_views (ts, ip, ua, path) VALUES (?, ?, ?, ?)');
   const countPageViewsStmt = db.prepare('SELECT COUNT(*) AS n FROM page_views');
   const countPageViewsSinceStmt = db.prepare('SELECT COUNT(*) AS n FROM page_views WHERE ts >= ?');
@@ -206,11 +227,20 @@ export function openDb(dbPath) {
     "SELECT substr(datetime(ts / 1000, 'unixepoch'), 1, 10) AS day, COUNT(*) AS n FROM page_views WHERE ts >= ? GROUP BY day"
   );
   const recentPageViewsStmt = db.prepare('SELECT ts, ip, ua, path FROM page_views ORDER BY ts DESC LIMIT 50');
+  const recentPageViewsSinceStmt = db.prepare(
+    'SELECT ts, ip, ua, path FROM page_views WHERE ts >= ? ORDER BY ts DESC LIMIT 50'
+  );
   // Scan-count queries for admin stats EXCLUDE internal rows (admin-generated
   // scans must never move the public-facing counters — owner 2026-10-01).
   const countScansTotalStmt = db.prepare('SELECT COUNT(*) AS n FROM scans WHERE COALESCE(internal,0) = 0');
+  const countScansTotalSinceStmt = db.prepare(
+    'SELECT COUNT(*) AS n FROM scans WHERE COALESCE(internal,0) = 0 AND created_at >= ?'
+  );
   const countScansTodayStmt = db.prepare(
     'SELECT COUNT(*) AS n FROM scans WHERE COALESCE(internal,0) = 0 AND substr(created_at, 1, 10) = ?'
+  );
+  const countScansTodaySinceStmt = db.prepare(
+    'SELECT COUNT(*) AS n FROM scans WHERE COALESCE(internal,0) = 0 AND substr(created_at, 1, 10) = ? AND created_at >= ?'
   );
   const scanDayCountsStmt = db.prepare(
     'SELECT substr(created_at, 1, 10) AS day, COUNT(*) AS n FROM scans WHERE COALESCE(internal,0) = 0 AND created_at >= ? GROUP BY day'
@@ -225,12 +255,20 @@ export function openDb(dbPath) {
   // Admin-stats aggregates (one webhook_events row = one purchased full report).
   // Same UTC-day convention as scans: created_at is ISO, day = first 10 chars.
   const countWebhooksTotalStmt = db.prepare('SELECT COUNT(*) AS n FROM webhook_events');
+  const countWebhooksTotalSinceStmt = db.prepare('SELECT COUNT(*) AS n FROM webhook_events WHERE created_at >= ?');
   const countWebhooksTodayStmt = db.prepare(
     'SELECT COUNT(*) AS n FROM webhook_events WHERE substr(created_at, 1, 10) = ?'
+  );
+  const countWebhooksTodaySinceStmt = db.prepare(
+    'SELECT COUNT(*) AS n FROM webhook_events WHERE substr(created_at, 1, 10) = ? AND created_at >= ?'
   );
   const webhookDayCountsStmt = db.prepare(
     'SELECT substr(created_at, 1, 10) AS day, COUNT(*) AS n FROM webhook_events WHERE created_at >= ? GROUP BY day'
   );
+  // Settings key-value store — the stats_epoch cutover marker (see migration
+  // above). getSetting returns null for a missing key; setSetting upserts.
+  const getSettingStmt = db.prepare('SELECT value FROM settings WHERE key = ?');
+  const setSettingStmt = db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)');
   // Order-fulfillment statements (orders + unmatched_orders ledgers).
   const insertOrderStmt = db.prepare(
     'INSERT OR IGNORE INTO orders (id, scan_id, email, status, checkout_session_id, paid_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
@@ -340,13 +378,14 @@ export function openDb(dbPath) {
     countWebhookEvents(day, ip) {
       return countWebhookEventsStmt.get(day, ip)?.n ?? 0;
     },
-    /** Total webhook-event rows (all time) — one row per purchased full report, regardless of status. */
-    countWebhooksTotal() {
-      return countWebhooksTotalStmt.get().n;
+    /** Total webhook-event rows (all time) — one row per purchased full report, regardless of status; with `sinceIso` only rows created at/after it. */
+    countWebhooksTotal(sinceIso = null) {
+      return sinceIso === null ? countWebhooksTotalStmt.get().n : countWebhooksTotalSinceStmt.get(sinceIso).n;
     },
-    /** Webhook-event rows on the given UTC day (YYYY-MM-DD — the ledgers' day convention). */
-    countWebhooksToday(day) {
-      return countWebhooksTodayStmt.get(day)?.n ?? 0;
+    /** Webhook-event rows on the given UTC day (YYYY-MM-DD); `sinceIso` adds a created_at >= floor. */
+    countWebhooksToday(day, sinceIso = null) {
+      const row = sinceIso === null ? countWebhooksTodayStmt.get(day) : countWebhooksTodaySinceStmt.get(day, sinceIso);
+      return row?.n ?? 0;
     },
     /** Per-UTC-day webhook-event counts with created_at >= sinceIso: [{ date, count }]. */
     webhookDayCounts(sinceIso) {
@@ -439,9 +478,9 @@ export function openDb(dbPath) {
     insertPageView({ ts, ip, ua, path }) {
       insertPageViewStmt.run(ts, ip, ua, path);
     },
-    /** Total page-view rows (all time). */
-    countPageViews() {
-      return countPageViewsStmt.get().n;
+    /** Total page-view rows (all time); with `sinceTs` (epoch ms) only rows at/after it. */
+    countPageViews(sinceTs = null) {
+      return sinceTs === null ? countPageViewsStmt.get().n : countPageViewsSinceStmt.get(sinceTs).n;
     },
     /** Page-view rows with ts >= sinceTs (the 30-day window / 'today'). */
     countPageViewsSince(sinceTs) {
@@ -451,17 +490,19 @@ export function openDb(dbPath) {
     pageViewDayCounts(sinceTs) {
       return pageViewDayCountsStmt.all(sinceTs).map((r) => ({ date: r.day, count: r.n }));
     },
-    /** Latest 50 page views, newest first: [{ ts, ip, ua, path }]. */
-    recentPageViews() {
-      return recentPageViewsStmt.all().map((r) => ({ ts: r.ts, ip: r.ip, ua: r.ua, path: r.path }));
+    /** Latest 50 page views, newest first; with `sinceTs` only rows at/after it. */
+    recentPageViews(sinceTs = null) {
+      const rows = sinceTs === null ? recentPageViewsStmt.all() : recentPageViewsSinceStmt.all(sinceTs);
+      return rows.map((r) => ({ ts: r.ts, ip: r.ip, ua: r.ua, path: r.path }));
     },
-    /** Total scan rows (all time). */
-    countScansTotal() {
-      return countScansTotalStmt.get().n;
+    /** Total scan rows (all time); with `sinceIso` only rows created at/after it. */
+    countScansTotal(sinceIso = null) {
+      return sinceIso === null ? countScansTotalStmt.get().n : countScansTotalSinceStmt.get(sinceIso).n;
     },
-    /** Scan rows on the given UTC day (YYYY-MM-DD — the ledgers' day convention). */
-    countScansToday(day) {
-      return countScansTodayStmt.get(day)?.n ?? 0;
+    /** Scan rows on the given UTC day (YYYY-MM-DD); `sinceIso` adds a created_at >= floor. */
+    countScansToday(day, sinceIso = null) {
+      const row = sinceIso === null ? countScansTodayStmt.get(day) : countScansTodaySinceStmt.get(day, sinceIso);
+      return row?.n ?? 0;
     },
     /** Per-UTC-day scan counts with created_at >= sinceIso: [{ date, count }]. */
     scanDayCounts(sinceIso) {
@@ -487,6 +528,24 @@ export function openDb(dbPath) {
         row.verdict,
         row.createdAt,
       );
+    },
+
+    // --- Settings key-value store (admin-stats epoch cutover) ----------------
+    /**
+     * Read a settings value; null when the key is absent (a fresh/dev DB, or
+     * prod before the cutover runs — both mean "no epoch filter").
+     * @returns {string | null}
+     */
+    getSetting(key) {
+      return getSettingStmt.get(key)?.value ?? null;
+    },
+    /**
+     * Upsert a settings value (INSERT OR REPLACE — one row per key).
+     * @param {string} key
+     * @param {string} value
+     */
+    setSetting(key, value) {
+      setSettingStmt.run(key, String(value));
     },
     close() {
       db.close();
