@@ -1,5 +1,6 @@
 import { shingleJaccard, roundSimilarity } from './similarity.js';
 import { STOPWORDS } from '../text.js';
+import { applySkeletonTerm } from './skeletonFamily.js';
 /**
  * Cross-Page Duplication rule.
  *
@@ -32,6 +33,21 @@ import { STOPWORDS } from '../text.js';
  * The in-page component measures the target page only (exactly like the other
  * content categories in the breakdown, which all run on the scanned URL) —
  * documented in the PR body.
+ *
+ * DOM-skeleton component (pass 3, round 2 — owner-approved 2026-10-06,
+ * ROUND2-SPEC.md): the REPETITION card is the only site-wide channel, so the
+ * structural twin of duplicated body copy — a repeated DOM template — lives
+ * HERE as a second component. scan.js runs the skeleton detector
+ * (src/rules/skeletonFamily.js) over the deduped scanned pages and passes the
+ * result in as `skeleton`; the fired receipts ("N of the 5 scanned pages
+ * share one DOM skeleton") surface in findings exactly like the phrase and
+ * pair receipts, and the final score becomes:
+ *
+ *   score = clamp(round(pairwise + phraseSub + SKEL_SUB_WEIGHT * skeletonScore), 0, 100)
+ *
+ * Only ONE surface touch inside this module: when the detector fires, its two
+ * receipts are appended to findings (single-page scans pass skeleton = null
+ * and reproduce pass-2 behavior byte-for-byte — E1/E7).
  *
  * Less than 2 discoverable pages: the pairwise component is gracefully skipped
  * ({ score: null ... }) UNLESS the target page carries a measurable in-page
@@ -184,12 +200,20 @@ function analyzeInPagePhrases(page = {}) {
  *   main-content token array. Deterministic caller order. The TARGET page
  *   (pages[0]) may additionally carry its extracted sentence/paragraph/title
  *   context so the in-page repeated-phrase component can fire.
+ * @param {null | { fired: boolean, skeletonScore: number, receipts: string[] }|null} [opts.skeleton]
+ *   the round-2 skeleton detector result (from scan.js; null when the scan
+ *   has < 2 pages). Only the score and the fired receipts are used here.
  * @returns {{ score: number|null, findings: string[],
  *             pairs?: Array<{pageA:string,pageB:string,similarity:number}>,
  *             pages?: string[], note?: string }}
  */
-export function analyzeCrossPage({ pages = [] } = {}) {
+export function analyzeCrossPage({ pages = [], skeleton = null } = {}) {
   const target = pages.length > 0 ? analyzeInPagePhrases(pages[0]) : { extras: 0, receipts: [] };
+  const skelScore = skeleton?.skeletonScore ?? 0;
+  /** Round-2 fired receipts (exact strings, ROUND2-SPEC §5.1) — appended to
+   *  findings ONLY when the detector fires (a below-bar near-miss is a real
+   *  measurement but not a finding). */
+  const skeletonFindings = skeleton?.fired === true ? [...skeleton.receipts] : [];
 
   if (pages.length < 2) {
     // Pairwise comparison needs >= 2 pages; the in-page component does not.
@@ -248,28 +272,28 @@ export function analyzeCrossPage({ pages = [] } = {}) {
     }
     const score = Math.round(((maxSim - DUPLICATION_THRESHOLD) / (1 - DUPLICATION_THRESHOLD)) * 100);
     if (target.extras === 0) {
-      return { score: clamp(score, 0, 100), findings, pairs, pages: pages.map((p) => p.url) };
+      return { score: applySkeletonTerm(score, skelScore), findings: [...findings, ...skeletonFindings], pairs, pages: pages.map((p) => p.url) };
     }
     const phraseContribution = clamp(target.extras * PHRASE_EXTRAS_SCALE, 0, 100) * PHRASE_SUB_WEIGHT;
     return {
-      score: clamp(Math.round(score + phraseContribution), 0, 100),
-      findings: [...target.receipts, ...findings],
+      score: applySkeletonTerm(score + phraseContribution, skelScore),
+      findings: [...target.receipts, ...findings, ...skeletonFindings],
       pairs,
       pages: pages.map((p) => p.url),
     };
   }
   if (target.extras === 0) {
     return {
-      score: 0,
-      findings: [`no two pages are more than ${(DUPLICATION_THRESHOLD * 100).toFixed(0)}% the same (${pages.length} pages compared)`],
+      score: applySkeletonTerm(0, skelScore),
+      findings: [`no two pages are more than ${(DUPLICATION_THRESHOLD * 100).toFixed(0)}% the same (${pages.length} pages compared)`, ...skeletonFindings],
       pairs,
       pages: pages.map((p) => p.url),
     };
   }
   const phraseContribution = clamp(target.extras * PHRASE_EXTRAS_SCALE, 0, 100) * PHRASE_SUB_WEIGHT;
   return {
-    score: clamp(Math.round(0 + phraseContribution), 0, 100),
-    findings: [...target.receipts, `no two pages are more than ${(DUPLICATION_THRESHOLD * 100).toFixed(0)}% the same (${pages.length} pages compared)`],
+    score: applySkeletonTerm(phraseContribution, skelScore),
+    findings: [...target.receipts, `no two pages are more than ${(DUPLICATION_THRESHOLD * 100).toFixed(0)}% the same (${pages.length} pages compared)`, ...skeletonFindings],
     pairs,
     pages: pages.map((p) => p.url),
   };
