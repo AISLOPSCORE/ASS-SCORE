@@ -116,12 +116,14 @@ test('visual: blog2posts fixture — exact receipt strings byte-for-byte', () =>
   assert.ok(r.findings.includes(B2P_SEQ_RECEIPT), 'seq receipt matches the spec template exactly');
 });
 
-test('visual: blog2posts fixture — DESIGN 10 -> 20, composite 9 -> 10 (crossPage=0 convention)', () => {
+test('visual: blog2posts fixture — DESIGN 10 -> 20, composite 9 -> 10 -> 14 (crossPage=0 convention + phase-2 C1)', () => {
   const r = analyzeFixtureFingerprints('blog2posts');
   assert.equal(r.score, 20, 'hitWeight 11 (5 existing + 3 icon + 3 seq) / 55');
   const { breakdown, composite } = fixtureBreakdown('blog2posts', 0);
   assert.equal(breakdown.fingerprints.score, 20);
-  assert.equal(composite, 10, '+10 DESIGN at weight 0.10');
+  // Phase-2 C1 (owner 2026-10-05): i 50 /\ fp 20 corroborate the template
+  // stack -> +4 on the pre-round total, lifting 10.1 -> 14.1 -> 14.
+  assert.equal(composite, 14, '+10 DESIGN at weight 0.10 then +4 C1');
 });
 
 test('visual: known-path allowlist ships the measured pins (check path + FA glyph)', () => {

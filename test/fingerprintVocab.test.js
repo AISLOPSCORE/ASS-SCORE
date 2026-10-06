@@ -161,11 +161,13 @@ test('matrix: blog2posts — shadcn + round-1 visual-repetition receipts + recom
   // Fixture-computed "headline" proxy: full-weight composite with crossPage
   // EXPLICITLY injected as 0. The in-page repeated-phrase signal moved to the
   // crossPage rule (REPETITION card — pass 2, 2026-10-01), so this proxy,
-  // which injects crossPage=0, cannot see it: 10 is the main-equivalent value
-  // (round-1 visual repetition raised DESIGN 10 -> 20, +1.0 at weight 0.10).
-  // The REAL fixture scan scores crossPage 5 (+1.5 at weight 0.30) -> composite
-  // 11; the repetitivePhrases matrix asserts that directly.
-  assert.equal(fixtureBreakdown('blog2posts', 0).composite, 10);
+  // which injects crossPage=0, cannot see it: 14 is the main-equivalent value
+  // (round-1 visual repetition raised DESIGN 10 -> 20, +1.0 at weight 0.10;
+  // phase-2 C1 template-stack corroboration adds +4 on i 50 /\ fp 20, lifting
+  // the crossPage=0 proxy 10 -> 14). The REAL fixture scan scores crossPage 5
+  // (+1.5 at weight 0.30) -> composite 12; the repetitivePhrases matrix pins
+  // that directly.
+  assert.equal(fixtureBreakdown('blog2posts', 0).composite, 14);
 });
 
 test('matrix: getcollectionscopilot — fingerprints stays 0, all 4 new rules 0 hits', () => {

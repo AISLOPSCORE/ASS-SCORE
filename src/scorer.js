@@ -86,6 +86,32 @@ export const FULL_RULE_WEIGHTS = Object.freeze({
 });
 
 /**
+ * Phase-2 additive credits (owner-approved 2026-10-05, EXACT spec — see
+ * phase1-discovery-2026-10-05.md Part C and stacked-trigger-test-2026-10-05.md).
+ * No detector, rule set, threshold, weight, verdict-band, category-name or
+ * rounding changes — ONLY these two additive terms, computed from the
+ * per-category SCORES (the same values the breakdown/components show, NOT the
+ * weighted contributions) and applied to the PRE-ROUND composite total; a
+ * single Math.round + clamp 0-100 follows (no intermediate rounding).
+ *
+ * C1 — template-stack corroboration:  +4 when infoDensity >= 45 AND fingerprints >= 15.
+ *   Fires in BOTH branches: infoDensity and fingerprints SCORES are computed in
+ *   the single-page fallback too (only fingerprints' WEIGHT is 0 there).
+ * C2 — corroborated duplication:       +3*(k-1) when crossPage >= 80, where k =
+ *   number of the seven categories with score >= 10 (crossPage's own score
+ *   included), capped at +18 (k=7). Can never fire in the fallback: crossPage
+ *   is null there, always below the 80 gate.
+ */
+const PHASE2_CATEGORIES = Object.freeze(['filler', 'boilerplate', 'infoDensity', 'repetitive', 'crossPage', 'fingerprints', 'assets']);
+const C1_CREDIT = 4;
+const C1_INFO_DENSITY_BAR = 45;
+const C1_FINGERPRINTS_BAR = 15;
+const C2_GATE = 80;
+const C2_PER_ELEVATED_CATEGORY = 3;
+const C2_ELEVATED_BAR = 10;
+const C2_MAX_CREDIT = 18;
+
+/**
  * @param {{ filler?: {score?:number}, boilerplate?: {score?:number},
  *            infoDensity?: {score?:number}, repetitive?: {score?:number},
  *            crossPage?: {score?:number|null}, fingerprints?: {score?:number},
@@ -129,6 +155,21 @@ export function computeSlopScore(ruleResults = {}) {
     };
   }
 
-  const slopScore = Math.max(0, Math.min(100, Math.round(total)));
+  // Phase-2 credits: computed from the per-category SCORES (breakdown values,
+  // not weighted contributions) and added to the PRE-ROUND total. C1 can fire
+  // in the fallback branch (infoDensity + fingerprints scores always exist);
+  // C2 cannot — crossPage is null there, below the 80 gate.
+  const scoreOf = (key) => (Number.isFinite(ruleResults[key]?.score) ? ruleResults[key].score : 0);
+  let credit = 0;
+  if (scoreOf('infoDensity') >= C1_INFO_DENSITY_BAR && scoreOf('fingerprints') >= C1_FINGERPRINTS_BAR) {
+    credit += C1_CREDIT;
+  }
+  if (scoreOf('crossPage') >= C2_GATE) {
+    const k = PHASE2_CATEGORIES.filter((key) => scoreOf(key) >= C2_ELEVATED_BAR).length;
+    credit += Math.min(C2_MAX_CREDIT, C2_PER_ELEVATED_CATEGORY * (k - 1));
+  }
+
+  // Single round + clamp AFTER both credits (no intermediate rounding).
+  const slopScore = Math.max(0, Math.min(100, Math.round(total + credit)));
   return { slopScore, components };
 }
