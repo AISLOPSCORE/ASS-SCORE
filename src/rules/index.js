@@ -9,13 +9,17 @@ import * as repetitive from './repetitive.js';
  * The result shape doubles as the per-rule breakdown returned to clients.
  *
  * @param {{ text: string, words: string[], sentences: string[], paragraphs: string[], stopwords: Set<string> }} ctx
+ * @param {{ text?: string, sentences?: string[], paragraphs?: string[] }|null} [readable]
+ *   optional readable corpus (extractReadableText) consumed ONLY for quote/
+ *   evidence strings (boilerplate + repetitive) — absent keeps main behavior;
+ *   never feeds any score.
  * @returns {{ filler: {score,findings}, boilerplate: {score,findings}, infoDensity: {score,findings}, repetitive: {score,findings} }}
  */
-export function runRules(ctx) {
+export function runRules(ctx, readable = null) {
   return {
     filler: filler.analyze(ctx),
-    boilerplate: boilerplate.analyze(ctx),
+    boilerplate: boilerplate.analyze(ctx, readable),
     infoDensity: infoDensity.analyze(ctx),
-    repetitive: repetitive.analyze(ctx),
+    repetitive: repetitive.analyze(ctx, readable),
   };
 }

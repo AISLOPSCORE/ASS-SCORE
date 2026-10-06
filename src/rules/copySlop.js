@@ -69,8 +69,15 @@ const HEDGE_SENTINEL = Object.freeze({
  * Lowercased occurrence counting (indexOf loop, no regex) — deterministic.
  * Returns { total, hits: [{ phrase, count }] sorted by count desc (ties keep
  * config order), quotes: [{ phrase, sentence }] capped at MAX_EVIDENCE_QUOTES.
+ *
+ * @param {string} text analysis-corpus text (DETECTION — counts are computed
+ *   here, never from `readable`)
+ * @param {string[]} sentences analysis-corpus sentences
+ * @param {{ text?: string, sentences?: string[] }|null} [readable] readable
+ *   variant (extractReadableText, boundary-spaced) consumed ONLY for the
+ *   quoted evidence sentence — absent/empty keeps the current behavior.
  */
-export function analyzeHedges(text = '', sentences = []) {
+export function analyzeHedges(text = '', sentences = [], readable = null) {
   if (!text) return { total: 0, hits: [], quotes: [] };
   const lower = text.toLowerCase();
 
@@ -91,11 +98,15 @@ export function analyzeHedges(text = '', sentences = []) {
   const sorted = hits.sort((a, b) => b.count - a.count || HEDGE_PHRASES.indexOf(a.phrase) - HEDGE_PHRASES.indexOf(b.phrase));
 
   // Quote the exact sentence for each hit phrase (deterministic: first hit of
-  // each phrase, in the sorted order, capped overall).
+  // each phrase, in the sorted order, capped overall). With a readable corpus
+  // present, the quote comes from THERE (boundary-spaced — reads like the
+  // page) while the count above still comes from the analysis corpus.
+  const quoteSentences = readable?.sentences?.length ? readable.sentences : sentences;
+  const quoteText = readable?.text ? readable.text : text;
   const quotes = [];
   for (const h of sorted) {
     if (quotes.length >= MAX_EVIDENCE_QUOTES) break;
-    const sentence = sentenceContaining(h.phrase, h.firstIdx ?? -1, lower, sentences);
+    const sentence = sentenceContaining(h.phrase, h.firstIdx ?? -1, lower, quoteSentences, quoteText);
     if (sentence) quotes.push({ phrase: h.phrase, sentence });
   }
 
@@ -103,19 +114,22 @@ export function analyzeHedges(text = '', sentences = []) {
 }
 
 /** The original-case sentence containing the phrase (fallback: ±80 chars). */
-function sentenceContaining(phrase, firstIdx, lowerText, sentences) {
+function sentenceContaining(phrase, firstIdx, lowerText, sentences, windowText = null) {
   if (Array.isArray(sentences)) {
     for (const s of sentences) {
       if (s.toLowerCase().includes(phrase)) return s;
     }
   }
   // Fallback for sentences that the splitter never produced: walk the raw
-  // text and cut a window around the first occurrence.
-  const idx = firstIdx >= 0 ? firstIdx : lowerText.indexOf(phrase);
+  // text and cut a window around the first occurrence. `windowText` is the
+  // original-case text (readable when present — the analysis corpus is
+  // lowercase only in `lowerText`).
+  const raw = windowText ?? lowerText;
+  const idx = raw.toLowerCase().indexOf(phrase);
   if (idx === -1) return phrase;
   const from = Math.max(0, idx - 60);
-  const to = Math.min(lowerText.length, idx + phrase.length + 60);
-  let snippet = lowerText.slice(from, to).replace(/\s+/g, ' ').trim();
+  const to = Math.min(raw.length, idx + phrase.length + 60);
+  let snippet = raw.slice(from, to).replace(/\s+/g, ' ').trim();
   if (snippet.length > 140) snippet = `${snippet.slice(0, 140)}…`;
   return snippet;
 }

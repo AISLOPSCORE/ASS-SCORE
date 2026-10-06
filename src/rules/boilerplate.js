@@ -14,6 +14,7 @@
  */
 
 import { analyzeHedges } from './copySlop.js';
+import { quoteWindow, readableParagraphFor } from './readableQuotes.js';
 
 const SIGNALS = [
   { re: /\bwe use cookies\b/i, label: 'cookie notice' },
@@ -55,8 +56,12 @@ export const boilerplateRegexes = Object.freeze(SIGNALS.map((s) => s.re));
 
 /**
  * @param {{ text?: string, words?: string[], sentences?: string[], paragraphs?: string[] }} ctx
+ * @param {{ text?: string, sentences?: string[], paragraphs?: string[] }|null} [readable]
+ *   readable corpus (extractReadableText) consumed ONLY for quote/evidence
+ *   strings — all detection and score math below reads the analysis corpus
+ *   `ctx` untouched.
  */
-export function analyze({ text = '', words = [], sentences = [], paragraphs = [] } = {}) {
+export function analyze({ text = '', words = [], sentences = [], paragraphs = [] } = {}, readable = null) {
   if (!text) return { score: 0, findings: [] };
 
   const found = [];
@@ -72,8 +77,9 @@ export function analyze({ text = '', words = [], sentences = [], paragraphs = []
   }
 
   // Copy Slop hedge dimension: vague marketing constructions count as
-  // boilerplate-family signals; quote the exact sentence as evidence.
-  const hedges = analyzeHedges(text, sentences);
+  // boilerplate-family signals; quote the exact sentence as evidence. The
+  // readable corpus (when present) supplies the QUOTED sentence only.
+  const hedges = analyzeHedges(text, sentences, readable);
   for (const h of hedges.hits) {
     found.push({ label: `vague phrase "${h.phrase}"`, count: h.count });
   }
@@ -92,11 +98,19 @@ export function analyze({ text = '', words = [], sentences = [], paragraphs = []
   const density = totalSignals * (NORMALIZATION_WORDS / wordCount);
   const score = Math.max(0, Math.min(100, Math.round(Math.min(density, 12) * (100 / 12))));
 
+  // Readable quote for each repeated block (original case, boundary-spaced);
+  // falls back to the normalized block text when no readable match exists.
+  const readableParas = readable?.paragraphs?.length ? readable.paragraphs : null;
+  const blockQuote = (d) => {
+    const rq = readableParas ? readableParagraphFor(d.text, readableParas) : null;
+    return rq ?? d.text;
+  };
+
   const findings = [
     `${totalSignals} generic wording match${totalSignals === 1 ? '' : 'es'} in ${wordCount} words (${density.toFixed(1)} per ${NORMALIZATION_WORDS} words)`,
     ...found.sort((a, b) => b.count - a.count).slice(0, MAX_FINDINGS).map((f) => `${f.count}× ${f.label}`),
     ...hedges.quotes.map((q) => `vague sentence: "${q.sentence}"`),
-    ...dupBlocks.slice(0, 3).map((d) => `${d.count}× repeated block: "${d.text.slice(0, 80)}${d.text.length > 80 ? '…' : ''}"`),
+    ...dupBlocks.slice(0, 3).map((d) => `${d.count}× repeated block: "${quoteWindow(blockQuote(d), 80)}"`),
   ];
 
   return { score, findings };
