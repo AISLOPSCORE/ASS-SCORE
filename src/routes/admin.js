@@ -75,9 +75,20 @@ function fmtLocalTime(ts) {
 const truncate = (s, n) => (s.length <= n ? s : `${s.slice(0, n - 1)}…`);
 
 /** Pure-CSS grouped bar chart + recent-views table, fully server-rendered. */
-function renderAdminPage(stats, generatedAt) {
+function renderAdminPage(stats, generatedAt, opts = {}) {
   const { views, scans, purchases } = stats;
   const hasViews = views.total > 0 || views.recent.length > 0 || views.last30d.some((d) => d.count > 0);
+  // EPOCAH CUTOVER (owner 2026-10-07): show the counting floor + the reset
+  // button. epoch null (fresh/dev DBs) => header says all time, no cutover yet.
+  const epoch = typeof opts.epoch === 'string' && opts.epoch !== '' ? opts.epoch : null;
+  const resetAction = typeof opts.resetAction === 'string' ? opts.resetAction : '/admin/stats/reset';
+  const epochLine = epoch
+    ? `<br>Tracking since ${esc(epoch.slice(0, 16).replace('T', ' '))} UTC`
+    : '<br>Tracking: all time — no cutover yet';
+  const pwNote =
+    resetAction.includes('pw=')
+      ? ''
+      : '<div class="reset-note">Opened with header auth — to use the reset button, open this page with <code>?pw=…</code> appended.</div>';
 
   // Normalize each series to its own max; min 1px so zero days show a hairline.
   const scanMax = Math.max(0, ...scans.last30d.map((d) => d.count));
@@ -147,6 +158,11 @@ body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 -apple-system
 .tag{font-size:11px;letter-spacing:.12em;text-transform:uppercase;background:var(--card);border:1px solid var(--border);border-radius:999px;padding:2px 10px;margin-left:8px;font-weight:700;color:var(--text);vertical-align:2px}
 .gen{color:var(--muted);font-size:13px}
 .gen time{font-variant-numeric:tabular-nums}
+.top-meta{display:flex;flex-direction:column;align-items:flex-end;gap:8px;max-width:100%}
+.reset-form{margin:0}
+.reset-btn{background:transparent;color:var(--yellow);border:1px solid var(--border);border-radius:999px;padding:5px 12px;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;cursor:pointer}
+.reset-btn:hover{border-color:var(--yellow);color:var(--yellow)}
+.reset-note{color:var(--muted);font-size:11px;max-width:300px;text-align:right}
 .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px;margin-bottom:20px}
 .kpi{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px 18px}
 .kpi-label{display:block;color:var(--muted);font-size:11px;font-weight:700;letter-spacing:.1em}
@@ -181,7 +197,13 @@ footer{margin-top:28px;color:${'#5b6b84'};font-size:12px;text-align:center;lette
 <div class="page">
   <header class="top">
     <div class="brand"><span class="red">A.S.S. SCORE</span> — ADMIN <span class="tag">internal</span></div>
-    <div class="gen">Generated <time datetime="${esc(generatedAt)}">${esc(generatedAt.slice(0, 16).replace('T', ' '))} UTC</time></div>
+    <div class="top-meta">
+      <div class="gen">Generated <time datetime="${esc(generatedAt)}">${esc(generatedAt.slice(0, 16).replace('T', ' '))} UTC</time>${epochLine}</div>
+      <form class="reset-form" method="post" action="${esc(resetAction)}">
+        <button class="reset-btn" type="submit" title="Restart tracking from now: every admin-stats counter goes to zero. Existing rows stay in the database — they just stop being counted.">↺ Restart stats tracking</button>
+      </form>
+      ${pwNote}
+    </div>
   </header>
   <section class="kpis">
     ${kpi('SCANS TOTAL', scans.total, BANDS.red)}
@@ -324,6 +346,20 @@ function renderShareCardResult({ url, score, verdict, cardPath, downloadName }) 
   });
 }
 
+/** POST /admin/stats/reset confirmation page (EPOCAH CUTOVER, owner 2026-10-07). */
+function renderResetConfirmation({ epoch, backAction }) {
+  return shareCardPage({
+    title: 'Stats tracking reset',
+    bodyHtml: `<section class="card">
+  <h1>Tracking reset</h1>
+  <p class="hint">All admin-stats counters now start at this moment. Existing rows stay in the database untouched — they just stop being counted.</p>
+  <span class="score-label">Tracking since</span>
+  <p class="host">${esc(epoch.slice(0, 16).replace('T', ' '))} UTC</p>
+  <a class="rc-ghost" href="${esc(backAction)}">← Back to admin stats</a>
+</section>`,
+  });
+}
+
 export function adminRouter({ db, adminPassword, emailSender, now = () => new Date().toISOString(), fetcher, validateTarget, scanBudgetMs } = {}) {
   const secret = adminPassword ?? process.env.ADMIN_PASSWORD;
   const r = Router();
@@ -353,13 +389,26 @@ export function adminRouter({ db, adminPassword, emailSender, now = () => new Da
     if (!secret) return forbidden(res);
     const candidate = req.get('x-admin-password') ?? req.query.pw;
     if (!secretOk(candidate)) return forbidden(res);
+    // EPOCAH CUTOVER (owner 2026-10-07): `stats_epoch` (settings table) is the
+    // counting floor for EVERY admin-stats counter. Absent (fresh/dev DBs, or
+    // prod before the cutover runs) => no filtering, byte-identical to before.
+    // When set, each query's effective floor is MAX(its own window start, the
+    // epoch) — pre-epoch rows can never re-appear in any bucket, and rows are
+    // NEVER deleted (paid report links point at scans rows).
+    const epochIso = db.getSetting('stats_epoch'); // ISO string | null
+    const epochMs = epochIso ? Date.parse(epochIso) : null;
     const today = now().slice(0, 10); // UTC day
     const todayStartMs = Date.parse(`${today}T00:00:00.000Z`);
     const sinceTs = todayStartMs - (DAYS_IN_WINDOW - 1) * DAY_MS;
     const sinceIso = new Date(sinceTs).toISOString().slice(0, 10); // scans/webhook_events created_at >= date
-    const viewCounts = new Map(db.pageViewDayCounts(sinceTs).map((d) => [d.date, d.count]));
-    const scanCounts = new Map(db.scanDayCounts(sinceIso).map((d) => [d.date, d.count]));
-    const purchaseCounts = new Map(db.webhookDayCounts(sinceIso).map((d) => [d.date, d.count]));
+    // Effective floors — the epoch wins where it is later than the query's
+    // own window start (day series: MAX(sinceParam, epoch); today: MAX(midnight, epoch)).
+    const viewFloorTs = epochMs !== null ? Math.max(sinceTs, epochMs) : sinceTs;
+    const todayViewFloorTs = epochMs !== null ? Math.max(todayStartMs, epochMs) : todayStartMs;
+    const ledgerFloorIso = epochIso && epochIso > sinceIso ? epochIso : sinceIso;
+    const viewCounts = new Map(db.pageViewDayCounts(viewFloorTs).map((d) => [d.date, d.count]));
+    const scanCounts = new Map(db.scanDayCounts(ledgerFloorIso).map((d) => [d.date, d.count]));
+    const purchaseCounts = new Map(db.webhookDayCounts(ledgerFloorIso).map((d) => [d.date, d.count]));
     const last30dViews = [];
     const last30dScans = [];
     const last30dPurchases = [];
@@ -371,27 +420,72 @@ export function adminRouter({ db, adminPassword, emailSender, now = () => new Da
     }
     const stats = {
       views: {
-        total: db.countPageViews(),
-        today: db.countPageViewsSince(todayStartMs),
+        total: db.countPageViews(epochMs),
+        today: db.countPageViewsSince(todayViewFloorTs),
         last30d: last30dViews,
-        recent: db.recentPageViews(),
+        recent: db.recentPageViews(epochMs),
       },
       scans: {
-        total: db.countScansTotal(),
-        today: db.countScansToday(today),
+        total: db.countScansTotal(epochIso),
+        today: db.countScansToday(today, epochIso),
         last30d: last30dScans,
       },
       purchases: {
-        total: db.countWebhooksTotal(),
-        today: db.countWebhooksToday(today),
+        total: db.countWebhooksTotal(epochIso),
+        today: db.countWebhooksToday(today, epochIso),
         last30d: last30dPurchases,
       },
     };
     if (wantsHtml(req)) {
       res.set('Cache-Control', 'no-store');
-      return res.type('html').send(renderAdminPage(stats, now()));
+      return res.type('html').send(renderAdminPage(stats, now(), { epoch: epochIso, resetAction: statsResetAction(req) }));
     }
     return res.json(stats);
+  });
+
+  /**
+   * POST /admin/stats/reset — the EPOCAH CUTOVER (owner 2026-10-07). Sets
+   * `stats_epoch` = now(): every admin-stats counter restarts at zero from
+   * this moment while ALL existing rows stay in the database, untouched (paid
+   * report links point at `scans` rows — deleting data is off the table).
+   * Idempotent: a second reset just moves the epoch later; rows before the old
+   * epoch stay excluded forever. Only the audit trail remembers it happened.
+   *
+   * Same gate as GET /admin/stats (x-admin-password header or ?pw=, compared
+   * with timingSafeEqual); wrong/missing password => the same 403 JSON. JSON
+   * accept -> { ok: true, epoch }; text/html accept (browser form) -> a small
+   * confirmation page rendered with the standard admin theme. No body is
+   * read — the button can be a plain form, and API clients need no payload.
+   */
+  r.post('/admin/stats/reset', (req, res) => {
+    if (!secret) return forbidden(res);
+    const candidate = req.get('x-admin-password') ?? req.query.pw;
+    if (!secretOk(candidate)) return forbidden(res);
+    const epoch = now();
+    db.setSetting('stats_epoch', epoch);
+    // Audit trail — best-effort, exactly the existing audit-write pattern
+    // (insertAdminAudit wrapped in try/catch): a reset row with empty url and
+    // verdict 'stats_reset' joins the share-card trail and survives forever
+    // (retention never purges admin_audit).
+    try {
+      db.insertAdminAudit({
+        id: randomUUID(),
+        scanId: null,
+        actor: 'admin',
+        ip: req.ip,
+        url: '',
+        score: 0,
+        verdict: 'stats_reset',
+        createdAt: epoch,
+      });
+    } catch (err) {
+      console.error('[admin] audit insert failed:', err);
+    }
+    if (wantsHtml(req)) {
+      res.set('Cache-Control', 'no-store');
+      return res.type('html').send(renderResetConfirmation({ epoch, backAction: statsBackAction(req) }));
+    }
+    return res.json({ ok: true, epoch });
   });
 
   /**
@@ -498,6 +592,17 @@ export function adminRouter({ db, adminPassword, emailSender, now = () => new Da
     typeof req.query.pw === 'string' && req.query.pw !== ''
       ? `/admin/share-card?pw=${encodeURIComponent(req.query.pw)}`
       : '/admin/share-card';
+  /** Stats-reset form action + confirmation back-link — carry ?pw= when the
+   *  request came in with the query auth (mirrors formAction: a browser form
+   *  cannot send the x-admin-password header, so the button embeds the pw). */
+  const statsResetAction = (req) =>
+    typeof req.query.pw === 'string' && req.query.pw !== ''
+      ? `/admin/stats/reset?pw=${encodeURIComponent(req.query.pw)}`
+      : '/admin/stats/reset';
+  const statsBackAction = (req) =>
+    typeof req.query.pw === 'string' && req.query.pw !== ''
+      ? `/admin/stats?pw=${encodeURIComponent(req.query.pw)}`
+      : '/admin/stats';
 
   /**
    * GET /admin/share-card — the tool's form page (gated). Server-rendered,
