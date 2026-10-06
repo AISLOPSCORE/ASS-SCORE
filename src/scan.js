@@ -4,6 +4,7 @@ import { runRules } from './rules/index.js';
 import { computeSlopScore } from './scorer.js';
 import { discoverPages } from './rules/discover.js';
 import { analyzeCrossPage, DUPLICATION_THRESHOLD } from './rules/crossPage.js';
+import { detectSkeleton } from './rules/skeletonFamily.js';
 import { analyzeFingerprints } from './rules/fingerprints.js';
 import { visualRepetitionHits } from './rules/visualRepetition.js';
 import { analyzeAssets } from './rules/assets.js';
@@ -197,16 +198,23 @@ export async function runScan({ db, fetcher, url, branding = null, businessName 
   // --- phase-2 rules -----------------------------------------------------------
   // crossPage: similarity over MAIN content of every fetched page + the
   // in-page repeated-phrase component (pass 2, 2026-10-01) which measures the
-  // TARGET page's own sentences (see src/rules/crossPage.js). pages[0] is
-  // always the target (pushed first above); its extractText context is passed
-  // along so the REPETITION card's phrase signal fires even on single-page
-  // scans.
+  // TARGET page's own sentences + the round-2 DOM-skeleton component
+  // (owner-approved 2026-10-06; src/rules/skeletonFamily.js) which runs on
+  // the deduped pages' HTML — the structural twin of duplicated body copy
+  // (extractMainText strips chrome, so a shared DOM template is invisible to
+  // the pairwise text term by construction). See src/rules/crossPage.js.
+  // pages[0] is always the target (pushed first above); its extractText
+  // context is passed along so the REPETITION card's phrase signal fires even
+  // on single-page scans. The skeleton detector is null (E1) below 2 pages —
+  // single-page scans reproduce the pre-round-2 pipeline byte-for-byte.
+  const skeleton = detectSkeleton(pages.map((p) => ({ url: p.url, html: p.html })));
   const crossPage = analyzeCrossPage({
     pages: pages.map((p, i) => ({
       url: p.url,
       main: perPage.get(p.url).main,
       ...(i === 0 ? { sentences: text.sentences, paragraphs: text.paragraphs, title: text.title } : {}),
     })),
+    skeleton,
   });
   // fingerprints: evidence on the target page (the URL the customer asked about).
   // Round-1 DESIGN signals (2026-10-05) run as extra count-rule hits on the

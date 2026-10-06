@@ -268,9 +268,22 @@ const isMeaningToken = (t) => stockIconTok(t) || SEMANTIC_TOKEN_RE.test(t);
  * not a component name — never meaning-bearing and never a custom-system stem.
  */
 const UTIL_RE = /^(flex|grid|block|inline|inline-block|hidden|absolute|relative|sticky|fixed|static|table|grow|shrink|order-|basis-|inset-|m-|mx-|my-|mt-|mb-|ml-|mr-|ms-|me-|p-|px-|py-|pt-|pb-|pl-|pr-|ps-|pe-|z-|gap-|w-|h-|size-|min-[wh]-|max-[wh]-|items-|justify-|content-|self-|place-|text-|font-|leading-|tracking-|rounded-|border-|shadow-|bg-|opacity-|transition-|duration-|ease-|select-|pointer-|cursor-|overflow-|object-|whitespace-|break-|uppercase|lowercase|capitalize|normal-case|truncate|divide-|space-|top-|right-|bottom-|left-|translate-|scale-|rotate-|skew-|origin-|blur-|brightness-|contrast-|grayscale|invert|saturate|sepia|fill-|stroke-|sr-only|not-sr-only)([\w./[\]%-]*)?$/i;
-const isUtility = (t) => UTIL_RE.test(t);
+/**
+ * Tailwind-utility test (shared export — also the skeleton tokenizer's
+ * specificity floor, see src/rules/skeletonFamily.js; the round-2 detector
+ * imports this table rather than duplicating it).
+ */
+export const isUtility = (t) => UTIL_RE.test(t);
 /** Framework variants (md:, dark:, data-[…]:, [&_svg]:, …) — never component names. */
-const FRAMEWORK_VARIANT_RE = /[:[\]&]/;
+export const FRAMEWORK_VARIANT_RE = /[:[\]&]/;
+/**
+ * CSS-in-JS / css-modules hash classnames (styled-components, emotion,
+ * css-modules output): `css-…`, double-underscore hashes, or short
+ * letter-prefix-digit patterns (ROUND2-SPEC §1.3). The skeleton tokenizer
+ * drops these so hashed templates are never falsely discriminated.
+ */
+export const HASH_TOKEN_RE = /^css-|__|^[a-z]{2,3}-\d+$/;
+export const isHashToken = (t) => HASH_TOKEN_RE.test(t);
 const SEM_WORD_RE = /^(card|box|panel|item|post|feature|testimonial|step|faq|block|hero|cta|price|pricing|tab|accordion|avatar|badge|chip|input|dialog|dropdown|toast|alert|sheet|button|icon|logo|tile|cell|entry|article|summary|excerpt|thumbnail|media|content|title|heading|label|value)$/i;
 const SEM_PREFIX_RE = /^(card|box|panel|item|post|feature|testimonial|step|faq|block|hero|cta|price|pricing|tab|accordion|avatar|badge|chip|input|dialog|dropdown|toast|alert|sheet|button|icon|logo|tile|cell|entry|article|summary|excerpt|thumbnail|media|content|title|heading|label|value)[-_:]/i;
 
