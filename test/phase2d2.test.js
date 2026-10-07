@@ -122,8 +122,12 @@ test('P2D2.3: findings are premium cards with a receipts drawer; What To Fix Fir
   const app = startApp(dbPath);
   try {
     const html = await paidHtml(app.base, 'p2d2-sloppy');
-    assert.equal((html.match(/<div class="finding-card">/g) ?? []).length, 6, 'one premium card per negative finding');
-    assert.equal((html.match(/class="rec-count">/g) ?? []).length, 6, 'every receipts drawer shows a real evidence-line count');
+    // grouping: count the FLAT grouped list only — the hidden per-category
+    // clone-source sections re-render the same cards for the Phase 2C focused
+    // views, so raw-document counts would double (6 flat + 6 hidden).
+    const flat = html.slice(html.indexOf('<div class="actual-findings-flat">'), html.indexOf('<div class="cat-sources" hidden>'));
+    assert.equal((flat.match(/<div class="finding-card">/g) ?? []).length, 6, 'grouping: one flat-list premium card per negative finding');
+    assert.equal((flat.match(/class="rec-count">/g) ?? []).length, 6, 'grouping: every flat-list receipts drawer shows a real evidence-line count');
     assert.ok(html.includes('class="rec-count">1 line of evidence<'), 'drawer count is the actual line count');
     assert.ok(html.includes('class="fc-roast"'), 'roast blocks present');
     // What To Fix First: COMPACT ranked SUMMARY cards (dashboard final cleanup)

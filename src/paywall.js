@@ -60,12 +60,24 @@ const SECOND_POOL = 4;  // second teaser from the top-4, excluding the first pic
  * are sorted by score desc (ties: category key asc) — the funniest = most
  * damning material is always in the pool.
  *
+ * ONE PROBLEM = ONE FINDING (owner 2026-10-07): when the scan stored Phase-B
+ * component keys (`breakdown.<cat>.sources[i]`, see src/groupFindings.js — NEW
+ * scans only), insights that point at the SAME component collapse to the first
+ * in findings order WITHIN a category, and the second teaser never names a src
+ * the first teaser already used ACROSS categories. Free and paid then tell the
+ * same story: if the paid report collapses the whole sponsor block into one
+ * card, the free samples never sell two members of that one problem as two
+ * problems. `src` is used only for this dedupe — it is never added to the
+ * teaser objects (the free payload surface is unchanged; component keys must
+ * not leak to the free tier). Legacy rows (no `sources`) are byte-identical to
+ * today's picks.
+ *
  * The teaser object mirrors its source insight one-for-one. Negative teasers
  * carry no kind key; the clean-marker passthrough in teaserFrom is kept for
  * safety but is inert under the problem-only rule (clean insights can never
  * reach the pool).
  *
- * @param {Record<string, {score?: number, findings?: unknown[], insights?: any[]}>} breakdown
+ * @param {Record<string, {score?: number, findings?: unknown[], insights?: any[], sources?: Array<string|null>}>} breakdown
  * @param {string} id scan id (seed)
  * @returns {Array<{ key: string, roast: string, why: string, fix: string, evidence: string, kind?: 'clean' }>}
  */
@@ -90,17 +102,31 @@ export function pickTeasers(breakdown, id) {
       // surface as free samples. Deterministic: filtering happens before
       // seeding, so the same (breakdown, id) still always yields identical
       // teasers.
-      const all = (r.insights ?? []).filter((ins) =>
-        ins && typeof ins === 'object' &&
-        !isMetricFinding(key, String(ins.evidence ?? '')) &&
-        ins.kind !== 'clean');
+      const srcs = Array.isArray(r.sources) ? r.sources : [];
+      const seenSrc = new Set();
+      const all = [];
+      (r.insights ?? []).forEach((ins, i) => {
+        if (!ins || typeof ins !== 'object') return;
+        if (isMetricFinding(key, String(ins.evidence ?? ''))) return;
+        if (ins.kind === 'clean') return;
+        // ONE PROBLEM = ONE FINDING (owner 2026-10-07): with stored sources,
+        // insights sharing a src collapse to the first in findings order — one
+        // grouped problem = one free sample, mirroring the paid flat list.
+        const src = srcs[i];
+        const srcKey = typeof src === 'string' && src !== '' ? src : null;
+        if (srcKey !== null) {
+          if (seenSrc.has(srcKey)) return;
+          seenSrc.add(srcKey);
+        }
+        all.push({ ins, src: srcKey });
+      });
       // ONE SIGNAL = ONE (funny) SAMPLE (audit Q3, owner-approved 2026-09-28):
       // when a boilerplate candidate has BOTH detail-line insights and the
       // aggregate (totals) insight, the totals insight is dropped from the
       // teaser pool — the totals line's roast ("…a record for having nothing
       // to say") would mislabel a copyright-only page as generic marketing
       // filler, and its detail-line sibling already carries the real signal.
-      const details = all.filter((ins) => !isBoilerplateAggregateLine(String(ins.evidence ?? '')));
+      const details = all.filter((e) => !isBoilerplateAggregateLine(String(e.ins.evidence ?? '')));
       const insights = details.length > 0 ? details : all;
       return { key, score: Number(r.score), findings: r.findings, insights };
     })
@@ -111,35 +137,51 @@ export function pickTeasers(breakdown, id) {
   const count = candidates.length === 1 ? 1 : 1 + (hashScanId(`${id}:teasers:n`) % 2); // 1 or 2
   const firstIdx = hashScanId(`${id}:teasers:0`) % Math.min(FIRST_POOL, candidates.length);
   const out = [];
-  const first = teaserFrom(candidates[firstIdx], id, 0);
-  if (first) out.push(first);
+  let usedSrc = null;
+  const first = teaserFrom(candidates[firstIdx], id, 0, null);
+  if (first) {
+    out.push(first.teaser);
+    usedSrc = first.src;
+  }
   if (count === 2 && candidates.length >= 2) {
     // Second teaser: from the top SECOND_POOL candidates, excluding the first
-    // pick — a different category than teaser 1, always.
+    // pick — a different category than teaser 1, always. src-dedupe: never a
+    // SECOND sample from a component the first sample already named (the paid
+    // flat list shows that problem as ONE card).
     const pool = candidates.slice(0, Math.min(SECOND_POOL, candidates.length)).filter((_, i) => i !== firstIdx);
     if (pool.length > 0) {
-      const second = teaserFrom(pool[hashScanId(`${id}:teasers:1`) % pool.length], id, 1);
-      if (second) out.push(second);
+      const second = teaserFrom(pool[hashScanId(`${id}:teasers:1`) % pool.length], id, 1, usedSrc);
+      if (second) out.push(second.teaser);
     }
   }
   return out;
 }
 
-/** Build ONE teaser object from a candidate (insight variant seeded per slot). */
-function teaserFrom(candidate, id, slot) {
+/** Build ONE teaser object from a candidate (insight variant seeded per slot).
+ *  Returns { teaser, src } — `src` feeds the picker's cross-category dedupe
+ *  and is never part of the teaser payload (component keys stay off the free
+ *  tier; the teaser object shape is unchanged). */
+function teaserFrom(candidate, id, slot, usedSrc = null) {
   if (!candidate || candidate.insights.length === 0) return null;
-  const ins = candidate.insights[hashScanId(`${id}:teasers:ins:${slot}:${candidate.key}`) % candidate.insights.length];
+  let pool = candidate.insights;
+  if (usedSrc !== null) pool = pool.filter((e) => e.src !== usedSrc);
+  if (pool.length === 0) return null;
+  const entry = pool[hashScanId(`${id}:teasers:ins:${slot}:${candidate.key}`) % pool.length];
+  const ins = entry.ins;
   if (!ins || typeof ins !== 'object') return null;
   return {
-    key: candidate.key,
-    roast: String(ins.roast ?? ''),
-    why: String(ins.why ?? ''),
-    fix: String(ins.fix ?? ''),
-    evidence: String(ins.evidence ?? candidate.findings[0] ?? ''),
-    // Clean-marker passthrough kept for safety: inert under the problem-only
-    // rule (clean insights can never reach the pool). If it ever does fire,
-    // renderers label the sample COMPLIMENT / WHY IT MATTERS / KEEP IT UP.
-    ...(ins.kind === 'clean' ? { kind: 'clean' } : {}),
+    teaser: {
+      key: candidate.key,
+      roast: String(ins.roast ?? ''),
+      why: String(ins.why ?? ''),
+      fix: String(ins.fix ?? ''),
+      evidence: String(ins.evidence ?? candidate.findings[0] ?? ''),
+      // Clean-marker passthrough kept for safety: inert under the problem-only
+      // rule (clean insights can never reach the pool). If it ever does fire,
+      // renderers label the sample COMPLIMENT / WHY IT MATTERS / KEEP IT UP.
+      ...(ins.kind === 'clean' ? { kind: 'clean' } : {}),
+    },
+    src: entry.src,
   };
 }
 
