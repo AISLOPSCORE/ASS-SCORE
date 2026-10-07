@@ -77,6 +77,32 @@ function categoryClass(score, findingsCount) {
   return 'CLEAN';
 }
 
+/**
+ * DISPLAY-state classification for a category — the report-contradiction
+ * invariant (owner defect 2026-10-07: "6 roasts — see receipts" next to
+ * "Nothing meaningful to roast here" on one card; "IMAGERY — CLEAN:" zero
+ * lines next to "5 of 53 placeholder filenames"): a category with ≥1 ACTUAL
+ * NEGATIVE finding must NEVER render as CLEAN anywhere in the report,
+ * regardless of its sub-score band. A CLEAN-band category that also has
+ * negative findings promotes to WATCH on every display surface (the card, the
+ * What's Working gate, the finding-severity badges, the fix-first pills, the
+ * focused-view state line); every other input is byte-identical to
+ * categoryClass. DISPLAY-ONLY: categoryClass itself is untouched — its band
+ * math stays deterministic for the non-display uses (methods, verdict copy).
+ *
+ * @param {number} score category sub-score (0-100, higher = worse)
+ * @param {number} findingsCount stored findings-array length
+ * @param {number} negativesCount count of ACTUAL negative findings (post
+ *   classifyFinding split + boilerplate aggregate demotion → the same
+ *   `negatives.length` the report's other sections count)
+ * @returns {'CLEAN'|'WATCH'|'NEEDS ATTENTION'|'PRIORITY'} the DISPLAY state
+ */
+function categoryDisplayState(score, findingsCount, negativesCount) {
+  const cls = categoryClass(score, findingsCount);
+  if (cls === 'CLEAN' && Number(negativesCount) > 0) return 'WATCH';
+  return cls;
+}
+
 /** Deterministic truncation for receipt snippets in the fix-first list. */
 function short(s, n) {
   return String(s).length > n ? `${String(s).slice(0, n - 1)}…` : String(s);
@@ -258,7 +284,9 @@ function renderFinding(scanId, categoryKey, categoryLabel, finding, insight, ind
   // RECEIPTS. The label TEXT stays exactly as Phase 1 emitted it (so every
   // existing assertion still matches); the display case is applied via CSS
   // text-transform. The severity badge comes from the SAME existing category
-  // classification (categoryClass on the stored sub-score) — never invented.
+  // display classification (categoryDisplayState on the stored sub-score) —
+  // never invented; CLEAN is never badgeable (a category with negative
+  // findings promotes to WATCH at minimum).
   const stateBadge = state && state !== 'CLEAN'
     ? `<span class="fc-state fc-state-${String(state).toLowerCase().replace(/[^a-z0-9]+/g, '-')}">${esc(state)}</span>`
     : '';
@@ -299,19 +327,22 @@ function renderFinding(scanId, categoryKey, categoryLabel, finding, insight, ind
 }
 
 /**
- * Is a category CLEAN-band (sub-score 0-24)? The exact same inputs as the
- * breakdown card classification (categoryClass on the stored sub-score +
- * stored findings count), used to gate compliments: WHAT'S WORKING only ever
- * compliments truly CLEAN categories (audit Q2, owner-approved 2026-09-28) —
- * a WATCH/45 category with an in-band measurement line must never be
- * advertised as "CLEAN" in the same report that flags it. Skipped (null
- * score) categories are never CLEAN-band compliment sources.
+ * Is a category a legitimate WHAT'S WORKING compliment source? The exact same
+ * inputs as the breakdown card DISPLAY classification (categoryDisplayState on
+ * the stored sub-score + stored findings count + actual-negative count), used
+ * to gate compliments: WHAT'S WORKING only ever compliments truly CLEAN
+ * categories (audit Q2, owner-approved 2026-09-28) — a WATCH/45 category with
+ * an in-band measurement line must never be advertised as "CLEAN" in the same
+ * report that flags it, and (owner defect 2026-10-07) a CLEAN-band category
+ * with ≥1 negative finding must never have its zero-sibling clean lines
+ * surface as "— CLEAN:" compliments next to the roasts that flag it. Skipped
+ * (null score) categories are never CLEAN-band compliment sources.
  */
-function isCleanBand(key, rule) {
+function isCleanBand(key, rule, negativesCount) {
   if (!(Number.isFinite(Number(rule?.score)) && rule.score !== null)) return false;
   const sub = publicScore(rule.score);
   const nFindings = Array.isArray(rule.findings) ? rule.findings.length : 0;
-  return categoryClass(sub, nFindings) === 'CLEAN';
+  return categoryDisplayState(sub, nFindings, negativesCount) === 'CLEAN';
 }
 
 /**
@@ -576,7 +607,7 @@ export function renderHtmlReport(scan) {
   // DESIGN now compliments too: the fingerprints rule emits a clean line on a
   // zero-hit scan, so its (previously unreachable) compliments pool fires. ---
   const cleanLis = classified
-    .filter((g) => isCleanBand(g.key, g.rule))
+    .filter((g) => isCleanBand(g.key, g.rule, g.negatives.length))
     .flatMap((g) => g.cleans.map((item) => renderCleanItem(CATEGORY_LABELS[g.key] ?? g.key, item)))
     .join('');
   const workingSection = `
@@ -593,8 +624,10 @@ export function renderHtmlReport(scan) {
   // matching #view-cat-<key> section. The dashboard's own id="cat-<key>"
   // sections stay in place (Phase 2A anchor contract + the no-JS degraded path
   // still scroll to them). The number + state come from the SAME existing
-  // classification as the old list (categoryClass on the stored sub-score;
-  // stored note for skipped modules) — no recalculation, no reinterpretation.
+  // classification as the old list (categoryDisplayState on the stored
+  // sub-score + negative count, i.e. categoryClass with the CLEAN->WATCH
+  // promotion for flagged categories; stored note for skipped modules) — no
+  // recalculation, no reinterpretation of the category's own data.
   // State colors are applied by class only (green/amber/red/gray), driven by
   // that classification, never by changing data.
   const breakdownCards = Object.entries(scan.breakdown ?? {}).map(([key, rule]) => {
@@ -614,14 +647,17 @@ export function renderHtmlReport(scan) {
     }
     const sub = publicScore(rule.score);
     const nFindings = Array.isArray(rule.findings) ? rule.findings.length : 0;
-    const cls = categoryClass(sub, nFindings);
-    const stateClass = cls === 'NEEDS ATTENTION' ? 'cat-attention' : `cat-${cls.toLowerCase()}`;
-    const line = cls === 'CLEAN' ? 'Nothing meaningful to roast here.' : (CATEGORY_ONE_LINERS[key] ?? '');
     // Findings-or-not line: counts NEGATIVE findings only (the report-wide
     // convention — compliments and metric measurements are never "findings").
     const grp = classified.find((x) => x.key === key);
     const negs = grp ? grp.negatives.length : 0;
     const metr = grp ? grp.metrics.length : 0;
+    // DISPLAY state (owner defect 2026-10-07): a CLEAN-band category with
+    // actual negative findings promotes to WATCH — "Nothing meaningful to
+    // roast here." must never render next to "N roasts — see receipts".
+    const cls = categoryDisplayState(sub, nFindings, negs);
+    const stateClass = cls === 'NEEDS ATTENTION' ? 'cat-attention' : `cat-${cls.toLowerCase()}`;
+    const line = cls === 'CLEAN' ? 'Nothing meaningful to roast here.' : (CATEGORY_ONE_LINERS[key] ?? '');
     const findingsLine = negs > 0
       ? `<span class="cat-findings cat-findings-problem">${negs} roast${negs === 1 ? '' : 's'} — see receipts</span>`
       : (metr > 0 ? '<span class="cat-findings">Measurements only</span>' : '<span class="cat-findings cat-findings-clean">No roasts</span>');
@@ -681,13 +717,14 @@ export function renderHtmlReport(scan) {
 ></span>`;
     }
     // Phase 2B: each negative finding's severity badge comes from the SAME
-    // existing category classification (categoryClass on the stored sub-score
-    // + finding count) — never a new/reinterpreted severity. CLEAN is never
-    // badgeable here: a category with negative findings is never CLEAN.
+    // existing category classification (categoryDisplayState on the stored
+    // sub-score + finding count + negative count) — never a new/reinterpreted
+    // severity. CLEAN is never badgeable here: a category with negative
+    // findings is never CLEAN (and a CLEAN-band one promotes to WATCH).
     const fgScore = g.rule?.score;
     const fgSub = (Number.isFinite(Number(fgScore)) && fgScore !== null) ? publicScore(fgScore) : null;
     const fgCount = Array.isArray(g.rule?.findings) ? g.rule.findings.length : 0;
-    const fgState = (g.negatives.length > 0 && fgSub !== null) ? categoryClass(fgSub, fgCount) : null;
+    const fgState = (g.negatives.length > 0 && fgSub !== null) ? categoryDisplayState(fgSub, fgCount, g.negatives.length) : null;
     // Phase 2D-1: the section carries a semantic state accent class (watch /
     // needs-attention / priority / neutral) — presentation only, same
     // classification as the cards; never a data change. `cat-detail-empty`
@@ -781,7 +818,10 @@ export function renderHtmlReport(scan) {
     const label = CATEGORY_LABELS[g.key] ?? g.key;
     const sub = (Number.isFinite(Number(g.rule?.score)) && g.rule?.score !== null) ? publicScore(g.rule.score) : 0;
     const nFindings = Array.isArray(g.rule?.findings) ? g.rule.findings.length : 0;
-    const cls = categoryClass(sub, nFindings);
+    // DISPLAY state: a CLEAN-band category with negative findings promotes to
+    // WATCH so its fix pill never reads "CLEAN" next to a fix task (owner
+    // defect 2026-10-07 — same promoted state as the card + badges).
+    const cls = categoryDisplayState(sub, nFindings, g.negatives.length);
     g.negatives.forEach((x, i) => {
       const ins = insightFor(scan.id, g.key, x.finding, x.insight, i);
       fixItems.push({
@@ -863,8 +903,8 @@ export function renderHtmlReport(scan) {
   // Phase 2A anchors (id="cat-<key>") and Phase 2B card counts are untouched,
   // and the dashboard remains fully present for no-JS/print/SEO. The state and
   // one-liner lines reuse the SAME existing classification data as the cards
-  // (categoryClass on the stored sub-score; CATEGORY_ONE_LINERS) — no
-  // reinterpretation. Clean categories show their clean items; a category with
+  // (categoryDisplayState on the stored sub-score + negative count;
+  // CATEGORY_ONE_LINERS) — no reinterpretation. Clean categories show their clean items; a category with
   // measurements but no negative finding keeps those measurements as neutral
   // evidence (never a warning) via the cloned section.
   const categoryViews = Object.entries(scan.breakdown ?? {}).map(([key, rule]) => {
@@ -877,14 +917,18 @@ export function renderHtmlReport(scan) {
     } else {
       const sub = publicScore(rule.score);
       const nFindings = Array.isArray(rule.findings) ? rule.findings.length : 0;
-      const cls = categoryClass(sub, nFindings);
+      // DISPLAY state: same promotion as the card — a CLEAN-band category with
+      // negative findings must not show a CLEAN pill in its focused view.
+      const cls = categoryDisplayState(sub, nFindings, g?.negatives.length ?? 0);
       stateLine = `\n    <span class="cv-score">${sub}<span class="cv-den">/100</span></span>\n    <span class="cv-state cv-state-${cls.toLowerCase().replace(/[^a-z0-9]+/g, '-')}">${esc(cls)}</span>\n    <span class="cv-line">${esc(CATEGORY_ONE_LINERS[key] ?? '')}</span>`;
     }
     // Compliment gate (audit Q2, owner-approved 2026-09-28): a category's
     // clean measurements render in its focused view ONLY when the category is
     // CLEAN-band — a WATCH/45 category must not show a "— CLEAN:" compliment
-    // next to its WATCH badge (same rule as the What's Working list).
-    const cleanLis = (g && g.cleans.length > 0 && isCleanBand(key, rule))
+    // next to its WATCH badge (same rule as the What's Working list; a
+    // CLEAN-band category with negative findings is likewise excluded via
+    // categoryDisplayState, owner defect 2026-10-07).
+    const cleanLis = (g && g.cleans.length > 0 && isCleanBand(key, rule, g?.negatives.length ?? 0))
       ? `\n    <ul class="cv-clean">\n      ${g.cleans.map((item) => renderCleanItem(label, item)).join('')}\n    </ul>`
       : '';
     return `
