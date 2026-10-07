@@ -24,7 +24,7 @@ test('truncate: short() lands on word boundaries and strips trailing punctuation
 
 test('truncate: shortUrl() keeps the identifying host + filename tail', () => {
   const long = 'https://cdn.publishyoursaas.com/uploads/screenshots/Screenshot_6_xlarge.png';
-  assert.equal(shortUrl(long, 70), long, 'URL at/under the limit passes through verbatim');
+  assert.equal(shortUrl(long, 80), long, 'URL at/under the limit passes through verbatim');
   assert.equal(shortUrl(long, 55), 'cdn.publishyoursaas.com…/Screenshot_6_xlarge.png', 'host + "…/" + basename keeps which image is meant');
   assert.equal(shortUrl(long, 30).endsWith('…/Screenshot_6_xlarge.png'), false, 'shorter budgets further shorten the host side');
   assert.ok(shortUrl(long, 30).includes('…/'), 'ellipsis separator always present when cut');
