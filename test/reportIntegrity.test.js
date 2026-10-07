@@ -57,6 +57,19 @@ function startApp(dbPath) {
   return { server, base: `http://127.0.0.1:${server.address().port}` };
 }
 
+/** grouping: THE ACTUAL FINDINGS = the FLAT grouped list (the owner-facing
+ * cards, `.actual-findings-flat`) + the hidden per-category clone-source
+ * sections (`<div class="cat-sources" hidden>`, Phase 2C focused views re-use
+ * them client-side). Card/roast-count pins scope to the flat list — the
+ * hidden sections re-render the same cards, so raw-document counts doubled
+ * (ONE PROBLEM = ONE FINDING, owner 2026-10-07). */
+function flatRegion(html) {
+  const a = html.indexOf('<div class="actual-findings-flat">');
+  const b = html.indexOf('<div class="cat-sources" hidden>');
+  assert.ok(a >= 0 && b > a, 'flat grouped list present before the hidden category sections');
+  return html.slice(a, b);
+}
+
 async function insertScan(dbPath, { id, breakdown, worstPage = null, score = 11 }) {
   const repository = openDb(dbPath);
   repository.insertScan({
@@ -200,8 +213,10 @@ test('Q3/report: owner scan — ONE finding card for the copyright signal; roast
 
       // (a) One signal -> ONE card: the totals line no longer renders as a
       // separate negative finding card ("2 findings" was the audit complaint).
-      assert.equal((paid.match(/<div class="finding-card">/g) ?? []).length, 1,
-        `${id}: exactly ONE finding card for ONE copyright signal`);
+      // grouping: count the FLAT grouped list only — the hidden per-category
+      // clone-source section re-renders the same card for the Phase 2C view.
+      assert.equal((flatRegion(paid).match(/<div class="finding-card">/g) ?? []).length, 1,
+        `${id}: grouping: exactly ONE flat-list finding card for ONE copyright signal`);
       assert.ok(paid.includes('1 finding across 1 category'),
         `${id}: summary intro counts the single signal`);
       assert.ok(!paid.includes('2 findings'), `${id}: no double-counted "2 findings" anywhere`);
@@ -226,8 +241,10 @@ test('Q3/report: owner scan — ONE finding card for the copyright signal; roast
 
       // (c) Exactly ONE roast block — the second MESSAGING card is gone — and
       // the mislabeling "nothing to say" phrasing appears nowhere.
-      assert.equal((paid.match(/<p class="ins-roast">/g) ?? []).length, 1,
-        `${id}: exactly one roast-styled layer (one signal -> one card)`);
+      // grouping: count the FLAT grouped list only (hidden per-category
+      // clone-source section re-renders the same card for the Phase 2C view).
+      assert.equal((flatRegion(paid).match(/<p class="ins-roast">/g) ?? []).length, 1,
+        `${id}: grouping: exactly one flat-list roast-styled layer (one signal -> one card)`);
       assert.ok(!paid.includes('having nothing to say'), `${id}: no mislabeling totals roast anywhere`);
     } finally {
       app.server.close();
@@ -364,7 +381,9 @@ test('Q5/consistency: report-level sweep — negative-finding count == signal co
     try {
       const paid = await paidHtml(app.base, id);
       // negative-finding count == signal count (1 copyright signal -> 1 card).
-      assert.equal((paid.match(/<div class="finding-card">/g) ?? []).length, 1, `${id}: one card per signal`);
+      // grouping: count the FLAT grouped list only (the hidden per-category
+      // clone-source section re-renders the same card for the Phase 2C view).
+      assert.equal((flatRegion(paid).match(/<div class="finding-card">/g) ?? []).length, 1, `${id}: grouping: one flat-list card per signal`);
       assert.ok(paid.includes('1 finding across 1 category'), `${id}: intro count consistent`);
       // What's Working ⊆ CLEAN-band.
       const working = paid.slice(paid.indexOf("What's Working"), paid.indexOf('The Actual Findings'));

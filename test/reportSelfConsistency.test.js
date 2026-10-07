@@ -128,7 +128,7 @@ function assetsCard(html) {
   return m[0];
 }
 
-test('legacy flagged row (5/53): the assets card shows the PROMOTED state — WATCH, one-liner, "6 roasts — see receipts", never "Nothing meaningful to roast here."', async () => {
+test('legacy flagged row (5/53): the assets card shows the PROMOTED state — WATCH, one-liner, "1 roast — see receipts", never "Nothing meaningful to roast here."', async () => {
   const dbPath = tmpDb();
   await insertScan(dbPath, { id: LEGACY_ID, breakdown: legacyBreakdown() });
   const app = startApp(dbPath);
@@ -137,7 +137,11 @@ test('legacy flagged row (5/53): the assets card shows the PROMOTED state — WA
     const card = assetsCard(html);
     assert.ok(card.includes('cat-watch'), `assets card promoted to cat-watch (got: ${card.match(/cat-card [^"]*/)?.[0]})`);
     assert.ok(card.includes('<span class="cat-state">WATCH</span>'), 'assets card state pill shows WATCH');
-    assert.ok(card.includes('6 roasts — see receipts'), 'assets card keeps the REAL roasts count');
+    // grouping: the 5-of-53 aggregate + its 5 img[N] detail lines are ONE
+    // problem (Phase A within-category collapse, src/groupFindings.js) — the
+    // assets card counts 1 grouped roast, not 6 raw lines; the 5 detail lines
+    // ride as receipts under the single card (still byte-identical evidence).
+    assert.ok(card.includes('1 roast — see receipts'), 'grouping: assets card shows ONE grouped roast (aggregate + 5 detail receipts)');
     assert.ok(card.includes('Generic images where real, specific photos of your work would say more.'),
       'assets card shows the category one-liner (follows the promoted state)');
     assert.ok(!card.includes('Nothing meaningful to roast here.'),

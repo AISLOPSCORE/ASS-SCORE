@@ -161,7 +161,9 @@ test('3. real negative detector -> full four-part finding with evidence', async 
   try {
     const paid = await paidHtml(app.base, 'ia-neg-0001');
     // Exactly one negative finding -> exactly one four-part finding.
-    assert.equal((paid.match(/<p class="ins-roast">/g) ?? []).length, 1, 'one roast layer for the one negative finding');
+    // grouping: count the FLAT grouped list only (the hidden per-category
+    // clone-source sections re-render the same card for the Phase 2C views).
+    assert.equal((flatRegion(paid).match(/<p class="ins-roast">/g) ?? []).length, 1, 'grouping: one flat-list roast layer for the one negative finding');
     assert.ok(paid.includes('Why it matters:'), 'WHY IT MATTERS label present');
     assert.ok(paid.includes('How to fix it:'), 'HOW TO FIX IT label present');
     assert.ok(paid.includes('Show the receipts:'), 'THE RECEIPTS label present');
@@ -236,7 +238,8 @@ test('5. multiple negative categories -> only actual problems counted', async ()
     assert.ok(paid.includes('4 findings across 3 categories — every roast points at the receipts below.'),
       'summary counts only actual negative findings');
     assert.ok(!paid.includes('6 findings across 5 categories'), 'compliments are never counted as findings');
-    assert.equal((paid.match(/<p class="ins-roast">/g) ?? []).length, 4, 'four negative roast layers rendered');
+    assert.equal((flatRegion(paid).match(/<p class="ins-roast">/g) ?? []).length, 4,
+      'grouping: four flat-list roast layers rendered (the hidden per-category clone-source sections re-render them for the Phase 2C views)');
   } finally {
     app.server.close();
   }
@@ -497,6 +500,18 @@ function cardRegions(html) {
   return regions;
 }
 
+/** grouping: THE ACTUAL FINDINGS = the FLAT grouped list (the owner-facing
+ * cards, `.actual-findings-flat`) + the hidden per-category clone-source
+ * sections (`<div class="cat-sources" hidden>`, Phase 2C — the focused views
+ * clone them, so the same card is re-rendered there). Card-count pins must
+ * scope to the flat list: the hidden sections are not a second row of cards. */
+function flatRegion(html) {
+  const a = html.indexOf('<div class="actual-findings-flat">');
+  const b = html.indexOf('<div class="cat-sources" hidden>');
+  assert.ok(a >= 0 && b > a, 'flat grouped list present before the hidden category sections');
+  return html.slice(a, b);
+}
+
 test('P2B.1: every negative finding renders as its own diagnostic card — count equals the fixture negatives, order matches input order, four labeled zones with verbatim receipts', async () => {
   const dbPath = tmpDb();
   await insertScan(dbPath, { id: 'p2b-sloppy', score: 89, breakdown: SLOPPY_BREAKDOWN_89 });
@@ -504,14 +519,16 @@ test('P2B.1: every negative finding renders as its own diagnostic card — count
   try {
     const html = await paidHtml(app.base, 'p2b-sloppy');
     const expected = negativeFindings(SLOPPY_BREAKDOWN_89);
-    const regions = cardRegions(html);
+    // grouping: count cards in the FLAT grouped list only — the hidden
+    // per-category clone-source sections re-render the same cards (Phase 2C).
+    const regions = cardRegions(flatRegion(html));
 
     // Count equals the fixture's negative finding list.
     assert.equal(regions.length, expected.length,
-      `one card per negative finding (expected ${expected.length}, got ${regions.length})`);
+      `grouping: one flat-list card per negative finding (expected ${expected.length}, got ${regions.length})`);
     // The roast layer count mirrors the card count (one roast per card).
-    assert.equal((html.match(/<p class="ins-roast">/g) ?? []).length, expected.length,
-      'one roast layer per negative finding');
+    assert.equal((flatRegion(html).match(/<p class="ins-roast">/g) ?? []).length, expected.length,
+      'grouping: one flat-list roast layer per negative finding');
 
     // Order matches the input order, and every card carries the four labeled
     // zones with its own verbatim receipt text.
@@ -576,7 +593,9 @@ test('P2B.2: neutral metric measurements are NOT cards — a metric-only categor
     const expected = negativeFindings(P2B_METRIC_BREAKDOWN);
     assert.equal(expected.length, 1, 'fixture has exactly one negative (filler)');
     // Exactly one card — the metric-only category is NOT a finding card.
-    assert.equal(cardRegions(html).length, 1, 'only the real negative becomes a card');
+    // grouping: count the FLAT grouped list only (the hidden per-category
+    // clone-source sections re-render the same card for the Phase 2C views).
+    assert.equal(cardRegions(flatRegion(html)).length, 1, 'grouping: one flat-list card — only the real negative becomes a card');
     // The metric measurements render as a neutral Measurements block, not a card.
     const infoSection = html.slice(html.indexOf('id="cat-infodensity"'), html.indexOf('id="cat-repetitive"'));
     assert.ok(infoSection.includes('Measurements:'), 'metric-only category shows Measurements');
@@ -594,7 +613,9 @@ test('P2B.3: clean report has zero finding-card elements (no cards for complimen
   const app = startApp(dbPath);
   try {
     const html = await paidHtml(app.base, 'p2b-clean');
-    assert.equal(cardRegions(html).length, 0, 'clean report has zero finding cards');
+    // grouping: a clean report has zero cards in the flat list (and therefore
+    // in every per-category section) — zero is zero either way.
+    assert.equal(cardRegions(flatRegion(html)).length, 0, 'clean report has zero finding cards');
     assert.equal((html.match(/<p class="ins-roast">/g) ?? []).length, 0, 'no roast layers on a clean report');
     assert.ok(!html.includes('How to fix it:'), 'no fix zone on a clean report');
     assert.ok(!html.includes('class="finding-card"'), 'no finding-card container markup at all');
