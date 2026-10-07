@@ -95,9 +95,13 @@ test('fix-first: each item renders a fix-problem headline naming the finding, tr
     // The fallback rule: the headline must never be the roast when the
     // finding line exists.
     assert.ok(!problem[1].includes('fallback roast'), 'headline uses the finding, not the roast');
-    // The item still links to its real finding anchor.
-    assert.ok(fixSection.includes('href="#cat-repetitive"'), 'fix item links to the category anchor');
-    assert.ok(html.includes('id="cat-repetitive"'), 'the anchor exists in the report');
+    // The item still links to its real finding — the deep-link machinery
+    // (owner 2026-10-07) points at the finding card INSIDE its category view
+    // (id="finding-<cat>-<n>"), never at the removed flat list; the target id
+    // and the category anchor both exist in the report.
+    assert.ok(fixSection.includes('href="#finding-repetitive-1"'), 'fix item deep-links to its finding card');
+    assert.ok(html.includes('id="finding-repetitive-1"'), 'the deep-link target id exists in the report');
+    assert.ok(html.includes('id="cat-repetitive"'), 'the category anchor exists in the report');
   } finally {
     app.server.close();
   }

@@ -619,6 +619,17 @@ export function renderHtmlReport(scan) {
   // Categories that still have at least one card in the grouped flat set
   // (used by the Page panel's per-category counts — GROUPED set, owner rule).
   const negativeCats = classified.filter((g) => g.groups.length > 0);
+  // The visible THE ACTUAL FINDINGS summary line (owner 2026-10-07): counts
+  // come from the GROUPED flat set — N = negativeTotal (grouped problems,
+  // ONE PROBLEM = ONE FINDING), M = flatCatCount (distinct primary
+  // categories). Compliments and metric measurements are never findings.
+  // The trailing clause points at the category views — the receipts no
+  // longer render below the intro (the flat list is gone), so "below" would
+  // be a lie (report-trust defect class).
+  const flatCatCount = new Set(flatGroups.map((g) => g.key)).size;
+  const findingsIntro = negativeTotal === 0
+    ? 'No findings this scan — nothing to roast, and nothing to hide.'
+    : `${negativeTotal} finding${negativeTotal === 1 ? '' : 's'} across ${flatCatCount} categor${flatCatCount === 1 ? 'y' : 'ies'} — every roast points at the receipts inside its category view.`;
 
   // --- 1. THE VERDICT --------------------------------------------------------
   const verdictSection = `
@@ -757,11 +768,12 @@ export function renderHtmlReport(scan) {
       return r.catKey ? `${CATEGORY_LABELS[r.catKey] ?? r.catKey} — ${t}` : t;
     })
     .filter((x) => x !== '');
-  // (The FLAT grouped list — global ordinals "Finding 1, 2, 3…" + the
-  // "N findings across M categories" intro — was REMOVED with the dashboard's
-  // "The Actual Findings" section, owner 2026-10-07. `flatGroups` remains the
-  // fix-first ranking source and the finding totals; per-category cards below
-  // are the canonical findings homes inside the focused category views.)
+    // (The FLAT card list — global ordinals "Finding 1, 2, 3…" — was REMOVED
+  // with the dashboard's "The Actual Findings" section, owner 2026-10-07.
+  // What remains visible is the h2 + the "N findings across M categories"
+  // count line (restored 2026-10-07); the per-category cards below are the
+  // canonical findings homes inside the focused category views. `flatGroups`
+  // stays the fix-first ranking source + finding totals.)
   const findingGroups = classified.map((g) => {
     const label = CATEGORY_LABELS[g.key] ?? g.key;
     if (!(g.negativeCount > 0 || g.metrics.length > 0)) {
@@ -818,14 +830,17 @@ export function renderHtmlReport(scan) {
     ${metricsBlock}
   </section>`;
   }).join('');
-  // The visible "The Actual Findings" h2/intro/flat list is REMOVED (owner
-  // 2026-10-07 — findings live in the per-category focused views). What stays
-  // in the dashboard is the hidden Phase 2C clone-source block: it carries
+  // The visible ACTUAL FINDINGS summary (owner 2026-10-07): the h2 + ONE
+  // honest count line sit in the dashboard where the removed flat section
+  // was. No flat card list is re-rendered — just the heading + the count
+  // line. Beneath it stays the hidden Phase 2C clone-source block: it carries
   // the id="cat-<key>" anchors (breakdown cards, no-JS hash scroll) and the
   // full per-category finding cards — including the id="finding-<cat>-<n>"
   // deep-link targets the fix-first "See the full finding" links use. It must
   // remain hidden; the focused views clone from it on open.
   const catSourcesSection = `
+  <h2>The Actual Findings</h2>
+  <p>${findingsIntro}</p>
   <div class="cat-sources" hidden>
   ${findingGroups}
   </div>`;

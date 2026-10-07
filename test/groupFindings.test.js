@@ -378,27 +378,41 @@ test('surfaces agree: intro/ordinals/cards, breakdown counts, fix-first length a
   const scan = freshScan();
   const html = renderHtmlReport(scan);
   const flat = html.slice(html.indexOf('<div class="cat-sources" hidden>'), html.indexOf('<section class="cat-view"', html.indexOf('<div class="cat-sources" hidden>')));
-  // THE ACTUAL FINDINGS: the flat list = 3 grouped problems (sponsor section,
-  // nav phrase, page pair) — the flat intro counts THOSE, not the raw lines.
-  // "across 2 categories": the flat set spans MESSAGING (sponsor card) +
-  // REPETITION (nav + page pair); STRUCTURE's cards all merged into the
-  // sponsor card, so STRUCTURE has no flat card of its own (design rule: the
-  // intro's M uses the GROUPED flat set, see DESIGN.md "Fork / decisions").
+  // THE ACTUAL FINDINGS: the visible intro counts the GROUPED FLAT set — 3
+  // grouped problems (sponsor section, nav phrase, page pair) — NOT the raw
+  // lines. "across 2 categories": the flat set spans MESSAGING (sponsor
+  // card) + REPETITION (nav + page pair); STRUCTURE's cards all merged into
+  // the sponsor card, so STRUCTURE has no flat card of its own (design rule:
+  // the intro's M uses the GROUPED flat set, see DESIGN.md "Fork /
+  // decisions"). The dashboard no longer renders a flat card list: the
+  // canonical cards live inside the hidden cat-sources block (per-category
+  // within-category groups, no cross-category merge) — MESSAGING 1 +
+  // STRUCTURE 1 + REPETITION 3 = 5 cards. Per-category totals can
+  // legitimately exceed the flat total: the flat set cross-merges via
+  // Phase B, the per-category cards never do.
+  assert.ok(html.includes('3 findings across 2 categories — every roast points at the receipts inside its category view.'),
+    'visible intro counts the grouped flat set and points at the category views');
   assert.ok(flat.includes('id="finding-'), 'cat-sources cards carry deep-link finding ids');
-  assert.equal((flat.match(/<div class="finding-card"/g) ?? []).length, 3, 'exactly 3 flat cards');
+  assert.equal((flat.match(/<div class="finding-card"/g) ?? []).length, 5,
+    'cat-sources renders 5 per-category cards (MESSAGING 1 + STRUCTURE 1 + REPETITION 3)');
   assert.ok(flat.includes('Finding 1') && flat.includes('Finding 2') && flat.includes('Finding 3'),
-    'global ordinals over the grouped set');
-  // The sponsor card: primary evidence + category-labeled member receipts.
-  const sponsorCard = flat.slice(flat.indexOf('<div class="finding-card">'), flat.indexOf('<div class="finding-card">', flat.indexOf('<div class="finding-card">') + 1));
+    'per-category ordinals render on the cat-sources cards (REPETITION numbers 1-3)');
+  // The MESSAGING card: primary evidence + the within-category receipts that
+  // share its component (Phase B same-src collapse, per-category view).
+  const sponsorCard = flat.slice(flat.indexOf('<div class="finding-card"'), flat.indexOf('<div class="finding-card"', flat.indexOf('<div class="finding-card"') + 1));
   assert.ok(sponsorCard.includes('2× repeated block: &quot;Orbitype: The Go-to-Market Runtime&quot;'),
-    'sponsor card primary evidence is the first member\'s line');
-  assert.ok(sponsorCard.includes('STRUCTURE — repeated sentence openings: 2× &quot;Install complete systems…&quot;'),
-    'STRUCTURE member evidence rides labeled with its category');
-  assert.ok(sponsorCard.includes('REPETITION — repeated phrase in the page text: 4× &quot;Sponsors Premium Partners View all Sponsor O Orbitype: The Go-to-Market Runtime…&quot;'),
-    'REPETITION member evidence rides labeled with its category');
+    'MESSAGING card primary evidence is the first member\'s line');
+  assert.ok(sponsorCard.includes('2× repeated block: &quot;Zinn Hub Freelance Marketplace&quot;'),
+    'Zinn Hub sibling rides as a same-category receipt');
+  assert.ok(!sponsorCard.includes('STRUCTURE —'), 'cross-category members do not leak into the per-category card');
   // The card's receipt drawer shows the real line count: 1 primary evidence
-  // line + 6 member receipts.
-  assert.ok(sponsorCard.includes('7 lines of evidence'), 'sponsor card receipts drawer counts primary + member evidence');
+  // line + 2 same-category receipts.
+  assert.ok(sponsorCard.includes('3 lines of evidence'), 'MESSAGING card receipts drawer counts primary + member evidence');
+  // Every fix-first deep link resolves to a real cat-sources card id.
+  const fixRegion = html.slice(html.indexOf('What To Fix First'), html.indexOf('Your Breakdown'));
+  for (const m of fixRegion.matchAll(/href="#(finding-[a-z0-9-]+)"/g)) {
+    assert.ok(html.includes(`id="${m[1]}"`), `fix-first deep link #${m[1]} resolves to an existing card id`);
+  }
   // YOUR BREAKDOWN: per-category GROUPED counts (within-category merges only).
   assert.ok(html.includes('1 roast — see receipts'), 'MESSAGING + STRUCTURE breakdown cards each show 1 grouped roast');
   assert.ok(html.includes('3 roasts — see receipts'), 'REPETITION breakdown card shows its 3 within-category groups');

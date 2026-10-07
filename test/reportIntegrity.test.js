@@ -217,8 +217,8 @@ test('Q3/report: owner scan — ONE finding card for the copyright signal; roast
       // clone-source section re-renders the same card for the Phase 2C view.
       assert.equal((flatRegion(paid).match(/<div class="finding-card"/g) ?? []).length, 1,
         `${id}: grouping: exactly ONE flat-list finding card for ONE copyright signal`);
-      assert.ok(paid.includes('1 finding across 1 category'),
-        `${id}: summary intro counts the single signal`);
+      assert.ok(paid.includes('1 finding across 1 category — every roast points at the receipts inside its category view.'),
+        `${id}: summary intro counts the single signal and points at the category views`);
       assert.ok(!paid.includes('2 findings'), `${id}: no double-counted "2 findings" anywhere`);
       const verdictSlice = paid.slice(paid.indexOf('The Verdict'), paid.indexOf('Page That Needs'));
       assert.ok(verdictSlice.includes('just 1 finding to tidy up'), `${id}: verdict counts one finding`);
@@ -383,7 +383,9 @@ test('Q5/consistency: report-level sweep — negative-finding count == signal co
       // negative-finding count == signal count (1 copyright signal -> 1 card).
       // grouping: count the FLAT grouped list only (the hidden per-category
       // clone-source section re-renders the same card for the Phase 2C view).
-      assert.equal((flatRegion(paid).match(/<div class="finding-card"/g) ?? []).length, 1, `${id}: grouping: one flat-list card per signal`);
+      assert.equal((flatRegion(paid).match(/<div class="finding-card"/g) ?? []).length, 1, `${id}: grouping: one per-category card per signal`);
+      assert.ok(paid.includes('1 finding across 1 category — every roast points at the receipts inside its category view.'),
+        `${id}: intro count consistent (grouped set, pointing at the category views)`);
       // What's Working ⊆ CLEAN-band.
       const working = paid.slice(paid.indexOf("What's Working"), paid.indexOf('<div class="cat-sources" hidden>'));
       for (const banned of ['ORIGINALITY — CLEAN:', 'MESSAGING — CLEAN:']) {
