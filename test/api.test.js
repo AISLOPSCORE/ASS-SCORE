@@ -174,7 +174,7 @@ test('GET /api/v1/scans/:id returns the FREE scan (JSON + teaser HTML); token un
   // FREE page shape: teaser samples + $12 CTA — NOT the paid narrative report.
   assert.ok(html.includes('Free samples'), 'free page shows the teaser samples block');
   assert.ok(html.includes('Unlock the full report'), 'free page carries the $12 checkout CTA');
-  assert.ok(!html.includes('The Actual Findings'), 'full findings section never renders on the free page');
+  assert.ok(!html.includes('<div class="cat-sources" hidden>'), 'full findings section never renders on the free page');
   assert.ok(
     html.includes(
       'This tool identifies writing and design patterns commonly associated with generic or templated content. It does not detect AI authorship and is not proof that any content was AI-generated.'
@@ -188,7 +188,7 @@ test('GET /api/v1/scans/:id returns the FREE scan (JSON + teaser HTML); token un
   assert.equal(paidRes.status, 200);
   const paid = await paidRes.text();
   assert.ok(paid.includes('The Verdict') && paid.includes("What's Working") && paid.includes('Your Breakdown'), 'narrative sections present');
-  assert.ok(paid.includes('The Actual Findings'), 'findings section present');
+  assert.ok(paid.includes('<div class="cat-sources" hidden>'), 'findings section present');
   assert.ok(paid.includes('What To Fix First') && paid.includes('Final Verdict'), 'fix + verdict sections present');
   assert.ok(
     paid.includes(

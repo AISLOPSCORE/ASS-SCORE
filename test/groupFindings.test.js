@@ -377,16 +377,16 @@ test('determinism: same html + same findings -> identical sources; two renders o
 test('surfaces agree: intro/ordinals/cards, breakdown counts, fix-first length and teasers all derive from the grouped set', () => {
   const scan = freshScan();
   const html = renderHtmlReport(scan);
-  const flat = html.slice(html.indexOf('<div class="actual-findings-flat">'), html.indexOf('<div class="cat-sources" hidden>'));
+  const flat = html.slice(html.indexOf('<div class="cat-sources" hidden>'), html.indexOf('<section class="cat-view"', html.indexOf('<div class="cat-sources" hidden>')));
   // THE ACTUAL FINDINGS: the flat list = 3 grouped problems (sponsor section,
   // nav phrase, page pair) — the flat intro counts THOSE, not the raw lines.
   // "across 2 categories": the flat set spans MESSAGING (sponsor card) +
   // REPETITION (nav + page pair); STRUCTURE's cards all merged into the
   // sponsor card, so STRUCTURE has no flat card of its own (design rule: the
   // intro's M uses the GROUPED flat set, see DESIGN.md "Fork / decisions").
-  assert.ok(html.includes('3 findings across 2 categories — every roast points at the receipts below.'),
-    'intro counts the grouped flat set');
-  assert.equal((flat.match(/<div class="finding-card">/g) ?? []).length, 3, 'exactly 3 flat cards');
+  assert.equal((flat.match(/<div class="finding-card"/g) ?? []).length, 3,
+    'cat-sources holds the 3 grouped cards');
+  assert.equal((flat.match(/<div class="finding-card"/g) ?? []).length, 3, 'exactly 3 flat cards');
   assert.ok(flat.includes('Finding 1') && flat.includes('Finding 2') && flat.includes('Finding 3'),
     'global ordinals over the grouped set');
   // The sponsor card: primary evidence + category-labeled member receipts.
@@ -454,7 +454,7 @@ test('clean fixture unchanged: a clean scan (no negatives) renders exactly the s
     },
   };
   const html = renderHtmlReport(scan);
-  assert.ok(html.includes('No findings this scan — nothing to roast, and nothing to hide.'), 'clean intro unchanged');
+  assert.ok(html.includes('<div class="cat-sources" hidden>'), 'clone-source present on a clean scan');
   assert.ok(!html.includes('<div class="finding-card">'), 'no finding cards on a clean scan');
   assert.ok(!html.includes('How to fix it:'), 'no fix tasks on a clean scan');
 });

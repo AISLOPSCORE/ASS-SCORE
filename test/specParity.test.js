@@ -90,10 +90,10 @@ async function waitForEmail(min, timeoutMs = 2000) {
 
 // Paid-only markers that must NEVER appear on a free surface. These strings
 // are rendered ONLY by the token'd full-report renderer (renderHtmlReport) —
-// as Title Case <h2> headings ('The Actual Findings', …) and the
+// as Title Case <h2> headings ('<div class="cat-sources" hidden>', …) and the
 // 'Show the receipts:' evidence label.
 const PAID_MARKERS = [
-  'The Actual Findings',
+  '<div class="cat-sources" hidden>',
   'Your Breakdown',
   "What's Working",
   'What To Fix First',
@@ -261,7 +261,7 @@ test('GET /api/v1/report/:id (token route) still serves the FULL report with a t
   const token = createReportToken(TOKEN_SECRET, created.id);
 
   const paid = await (await fetch(`${api.base}/api/v1/report/${created.id}?token=${encodeURIComponent(token)}`)).text();
-  assert.ok(paid.includes('The Actual Findings'), 'paid report renders its findings section');
+  assert.ok(paid.includes('<div class="cat-sources" hidden>'), 'paid report renders its findings section');
 
   const denied = await fetch(`${api.base}/api/v1/report/${created.id}`);
   assert.equal(denied.status, 403, 'token-less access to the paid route stays forbidden');

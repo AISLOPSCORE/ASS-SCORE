@@ -646,7 +646,7 @@ test('admin report: share-card result page links "View full report" with ?pw=, a
     const report = await viaLink.text();
     // Core full-report sections (owner IA — the same sequence the paid report asserts).
     for (const marker of ['The Verdict', 'Page That Needs The Most Work', 'What To Fix First',
-      'Your Breakdown', "What's Working", 'The Actual Findings', 'Final Verdict', 'Methodology']) {
+      'Your Breakdown', "What's Working", '<div class="cat-sources" hidden>', 'Final Verdict', 'Methodology']) {
       assert.ok(report.includes(marker), `full report contains ${marker}`);
     }
     // Three-layer finding structure: THE ROAST / WHY IT MATTERS / HOW TO FIX

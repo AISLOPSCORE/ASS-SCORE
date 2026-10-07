@@ -438,7 +438,7 @@ test('P2A.4: dashboard section hierarchy — hero → verdict → breakdown → 
     // Dashboard final cleanup (2026-09-23): the action layer (page + fix)
     // moved UP right after the verdict; findings moved to the detail position.
     const seq = ['A.S.S. Score: 89 / 100', 'The Verdict', 'Page That Needs The Most Work', 'What To Fix First',
-      'Your Breakdown', "What's Working", 'The Actual Findings', 'Final Verdict', 'Methodology'];
+      'Your Breakdown', "What's Working", '<div class="cat-sources" hidden>', 'Final Verdict', 'Methodology'];
     let prev = -1;
     for (const marker of seq) {
       const at = idx(marker);
@@ -506,9 +506,9 @@ function cardRegions(html) {
  * clone them, so the same card is re-rendered there). Card-count pins must
  * scope to the flat list: the hidden sections are not a second row of cards. */
 function flatRegion(html) {
-  const a = html.indexOf('<div class="actual-findings-flat">');
-  const b = html.indexOf('<div class="cat-sources" hidden>');
-  assert.ok(a >= 0 && b > a, 'flat grouped list present before the hidden category sections');
+  const a = html.indexOf('<div class="cat-sources" hidden>');
+  const b = html.indexOf('<section class="cat-view"', a);
+  assert.ok(a >= 0 && b > a, 'findings region present before the focused category views');
   return html.slice(a, b);
 }
 
@@ -648,7 +648,7 @@ test('P2B.4: Phase 2A assertions hold unchanged under the card redesign (hero, 7
     // moved up after the verdict, findings moved to the detail position).
     const idx = (s) => sloppy.indexOf(s);
     const seq = ['A.S.S. Score: 89 / 100', 'The Verdict', 'Page That Needs The Most Work', 'What To Fix First',
-      'Your Breakdown', "What's Working", 'The Actual Findings', 'Final Verdict', 'Methodology'];
+      'Your Breakdown', "What's Working", '<div class="cat-sources" hidden>', 'Final Verdict', 'Methodology'];
     let prev = -1;
     for (const marker of seq) {
       const at = idx(marker);
@@ -739,7 +739,7 @@ test('P2C.2: dashboard retains every existing section in order — views layer o
       // Dashboard final cleanup order: verdict → page → fix → breakdown →
       // working → findings → final → methodology.
       const seq = ['A.S.S. Score: ', 'The Verdict', 'Page That Needs The Most Work', 'What To Fix First',
-        'Your Breakdown', "What's Working", 'The Actual Findings', 'Final Verdict', 'Methodology'];
+        'Your Breakdown', "What's Working", '<div class="cat-sources" hidden>', 'Final Verdict', 'Methodology'];
       let prev = -1;
       for (const marker of seq) {
         const at = idx(marker);
@@ -776,7 +776,7 @@ test('P2C.3: Category Views reuse the existing audit content — negative (2B ca
     const fillerView = viewRegions(sloppy).find((v) => v.id === 'view-cat-filler');
     const fillerSection = sloppy.slice(sloppy.indexOf('id="cat-filler"'), sloppy.indexOf('id="cat-boilerplate"'));
     assert.ok(fillerView.html.includes('data-source="cat-filler"'), 'filler view wired to its dashboard section');
-    assert.equal((fillerSection.match(/<div class="finding-card">/g) ?? []).length, 2,
+    assert.equal((fillerSection.match(/<div class="finding-card"/g) ?? []).length, 2,
       'filler dashboard section carries the 2 negative finding cards (the two-card category)');
     assert.ok(fillerSection.includes('3× &quot;cutting-edge&quot;') && fillerSection.includes('2× &quot;seamless&quot;'),
       'filler cards keep the verbatim receipts');

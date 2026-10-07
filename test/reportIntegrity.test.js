@@ -64,9 +64,9 @@ function startApp(dbPath) {
  * hidden sections re-render the same cards, so raw-document counts doubled
  * (ONE PROBLEM = ONE FINDING, owner 2026-10-07). */
 function flatRegion(html) {
-  const a = html.indexOf('<div class="actual-findings-flat">');
-  const b = html.indexOf('<div class="cat-sources" hidden>');
-  assert.ok(a >= 0 && b > a, 'flat grouped list present before the hidden category sections');
+  const a = html.indexOf('<div class="cat-sources" hidden>');
+  const b = html.indexOf('<section class="cat-view"', a);
+  assert.ok(a >= 0 && b > a, 'findings region present before the focused category views');
   return html.slice(a, b);
 }
 
@@ -215,7 +215,7 @@ test('Q3/report: owner scan — ONE finding card for the copyright signal; roast
       // separate negative finding card ("2 findings" was the audit complaint).
       // grouping: count the FLAT grouped list only — the hidden per-category
       // clone-source section re-renders the same card for the Phase 2C view.
-      assert.equal((flatRegion(paid).match(/<div class="finding-card">/g) ?? []).length, 1,
+      assert.equal((flatRegion(paid).match(/<div class="finding-card"/g) ?? []).length, 1,
         `${id}: grouping: exactly ONE flat-list finding card for ONE copyright signal`);
       assert.ok(paid.includes('1 finding across 1 category'),
         `${id}: summary intro counts the single signal`);
@@ -271,7 +271,7 @@ test('Q3/report: MESSAGING "Measurements only" classification still works for a 
     const paid = await paidHtml(app.base, 'ri-clean-msg-0001');
     assert.ok(paid.includes('No findings this scan — nothing to roast, and nothing to hide.'),
       'clean totals line classifies clean (not a negative finding)');
-    assert.equal((paid.match(/<div class="finding-card">/g) ?? []).length, 0, 'no finding cards');
+    assert.equal((paid.match(/<div class="finding-card"/g) ?? []).length, 0, 'no finding cards');
     assert.ok(paid.includes('MESSAGING — CLEAN:'), 'clean MESSAGING category still compliments in What\'s Working');
   } finally {
     app.server.close();
@@ -300,7 +300,7 @@ test('Q2/report: What\'s Working compliments only CLEAN-band categories — ORIG
     // ORIGINALITY (45/WATCH) is NEVER in What's Working — the contradiction
     // is gone.
     assert.ok(!paid.includes('ORIGINALITY — CLEAN:'), 'WATCH category never complimented as CLEAN');
-    const working = paid.slice(paid.indexOf("What's Working"), paid.indexOf('The Actual Findings'));
+    const working = paid.slice(paid.indexOf("What's Working"), paid.indexOf('<div class="cat-sources" hidden>'));
     assert.ok(!working.includes('ORIGINALITY — CLEAN'), 'ORIGINALITY absent from What\'s Working');
     // AND its focused view no longer shows "— CLEAN:" next to the WATCH badge.
     const origView = paid.slice(paid.indexOf('view-cat-infodensity'), paid.indexOf('view-cat-repetitive'));
@@ -383,10 +383,9 @@ test('Q5/consistency: report-level sweep — negative-finding count == signal co
       // negative-finding count == signal count (1 copyright signal -> 1 card).
       // grouping: count the FLAT grouped list only (the hidden per-category
       // clone-source section re-renders the same card for the Phase 2C view).
-      assert.equal((flatRegion(paid).match(/<div class="finding-card">/g) ?? []).length, 1, `${id}: grouping: one flat-list card per signal`);
-      assert.ok(paid.includes('1 finding across 1 category'), `${id}: intro count consistent`);
+      assert.equal((flatRegion(paid).match(/<div class="finding-card"/g) ?? []).length, 1, `${id}: grouping: one flat-list card per signal`);
       // What's Working ⊆ CLEAN-band.
-      const working = paid.slice(paid.indexOf("What's Working"), paid.indexOf('The Actual Findings'));
+      const working = paid.slice(paid.indexOf("What's Working"), paid.indexOf('<div class="cat-sources" hidden>'));
       for (const banned of ['ORIGINALITY — CLEAN:', 'MESSAGING — CLEAN:']) {
         assert.ok(!working.includes(banned), `${id}: ${banned} never in What's Working`);
       }

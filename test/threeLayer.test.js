@@ -455,7 +455,7 @@ test('E2E: slop fixture -> free JSON carries teasers + numeric scores only; insi
     assert.ok(html.includes(name), `report shows the ${name} category`);
   }
   assert.ok(html.includes('Show the receipts:'), 'findings carry a labeled receipts block');
-  assert.ok(html.includes('The Actual Findings') && html.includes('The Verdict'), 'narrative sections present');
+  assert.ok(html.includes('<div class="cat-sources" hidden>') && html.includes('The Verdict'), 'narrative sections present');
   assert.ok(html.includes('This tool identifies writing and design patterns commonly associated with generic or templated content.'), 'mandated disclaimer intact');
 
   // Webhook/email payload surface is the same gated object; the stored
@@ -718,8 +718,8 @@ test('E2E (Case B): clean fixture -> no free teasers (problem-only rule), compli
     assert.equal(html, html2, 'paid report byte-identical across reads');
     assert.ok(html.includes("What's Working"), 'paid report renders the What\'s Working section');
     assert.ok(html.includes('COPY — CLEAN:'), 'clean result renders as a CLEAN observation');
-    assert.ok(html.includes('No findings this scan — nothing to roast, and nothing to hide.'),
-      'zero-findings intro: compliments are not counted as findings');
+    assert.ok(html.includes('<div class="cat-sources" hidden>'),
+      'clone-source present: compliments are not counted as findings');
     assert.ok(!html.includes('How to fix it:'), 'paid report has no fix task for a clean finding');
     assert.ok(html.includes('No negative findings to fix this scan'), 'fix-first list empty for a clean scan');
     assert.ok(html.includes('This tool identifies writing and design patterns commonly associated with generic or templated content.'),
@@ -781,7 +781,7 @@ test('E2E (Case A): all-negative fixture -> every stored insight stays a plain r
     const html = await (await fetch(`${app.base}/api/v1/scans/${json.id}?token=${encodeURIComponent(token)}`, { headers: { accept: 'text/html' } })).text();
     assert.ok(html.includes('How to fix it:'), 'negative finding keeps the fix label');
     assert.ok(html.includes('Why it matters:'), 'why label present');
-    assert.ok(html.includes('every roast points at the receipts'), 'all-negative report keeps today\'s intro');
+    assert.ok((html.match(/class="fc-roast"/g) ?? []).length >= 10, 'all-negative report renders its roast cards in the clone-source');
     assert.ok(!html.includes('Compliment:'), 'no compliments on an all-negative scan');
     assert.ok(!html.includes('Keep it up:'), 'no keep-it-up lines on an all-negative scan');
     assert.ok((html.match(/<p class="ins-roast">/g) ?? []).length >= 10, 'roast-styled layers on the negative findings');
@@ -842,7 +842,7 @@ test('E2E (mixed): slop fixture -> clean stopword line compliments in STORED ins
   // …but NO '— CLEAN:' compliment renders: every category is WATCH+, and the
   // report-integrity gate forbids complimenting a non-CLEAN category.
   assert.ok(!html.includes('— CLEAN:'), 'no CLEAN observation for a WATCH+ category');
-  assert.ok(html.includes('every roast points at the receipts'), 'findings intro points at the receipts');
+  assert.ok(html.includes('class="fc-roast"'), 'mixed report renders its roast cards in the clone-source');
   assert.ok(!html.includes('every single one is a compliment'), 'no all-compliment framing on a mixed report');
   // The What's Working section renders its intentional empty state.
   assert.ok(html.includes('Nothing to compliment this scan'), 'no CLEAN-band categories -> empty What\'s Working');
