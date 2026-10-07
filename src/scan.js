@@ -110,9 +110,16 @@ export async function runScan({ db, fetcher, url, branding = null, businessName 
     clearTimeout(abortTimer);
     return { ok: false, status: 422, json: { error: { code: 'parse_failed', message: 'Could not parse the HTML response' } } };
   }
+  // Zero-text page — the JS-only-shell case. Owner-approved copy (2026-10-07):
+  // the message reads as THE FINDING ("this site renders via JavaScript"), NOT
+  // a scan failure, so a JS-only site no longer looks broken to the user. The
+  // code/status stay parse_failed/422 (tests + consumers depend on them), and
+  // this stays a NON-gate failure (it never matched the D2 'Target is not an
+  // HTML page' prefix in src/routes/scan.js) — the request keeps its quota
+  // slot, exactly as before.
   if (!text.text || text.words.length === 0) {
     clearTimeout(abortTimer);
-    return { ok: false, status: 422, json: { error: { code: 'parse_failed', message: 'The page contained no extractable text' } } };
+    return { ok: false, status: 422, json: { error: { code: 'parse_failed', message: 'This site renders all content with JavaScript, so nothing readable is served to search engines or scanners without a browser. Not a scan failure — that IS the finding.' } } };
   }
 
   // --- readable variant (owner-approved Option B, 2026-10-07) -----------------
