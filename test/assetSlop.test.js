@@ -50,6 +50,35 @@ test('assets: no <img> tags -> score 0, empty findings', () => {
   assert.deepEqual(analyzeAssets(''), { score: 0, findings: [] }, 'empty html defensive');
 });
 
+test('assets: PARTIAL hit (5 of 53 placeholder filenames, owner case) emits ONLY the non-zero aggregate + details — never zero-sibling lines', () => {
+  // publishyoursaas.com repro (owner defect 2026-10-07): 53 images, 5 with
+  // placeholder/generic filenames, 0 stock-CDN, 0 bad alt. Score stays
+  // round(100 * 0.25 * 5/53) = 2 — the score is count-derived, independent of
+  // which lines are emitted.
+  const flagged = Array.from({ length: 5 }, (_, i) =>
+    img(`/assets/image${i + 1}.jpg`, { alt: `the team member ${i + 1}` }));
+  const clean = Array.from({ length: 48 }, (_, i) =>
+    img(`/assets/team-${String(i + 1).padStart(4, '0')}.jpg`, { alt: `the product ${i + 1}` }));
+  const r = analyzeAssets(page(flagged.join('') + clean.join('')));
+  assert.equal(r.score, 2, 'round(100 * 0.25 * 5/53) = 2');
+  assert.equal(r.findings.length, 1 + 5, '1 aggregate line + 5 detail lines');
+  assert.match(r.findings[0], /^5 of 53 images with placeholder\/generic filenames$/);
+  for (let i = 1; i <= 5; i += 1) {
+    assert.ok(r.findings.some((f) => f.includes(`generic filename "image${i}"`)), `detail for image${i}`);
+  }
+  // The contradiction source is gone: no "0 of 53 …" zero siblings at all.
+  assert.equal(r.findings.filter((f) => /^0 of \d+ images /.test(f)).length, 0,
+    `zero-sibling aggregates must not exist on a flagged page: ${r.findings.join(' | ')}`);
+  assert.ok(!r.findings.some((f) => f.includes('come from stock photo sites')), 'no stock aggregate line emitted');
+  assert.ok(!r.findings.some((f) => f.includes('missing or generic alt text')), 'no alt aggregate line emitted');
+  // And the all-clean path is untouched: same page, no flagged filenames ->
+  // the single combined "0 of N images look generic or placeholder" line.
+  const allClean = analyzeAssets(page(clean.join('')));
+  assert.equal(allClean.score, 0);
+  assert.equal(allClean.findings.length, 1);
+  assert.match(allClean.findings[0], /0 of 48 images look generic or placeholder/);
+});
+
 test('assets: every configured stock CDN origin is detected (config-driven, no code change)', () => {
   assert.ok(STOCK_IMAGE_HOSTS.length >= 10, `stock list has ${STOCK_IMAGE_HOSTS.length} origins`);
   for (const origin of STOCK_IMAGE_HOSTS) {
@@ -93,7 +122,15 @@ test('assets: placeholder/generic filenames are flagged (filename stem, any src 
   ].map((f) => img(`https://cdn.ourbrand.com/${f}`, { alt: 'real alt' })).join(''));
   const r = analyzeAssets(html);
   assert.equal(r.score, 25, 'all 8/8 filenames flagged -> 0.25 * 100');
-  assert.match(r.findings[1], /^8 of 8 images with placeholder\/generic filenames/);
+  // Emission rule (report-contradiction fix 2026-10-07): the ONLY emitted
+  // aggregate is the non-zero filename line — no zero-sibling "0 of 8 …" stock
+  // or alt lines (so a report can never compliment a dimension it flags).
+  assert.equal(r.findings.length, 1 + 8, '1 aggregate line + 8 detail lines');
+  assert.match(r.findings[0], /^8 of 8 images with placeholder\/generic filenames/);
+  assert.ok(!r.findings.some((f) => /^0 of \d+ images come from stock photo sites$/.test(f)),
+    'no zero-sibling stock aggregate on a filename-flagged page');
+  assert.ok(!r.findings.some((f) => /^0 of \d+ images with missing or generic alt text$/.test(f)),
+    'no zero-sibling alt aggregate on a filename-flagged page');
   for (const f of ['image1', 'photo2', 'placeholder', 'dummy', 'logo', 'spacer', '1x1', 'blank']) {
     assert.ok(r.findings.some((x) => x.includes(`"${f}`)), `finding names ${f}: ${r.findings.join(' | ')}`);
   }
@@ -109,7 +146,13 @@ test('assets: missing / empty / generic alt text is flagged (decorative logic de
       img('https://cdn.ourbrand.com/f.jpg', { alt: 'real descriptive alt' }),
   );
   const r = analyzeAssets(html);
-  assert.match(r.findings[2], /^5 of 6 images with missing or generic alt text/);
+  // Emission rule (2026-10-07): the ONLY aggregate is the non-zero alt line —
+  // no zero-sibling "0 of 6 …" stock/filename lines on an alt-flagged page.
+  assert.match(r.findings[0], /^5 of 6 images with missing or generic alt text/);
+  assert.ok(!r.findings.some((f) => /^0 of \d+ images come from stock photo sites$/.test(f)),
+    'no zero-sibling stock aggregate on an alt-flagged page');
+  assert.ok(!r.findings.some((f) => /^0 of \d+ images with placeholder\/generic filenames$/.test(f)),
+    'no zero-sibling filename aggregate on an alt-flagged page');
   // score = round(100 * 0.25 * (5/6)) = round(20.83) = 21
   assert.equal(r.score, 21, 'round(100 * 0.25 * 5/6) = 21');
   for (const f of ['missing alt text', 'empty alt text', 'generic alt "image"', 'generic alt "photo"']) {
@@ -135,7 +178,11 @@ test('assets: findings detail cap keeps the report bounded', () => {
   // match ^photo\d+ (hyphen) so the filename ratio stays 0 -> score 75.
   assert.equal(r.score, 75);
   assert.ok(r.findings.length <= 3 + 8 * 3, `bounded findings (${r.findings.length})`);
-  assert.equal(r.findings.length, 3 + 8 + 8, '3 summary lines + capped 8+8 details');
+  // Emission rule (2026-10-07): only the two non-zero aggregates (stock + alt)
+  // emit — the zero filename aggregate is gone, so 2 + capped 8+8 details.
+  assert.equal(r.findings.length, 2 + 8 + 8, '2 non-zero summary lines + capped 8+8 details');
+  assert.ok(!r.findings.some((f) => /^0 of \d+ images with placeholder\/generic filenames$/.test(f)),
+    'no zero-sibling filename aggregate when only stock+alt flag');
   assert.match(r.findings[0], /^40 of 40 images come from stock photo sites/);
 });
 

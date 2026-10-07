@@ -32,6 +32,17 @@ import * as cheerio from 'cheerio';
  * with half its images from a stock CDN scores 25. Pages with no <img> tags
  * score 0 with no findings. Deterministic: same HTML -> same result, always.
  *
+ * Emission rule (report-contradiction fix 2026-10-07): when ANY signal fires,
+ * ONLY the aggregate lines whose count is non-zero are emitted (plus the
+ * per-signal detail lines). A page with 5/53 placeholder filenames and zero
+ * stock/alt hits therefore reports "5 of 53 images with placeholder/generic
+ * filenames" WITHOUT the sibling "0 of 53 images come from stock photo sites"
+ * / "0 of 53 images with missing or generic alt text" zero lines — a report
+ * must never compliment ("0 of N …") a dimension in the same breath it flags
+ * the category. The all-clean case is unchanged: all three counts zero ->
+ * the single line "0 of N images look generic or placeholder". The score is
+ * computed from the counts, so it is independent of which lines are emitted.
+ *
  * Wording rule: pattern-evidence only ("stock/placeholder CDN", "generic
  * filename", "missing/generic alt") — never an assertion about how an image
  * was produced. stockImageHosts is the editable list (add/remove origins with
@@ -166,9 +177,13 @@ export function analyzeAssets(html = '') {
     findings.push(`0 of ${total} images look generic or placeholder`);
     return { score, findings };
   }
-  findings.push(`${stockCount} of ${total} images come from stock photo sites`);
-  findings.push(`${filenameCount} of ${total} images with placeholder/generic filenames`);
-  findings.push(`${altCount} of ${total} images with missing or generic alt text`);
+  // Emission rule (report-contradiction fix 2026-10-07): emit ONLY the
+  // aggregate lines whose count is > 0 — a flagged page's findings must never
+  // carry zero-sibling "0 of N …" lines that read as compliments next to a
+  // real finding. All-clean pages keep the single combined line above.
+  if (stockCount > 0) findings.push(`${stockCount} of ${total} images come from stock photo sites`);
+  if (filenameCount > 0) findings.push(`${filenameCount} of ${total} images with placeholder/generic filenames`);
+  if (altCount > 0) findings.push(`${altCount} of ${total} images with missing or generic alt text`);
   findings.push(...stockDetail, ...fileDetail, ...altDetail);
 
   return { score, findings };
