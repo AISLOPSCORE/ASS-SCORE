@@ -326,14 +326,19 @@ test('GATE1 icon+caption: "fast in 0 1s" reads "⚡ Fast in 0.1s" — emoji + de
   assert.equal(r.fixedComposite, r.plainComposite);
 });
 
-test('GATE1 nav/link+button (word-merge boundary): "sign up nowfree forever" reads "Sign up now Free forever"', () => {
+test('GATE1 nav/link+button (word-merge boundary): "Sign up nowFree forever" reads "Sign up now Free forever"', () => {
   const r = runBoth(NAV_CTA);
-  // The analysis corpus MERGES the boundary into "upFree" (no punctuation to
-  // separate it), so the plain receipt is still garbage after normalization.
+  // The ANALYSIS text corpus MERGES the boundary into "upFree" (no punctuation
+  // to separate it) — still asserted below — but the SENTENCE corpus is now
+  // BOUNDARY-SPACED (report-trust fix 2026-10-07: extractText.sentences derives
+  // from joinWithBoundarySpaces so sentence counts are honest), so the plain
+  // receipt quotes the spaced normalized phrase "sign up now free forever" —
+  // the word-merge garble survives in the paragraph-based receipts
+  // ("sign up nowfree forever.") and in text.text.
   assert.ok(r.text.text.includes('Sign up nowFree forever'), 'fixture must have the word-merge concat form');
-  assert.ok(r.plain.crossPage.findings.some((f) => f.includes('"sign up nowfree forever"')), 'plain path keeps the word-merge garble');
+  assert.ok(r.plain.crossPage.findings.some((f) => f.includes('"sign up now free forever"')), 'plain path quotes the boundary-spaced sentence corpus');
   assert.ok(
-    r.fixed.crossPage.findings.some((f) => f === 'repeated phrase in the page text: 3× "Sign up now Free forever" — in 3 paragraphs'),
+    r.fixed.crossPage.findings.some((f) => f === 'repeated phrase in the page text: 3× "Sign up now Free forever"'),
     JSON.stringify(r.fixed.crossPage.findings),
   );
   assert.ok(r.fixed.repetitive.findings.some((f) => f === 'near-identical sentences: 3× "Sign up now Free forever."'), JSON.stringify(r.fixed.repetitive.findings));
@@ -342,11 +347,17 @@ test('GATE1 nav/link+button (word-merge boundary): "sign up nowfree forever" rea
   assert.equal(r.fixedComposite, r.plainComposite);
 });
 
-test('GATE1 icon+text inside a link (SVG sibling): "get startedfree 14 day trial" reads "Get started Free 14-day trial"', () => {
+test('GATE1 icon+text inside a link (SVG sibling): "Get startedFree 14-day trial" reads "Get started Free 14-day trial"', () => {
   const r = runBoth(ICON_LINK);
-  assert.ok(r.plain.crossPage.findings.some((f) => f.includes('"get startedfree 14 day trial"')), 'plain path keeps the garble');
+  // See GATE1 nav/link+button: the plain receipt quotes the boundary-spaced
+  // sentence corpus now ("get started free 14 day trial"); the meld survives
+  // in text.text ("Get startedFree 14-day trial.") and in the paragraph
+  // receipts. The location suffix ("— in 3 paragraphs") is gone for these
+  // word-merge cases because paragraph location counting still runs on the
+  // GLUED paragraphs, whose normalization no longer contains the spaced phrase.
+  assert.ok(r.plain.crossPage.findings.some((f) => f.includes('"get started free 14 day trial"')), 'plain path quotes the boundary-spaced sentence corpus');
   assert.ok(
-    r.fixed.crossPage.findings.some((f) => f === 'repeated phrase in the page text: 3× "Get started Free 14-day trial" — in 3 paragraphs'),
+    r.fixed.crossPage.findings.some((f) => f === 'repeated phrase in the page text: 3× "Get started Free 14-day trial"'),
     JSON.stringify(r.fixed.crossPage.findings),
   );
   assert.ok(r.fixed.repetitive.findings.some((f) => f === 'repeated sentence openings: 3× "Get started Free…"'), JSON.stringify(r.fixed.repetitive.findings));
@@ -380,8 +391,11 @@ test('GATE2 all families: REPETITION/STRUCTURE/MESSAGING/COPY quotes all readabl
   );
   assert.ok(g(rep, 'near-identical sentences: 3× "12,000+ customers served.", 3× "Featured listing Get featured on the homepage for 30 days."'), JSON.stringify(rep));
   assert.ok(g(rep, 'repeated paragraphs: 3× "12,000+ customers served.", 3× "Featured listing", 3× "Get featured on the homepage for 30 days."'), JSON.stringify(rep));
-  // Plain-path STRUCTURE garble: punctuation-removal melds "12,000+customers".
-  assert.ok(g(r.plain.repetitive.findings, '12000customers served'), 'plain path must keep the melded-structure garble');
+  // Plain-path STRUCTURE garble: punctuation-removal melds "12,000+" into
+  // "12000"; the boundary-spaced sentence corpus keeps the word space, so the
+  // meld is "12000 customers served" (was "12000customers served" on the old
+  // glued sentences — report-trust fix 2026-10-07).
+  assert.ok(g(r.plain.repetitive.findings, '12000 customers served'), 'plain path must keep the melded-structure garble');
 
   // MESSAGING (copySlop hedge quotes under boilerplate).
   const bp = r.fixed.boilerplate.findings;

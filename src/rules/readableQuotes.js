@@ -22,6 +22,8 @@
  * move a pinned score.
  */
 
+import { short } from '../truncate.js';
+
 /** Whitespace-stripped form — invariant to element-boundary spacing. */
 export const stripWS = (s) => String(s ?? '').replace(/\s+/g, '');
 
@@ -32,12 +34,19 @@ export const normSentence = (s) =>
 /** Paragraph normalization: lowercase, whitespace collapsed (punctuation kept). */
 export const normParagraph = (s) => String(s).toLowerCase().replace(/\s+/g, ' ').trim();
 
-/** Truncate a quote window at `max` chars (whitespace-collapsed), appending '…'. */
+/**
+ * Truncate a quote window at `max` chars (whitespace-collapsed), appending
+ * '…'. Word-boundary cut via the shared truncation helper (report-trust fix
+ * 2026-10-07: the old `slice(0, max).trimEnd()` cut mid-word — the live paid
+ * report showed "…LinkedIn and ema…" and "…$29.99 · 3…" where a token ran
+ * past the limit; everything here is evidence quoted back to a customer, so
+ * the cut now lands at the last space at/before `max`, trailing punctuation
+ * is stripped, and only a boundaryless head is hard-sliced).
+ */
 export function quoteWindow(s, max = 80) {
   const t = String(s ?? '').replace(/\s+/g, ' ').trim();
   if (!t) return '';
-  if (t.length <= max) return t;
-  return `${t.slice(0, max).trimEnd()}…`;
+  return short(t, max);
 }
 
 /**

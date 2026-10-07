@@ -104,27 +104,12 @@ function categoryDisplayState(score, findingsCount, negativesCount) {
   return cls;
 }
 
-/**
- * Deterministic WORD-BOUNDARY truncation for receipt snippets, the fix-first
- * action line and the fix-first problem headline (owner defect 2026-10-07:
- * the old bare slice cut mid-token — "…stalled in the midd…"). When the
- * string exceeds n, the cut lands at the last space at or before n (never
- * mid-word), trailing whitespace/punctuation is stripped, and '…' is
- * appended. If the first n chars contain no space at all (one token longer
- * than the limit) the cut is a hard slice — there is no sane boundary to
- * honor — and the result is never the empty string.
- */
-export function short(s, n) {
-  const str = String(s);
-  const limit = Math.floor(Number(n));
-  if (!Number.isFinite(limit) || str.length <= limit) return str;
-  if (limit <= 0) return '…';
-  const head = str.slice(0, limit);
-  let end = head.lastIndexOf(' ');
-  if (end <= 0) return `${head}…`;
-  while (end > 1 && /[\s.,;:!?…'")\]}-]/.test(head[end - 1])) end -= 1;
-  return `${head.slice(0, end)}…`;
-}
+// Word-boundary truncation lives in src/truncate.js (report-trust fix
+// 2026-10-07) so the rules modules share ONE implementation; reportHtml
+// re-exports it for all its internal call sites and test/fixFirst.test.js.
+import { short } from './truncate.js';
+export { short };
+
 
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
@@ -395,6 +380,36 @@ export function worstPageSummary(findings = []) {
     out.push([key, lines.length]);
   }
   return out;
+}
+
+/**
+ * Headline evidence line for the "Page That Needs The Most Work" panel when
+ * the chosen worst page belongs to a flagged duplicate pair (report-trust
+ * fix 2026-10-07, DEFECT 2). Real data only: `similarity` is the raw
+ * crossPage pair fraction and `otherUrl` the actual paired URL — both come
+ * straight from the stored worstPage.dupPair (scan.js), which is itself
+ * derived solely from crossPage.pairs. The other URL renders human-short
+ * (pathname+search when parseable, word-truncated fallback); the percentage
+ * is (similarity * 100) with one decimal, exactly like the crossPage receipts
+ * ("97.8% similar"). Returns '' when there is no pair.
+ */
+function dupPairHtml(worst) {
+  const pair = worst?.dupPair;
+  if (!pair || !Number.isFinite(Number(pair.similarity))) return '';
+  const sim = Number(pair.similarity);
+  if (sim < 0 || sim > 1) return '';
+  const pct = (sim * 100).toFixed(1);
+  let label = String(pair.otherUrl ?? '');
+  if (!label) return '';
+  try {
+    const u = new URL(label);
+    const path = `${u.pathname}${u.search}`;
+    if (path && path !== '/') label = path;
+  } catch {
+    label = short(label, 60);
+  }
+  if (label === '/') label = String(pair.otherUrl);
+  return `<p class="page-duppair">This page is <strong>${esc(pct)}% identical</strong> to <a href="${esc(pair.otherUrl)}">${esc(label)}</a> — same content, different URL.</p>`;
 }
 
 /**
@@ -819,11 +834,18 @@ export function renderHtmlReport(scan) {
     const lis = per.length > 0
       ? per.map(([k, n]) => `<li><strong>${esc(CATEGORY_LABELS[k] ?? k)}</strong> — ${n} actual finding${n === 1 ? '' : 's'} on this page.</li>`).join('')
       : '<li>No actual negative findings captured for this page — its combined score comes from duplication or sub-threshold signals.</li>';
+    // Report-trust fix 2026-10-07 (DEFECT 2): when the chosen worst page is
+    // part of a flagged duplicate pair, the panel names the REAL pair
+    // evidence (other URL + similarity straight from crossPage.pairs) so the
+    // biggest problem isn't hidden under a category-findings list. The
+    // category-findings list stays beneath it unchanged.
+    const dupLine = dupPairHtml(worst);
     pageSection = `
   <h2>Page That Needs The Most Work</h2>
   <div class="page-panel" style="--pp:${negativeTotal === 0 ? '#4ade80' : '#f87171'}">
   <p class="page-head">
     <a href="${esc(worst.url)}">${esc(worst.url)}</a> — combined score ${Number(worst.score)} / 100 (higher = worse).</p>
+  ${dupLine}
   <ul class="page-list">
   ${lis}
   </ul>

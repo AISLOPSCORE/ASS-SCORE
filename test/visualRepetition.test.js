@@ -38,17 +38,21 @@ test('visual: stripe fixture — icon + seq analyzers both null (custom arrows, 
   assert.equal(analyzeClassSeqRepetition(html), null, '86x hds-link footer-links-block__item -> E2 link-list; every hds-*/BEM seq -> E6 custom-system; section-row* -> E3');
 });
 
-test('visual: stripe fixture — DESIGN 14 -> 13 (pure denominator dilution), composite stays 17', () => {
+test('visual: stripe fixture — DESIGN 14 -> 13 (pure denominator dilution), composite 17 -> 16', () => {
   const r = analyzeFixtureFingerprints('stripe');
   assert.equal(r.score, 13, '7 low boolean hits / 55 (the 10-01 49 + the two round-1 rules 3+3) = round(100*7/55)');
   const { breakdown, composite } = fixtureBreakdown('stripe', 0);
   assert.equal(breakdown.fingerprints.score, 13);
-  assert.equal(composite, 17, 'composite drift-free: DESIGN delta -1 at weight 0.10 rounds back to 17');
+  // 17 -> 16 (report-trust fix 2026-10-07): the boundary-spaced sentence
+  // corpus drops infoDensity 51 -> 31 (glued 222-word pseudo-run-ons -> 107
+  // real sentences, mean 16.6) and lifts repetitive 25 -> 44 (the honest
+  // corpus exposes the real 4x/3x/2x receipts); DESIGN stays 13.
+  assert.equal(composite, 16, 'composite moves on the honest sentence corpus (i 51->31, r 25->44)');
 });
 
 // --- 2. clean fixtures: both signals null, nothing moves --------------------
 
-test('visual: getcollectionscopilot + ass-score fixtures — both analyzers null, DESIGN stays 0, composites unchanged', () => {
+test('visual: getcollectionscopilot + ass-score fixtures — both analyzers null, DESIGN stays 0; composites 7/11 -> 5/13', () => {
   for (const name of ['getcollectionscopilot', 'ass-score']) {
     const html = loadFixture(name);
     assert.equal(analyzeIconRepetition(html), null, `${name} icon quiet`);
@@ -57,12 +61,13 @@ test('visual: getcollectionscopilot + ass-score fixtures — both analyzers null
     assert.equal(r.score, 0, `${name} DESIGN stays 0`);
     assert.deepEqual(r.findings, ['no recognizable template signs detected']);
   }
-  // Composites unchanged vs the pre-round-1 suite (repo fixture convention —
-  // utf8 reads; the spec's 8 was the latin1 measurement baseline: the
-  // fixture contains non-UTF8 bytes so infoDensity differs by encoding, NOT
-  // by these rules; DESIGN 0 and drift-free hold under both encodings).
-  assert.equal(fixtureBreakdown('getcollectionscopilot', 0).composite, 7);
-  assert.equal(fixtureBreakdown('ass-score', 0).composite, 11);
+  // DESIGN is 0 for both; the composites move ONLY on the report-trust fix
+  // 2026-10-07 sentence corpus (infoDensity 49 -> 31 for cc, 45 -> 55 for
+  // ass-score — boundary-spaced sentences: cc's 11 fake 39.6-word run-ons
+  // became 38 real 11.5-word sentences; ass-score's UI labels split into
+  // 5.0-word staccato fragments). Not a DESIGN effect.
+  assert.equal(fixtureBreakdown('getcollectionscopilot', 0).composite, 5);
+  assert.equal(fixtureBreakdown('ass-score', 0).composite, 13);
 });
 
 // --- 3. blog2posts fixture: the target receipts + DESIGN/composite pins ----
@@ -116,14 +121,17 @@ test('visual: blog2posts fixture — exact receipt strings byte-for-byte', () =>
   assert.ok(r.findings.includes(B2P_SEQ_RECEIPT), 'seq receipt matches the spec template exactly');
 });
 
-test('visual: blog2posts fixture — DESIGN 10 -> 20, composite 9 -> 10 -> 14 (crossPage=0 convention + phase-2 C1)', () => {
+test('visual: blog2posts fixture — DESIGN 10 -> 20, composite 14 -> 7 (honest sentences switch C1 off)', () => {
   const r = analyzeFixtureFingerprints('blog2posts');
   assert.equal(r.score, 20, 'hitWeight 11 (5 existing + 3 icon + 3 seq) / 55');
   const { breakdown, composite } = fixtureBreakdown('blog2posts', 0);
   assert.equal(breakdown.fingerprints.score, 20);
-  // Phase-2 C1 (owner 2026-10-05): i 50 /\ fp 20 corroborate the template
-  // stack -> +4 on the pre-round total, lifting 10.1 -> 14.1 -> 14.
-  assert.equal(composite, 14, '+10 DESIGN at weight 0.10 then +4 C1');
+  // 14 -> 7 (report-trust fix 2026-10-07): boundary-spaced sentences drop
+  // infoDensity 50 -> 30 (mean sentence length 40.0 -> 18.8 words, into the
+  // healthy 12–26 band), which switches OFF the phase-2 C1 credit (needs
+  // infoDensity >= 45) that had lifted 10.1 -> 14.1; +repetitive 1 (honest
+  // 2× opening receipt) lands at 7. DESIGN stays 20.
+  assert.equal(composite, 7, '+10 DESIGN at weight 0.10, no C1 credit (i 30 < 45)');
 });
 
 test('visual: known-path allowlist ships the measured pins (check path + FA glyph)', () => {
@@ -246,10 +254,13 @@ test('visual: spec parity — fingerprints.json stays 29 rules; the two new rule
   assert.equal(49 + VISUAL_REPETITION_MAX_WEIGHT, TOTAL_FINGERPRINT_WEIGHT);
 });
 
-test('visual: ass-score-home scorer/verdict output unchanged (DESIGN 0, composite 11)', () => {
+test('visual: ass-score-home scorer/verdict output unchanged (DESIGN 0, composite 11 -> 13)', () => {
   const { breakdown, composite } = fixtureBreakdown('ass-score', 0);
   assert.equal(breakdown.fingerprints.score, 0);
-  assert.equal(composite, 11); // SLIGHTLY ASSY on the owner 10-band scale, as before
+  // 11 -> 13 (report-trust fix 2026-10-07 — boundary-spaced sentence corpus:
+  // mean sentence length 9.2 -> 5.0 words -> infoDensity 45 -> 55). Still
+  // MOSTLY CLEAN on the owner 10-band scale.
+  assert.equal(composite, 13);
   const r = analyzeFixtureFingerprints('ass-score');
   assert.equal(r.score, 0);
   assert.deepEqual(r.findings, ['no recognizable template signs detected']);

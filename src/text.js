@@ -38,6 +38,20 @@ export function splitSentences(str) {
 
 /**
  * Extract readable text content from raw HTML.
+ *
+ * SENTENCE CORPUS (report-trust fix 2026-10-07 — owner defect: "the 60-word
+ * average sentence length is unrealistic…"): `sentences` is derived from the
+ * BOUNDARY-SPACED rendering of the same body (joinWithBoundarySpaces), so a
+ * period at the end of one element followed by the next element's text
+ * actually splits. cheerio's `.text()` glues adjacent elements with NO
+ * separator ("…lead research, LinkedIn and email" + <span>Screenshot 2…</span>
+ * extracts as "…emailScreenshot 2…"), which made splitSentences treat a whole
+ * directory listing as ONE fake 60-word run-on. Everything else — `title`,
+ * `text`, `words`, `paragraphs` — stays on the glued corpus so the
+ * word-based metrics (MATTR, stopword ratio, TTR, short-paragraph %) are
+ * byte-identical to before; only the sentence boundaries (and therefore the
+ * honest sentence counts) changed.
+ *
  * @returns {{ title: string, text: string, paragraphs: string[], sentences: string[], words: string[] }}
  */
 export function extractText(html) {
@@ -47,7 +61,8 @@ export function extractText(html) {
   const title = $('title').first().text().replace(/\s+/g, ' ').trim();
 
   const bodyEl = $('body');
-  const raw = (bodyEl.length > 0 ? bodyEl : $('html')).text();
+  const root = bodyEl.length > 0 ? bodyEl : $('html');
+  const raw = root.text();
   const text = raw.replace(/\s+/g, ' ').trim();
 
   const paragraphs = [];
@@ -60,7 +75,7 @@ export function extractText(html) {
     title,
     text,
     paragraphs,
-    sentences: splitSentences(text),
+    sentences: splitSentences(joinWithBoundarySpaces($, root[0])),
     words: tokenize(text),
     stopwords: STOPWORDS,
   };
@@ -144,6 +159,13 @@ export function extractHead(html) {
  *   2. Fallback: <body> minus <nav>, <header>, <footer>, <aside>, <form>.
  *   3. Last resort: whole <html>.
  *
+ * SENTENCE CORPUS (report-trust fix 2026-10-07): like extractText, `sentences`
+ * is derived from the BOUNDARY-SPACED rendering of the SAME selection
+ * (joinWithBoundarySpaces), so punctuation at an element boundary actually
+ * splits and sentence counts are honest. `text`, `paragraphs` and `words`
+ * stay on the glued `.text()` corpus — cross-page similarity (word 4-grams),
+ * MATTR, TTR and stopword ratios are byte-identical to before.
+ *
  * @returns {{ text: string, words: string[], paragraphs: string[], sentences: string[], stopwords: Set<string> }}
  */
 export function extractMainText(html) {
@@ -177,7 +199,7 @@ export function extractMainText(html) {
   return {
     text,
     paragraphs,
-    sentences: splitSentences(text),
+    sentences: splitSentences(joinWithBoundarySpaces($, sel[0])),
     words: tokenize(text),
     stopwords: STOPWORDS,
   };

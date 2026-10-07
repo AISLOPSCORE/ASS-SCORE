@@ -161,13 +161,16 @@ test('matrix: blog2posts — shadcn + round-1 visual-repetition receipts + recom
   // Fixture-computed "headline" proxy: full-weight composite with crossPage
   // EXPLICITLY injected as 0. The in-page repeated-phrase signal moved to the
   // crossPage rule (REPETITION card — pass 2, 2026-10-01), so this proxy,
-  // which injects crossPage=0, cannot see it: 14 is the main-equivalent value
-  // (round-1 visual repetition raised DESIGN 10 -> 20, +1.0 at weight 0.10;
-  // phase-2 C1 template-stack corroboration adds +4 on i 50 /\ fp 20, lifting
-  // the crossPage=0 proxy 10 -> 14). The REAL fixture scan scores crossPage 5
-  // (+1.5 at weight 0.30) -> composite 12; the repetitivePhrases matrix pins
+  // which injects crossPage=0, cannot see it. 14 -> 7 (report-trust fix
+  // 2026-10-07: the infoDensity sentence metric now reads BOUNDARY-SPACED
+  // sentences — blog2posts mean sentence length 40.0 -> 18.8 words, inside the
+  // 12–26 healthy band — so infoDensity 50 -> 30, which ALSO switches off the
+  // phase-2 C1 credit (needs infoDensity >= 45): 14.1 (i50 /\ fp20 + C1 +4)
+  // -> 10.1 (i30, no credit) -> 6.85 + repetitive 1 (new boundary-spaced
+  // opening receipt) -> 7). The REAL fixture scan scores crossPage 5
+  // (+1.5 at weight 0.30) -> composite 9; the repetitivePhrases matrix pins
   // that directly.
-  assert.equal(fixtureBreakdown('blog2posts', 0).composite, 14);
+  assert.equal(fixtureBreakdown('blog2posts', 0).composite, 7);
 });
 
 test('matrix: getcollectionscopilot — fingerprints stays 0, all 4 new rules 0 hits', () => {
@@ -211,16 +214,23 @@ test('matrix: ass-score.com — fingerprints unchanged (0), overall composite ST
     assert.ok(!r.hits.some((h) => h.id === id), `${id} must not false-positive on ass-score.com`);
   }
   // Full target-page reproduction (crossPage=0, as in the live scan):
-  // boilerplate 45 + infoDensity 45 drive the composite; fingerprints 0 keeps
-  // it at exactly 11 — the site's own score is preserved, not lowered.
+  // boilerplate 45 + infoDensity 55 drive the composite; fingerprints 0 keeps
+  // it at exactly 13 — the site's own score. 11 -> 13 (report-trust fix
+  // 2026-10-07: the sentence metric now reads BOUNDARY-SPACED sentences, so
+  // ass-score.com's UI-label fragments are visible as staccato: mean sentence
+  // length 9.2 -> 5.0 words (still below the 12-word floor) raises
+  // infoDensity 45 -> 55; boilerplate 45 unchanged; the composite moves 11.25
+  // -> 12.75 -> 13). This live pin (ass-score.com = 11) is flagged for owner
+  // ratification in the report-trust PR — the fix made the honest fragment
+  // count visible, it did not add a new signal.
   const { breakdown, composite } = fixtureBreakdown('ass-score', 0);
   assert.equal(breakdown.filler.score, 0);
   assert.equal(breakdown.boilerplate.score, 45);
-  assert.equal(breakdown.infoDensity.score, 45);
+  assert.equal(breakdown.infoDensity.score, 55);
   assert.equal(breakdown.repetitive.score, 0);
   assert.equal(breakdown.fingerprints.score, 0);
   assert.equal(breakdown.assets.score, 0);
-  assert.equal(composite, 11);
+  assert.equal(composite, 13);
 });
 
 test('matrix: fixtures are deterministic (same bytes -> identical results)', () => {

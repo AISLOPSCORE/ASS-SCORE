@@ -12,6 +12,7 @@
  */
 
 import { readableSentenceFor, readableOpeningSentenceFor, readableParagraphFor, readableOpeningQuote, quoteWindow } from './readableQuotes.js';
+import { short } from '../truncate.js';
 
 const OPENING_WORDS = 3;
 
@@ -83,11 +84,13 @@ export function analyze({ text = '', sentences = [], paragraphs = [] } = {}, rea
     const rs = readableOpeningSentenceFor(d.value, readableSentences ?? []);
     return rs ? readableOpeningQuote(rs) : `${d.value}…`;
   };
-  // Near-identical quote = the readable sentence (truncated at 60 as today).
+  // Near-identical quote = the readable sentence, word-boundary truncated at
+  // 60 (report-trust fix 2026-10-07: the old bare slice cut mid-word — the
+  // live paid report showed "…LinkedIn and ema…" for "…email").
   const sentenceQuote = (d) => {
     const rq = readableSentenceFor(d.value, readableSentences ?? []);
     const base = rq ?? d.value;
-    return `${base.slice(0, 60)}${base.length > 60 ? '…' : ''}`;
+    return short(base, 60);
   };
   // Paragraph quote = the readable paragraph (truncated at 60 as today).
   const paragraphQuote = (d) => {

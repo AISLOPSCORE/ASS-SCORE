@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as cheerio from 'cheerio';
+import { shortUrl } from '../truncate.js';
 
 /**
  * Asset Slop rule — stock/placeholder imagery on the scanned page.
@@ -104,6 +105,16 @@ function filenameStem(src) {
 }
 
 /**
+ * Image-URL brief for a receipt (report-trust fix 2026-10-07): short URLs
+ * pass through verbatim; long URLs keep the identifying TAIL (host + "…/" +
+ * basename, via src/truncate.js shortUrl) instead of the old head-slice that
+ * cut the filename away ("…screenshots/Screenshot_2…" could be any of three
+ * screenshots on publishyoursaas.com).
+ */
+function brief(src) {
+  return src.length > 70 ? shortUrl(src, 70) : src;
+}
+/**
  * @param {string} html raw HTML of the scanned page
  * @returns {{ score: number, findings: string[] }}
  */
@@ -133,7 +144,7 @@ export function analyzeAssets(html = '') {
         if (matched) {
           stockCount += 1;
           if (stockDetail.length < MAX_DETAIL_FINDINGS) {
-            stockDetail.push(`img[${i}] stock photo host «${matched}» (${src.length > 70 ? `${src.slice(0, 70)}…` : src})`);
+            stockDetail.push(`img[${i}] stock photo host «${matched}» (${brief(src)})`);
           }
         }
       } catch {
@@ -146,7 +157,7 @@ export function analyzeAssets(html = '') {
     if (stem && PLACEHOLDER_RE.some((re) => re.test(stem))) {
       filenameCount += 1;
       if (fileDetail.length < MAX_DETAIL_FINDINGS) {
-        fileDetail.push(`img[${i}] generic filename "${stem}" (${src.length > 70 ? `${src.slice(0, 70)}…` : src})`);
+        fileDetail.push(`img[${i}] generic filename "${stem}" (${brief(src)})`);
       }
     }
 

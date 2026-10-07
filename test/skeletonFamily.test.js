@@ -116,14 +116,19 @@ test('fixtures: collapse-tree fires but composite stays 100 (already clamped)', 
 // ---------------------------------------------------------------------------
 // GROUP 2 — single-page no-fire (E1): detector null, composites byte-identical
 // ---------------------------------------------------------------------------
-test('single-page: detector is null and composites are byte-identical to the shipped pins (17/7/11/16)', () => {
+test('single-page: detector is null and composites are byte-identical to the shipped pins (16/5/13/9)', () => {
   for (const name of ['stripe', 'getcollectionscopilot', 'ass-score', 'blog2posts']) {
     assert.equal(detectSkeleton([{ url: `https://${name}.example/`, html: fixtureBreakdown(name).html }]), null, `${name} single page -> null`);
   }
-  assert.equal(fixtureBreakdown('stripe', 0).composite, 17);
-  assert.equal(fixtureBreakdown('getcollectionscopilot', 0).composite, 7);
-  assert.equal(fixtureBreakdown('ass-score', 0).composite, 11);
-  assert.equal(fixtureBreakdown('blog2posts', 5).composite, 16);
+  // Pins moved 17/7/11/16 -> 16/5/13/9 by the report-trust fix 2026-10-07: the
+  // infoDensity sentence metric reads BOUNDARY-SPACED sentences (stripe 17->16
+  // i51->31/r25->44; cc 7->5 i49->31; ass-score 11->13 i45->55; blog2posts
+  // 16->9 i50->30 -> C1 off). Full walk-throughs in
+  // fingerprintVocab/phase2Credits/repetitivePhrases matrix tests.
+  assert.equal(fixtureBreakdown('stripe', 0).composite, 16);
+  assert.equal(fixtureBreakdown('getcollectionscopilot', 0).composite, 5);
+  assert.equal(fixtureBreakdown('ass-score', 0).composite, 13);
+  assert.equal(fixtureBreakdown('blog2posts', 5).composite, 9);
   assert.equal(detectSkeleton([]), null, 'zero pages -> null');
 });
 
