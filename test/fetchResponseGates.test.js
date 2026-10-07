@@ -35,6 +35,9 @@ const mockDns = (t) =>
 // fetchImpl owns all network behavior; the guard must only reject shapes.
 const offlineValidateTarget = async (raw) => validateUrl(raw);
 const HTML_BODY = '<!doctype html><html><head><title>Acme</title></head><body><p>Ordinary company page with real content.</p></body></html>';
+// A JS-only app shell: the server sends an empty <div id="root"> plus JS, and
+// NOTHING else — extractText yields zero words, so the zero-text gate fires.
+const NO_TEXT_BODY = '<!doctype html><html><head><title>Acme</title></head><body><div id="root"></div></body></html>';
 
 function startApp(dbPath, fetchImpl, t, { maxScansPerDay = 100 } = {}) {
   mockDns(t);
@@ -116,6 +119,30 @@ test('D2 unit: absent Content-Type keeps today\'s parse behavior (scan succeeds)
     });
     assert.equal(result.ok, true, 'absent Content-Type must not be rejected');
   }
+});
+
+test('zero-text HTML body -> 422 parse_failed with the owner finding copy, no insertScan', async () => {
+  // Owner-approved copy (2026-10-07): a JS-only page is a FINDING, not a scan
+  // failure — the exact message is pinned so the copy can never regress to
+  // 'The page contained no extractable text'. code/status stay unchanged.
+  let inserts = 0;
+  const result = await runScan({
+    db: { insertScan: () => { inserts += 1; } },
+    fetcher: { fetchHtml: async (raw) => ({ status: 200, url: new URL(raw).href, body: NO_TEXT_BODY, contentType: 'text/html' }) },
+    url: 'https://example.com/',
+    scanBudgetMs: 5000,
+  });
+  assert.deepEqual(result, {
+    ok: false,
+    status: 422,
+    json: {
+      error: {
+        code: 'parse_failed',
+        message: 'This site renders all content with JavaScript, so nothing readable is served to search engines or scanners without a browser. Not a scan failure — that IS the finding.',
+      },
+    },
+  });
+  assert.equal(inserts, 0, 'no scan row for a zero-text page');
 });
 
 // ---------------------------------------------------------------------------
