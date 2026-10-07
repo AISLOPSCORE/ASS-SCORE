@@ -548,10 +548,13 @@ test('P2B.1: every negative finding renders as its own diagnostic card — count
     }
 
     // Order sanity: the fixture's receipt strings appear in the same sequence.
+    // Scoped to the findings region: the fix-first section's problem headlines
+    // legitimately embed the same finding lines earlier in the document.
     const receiptSeq = expected.map((e) => escForTest(e.finding));
+    const findingsRegion = flatRegion(html);
     let prev = -1;
     for (const r of receiptSeq) {
-      const at = html.indexOf(r);
+      const at = findingsRegion.indexOf(r);
       assert.ok(at > prev, `receipt "${r}" appears after the previous card`);
       prev = at;
     }

@@ -140,8 +140,16 @@ test('P2D2.3: findings are premium cards with a receipts drawer; What To Fix Fir
     assert.equal(links.length, 5, 'each fix card links to its finding');
     for (const anchor of links) assert.ok(html.includes(`id="${anchor}"`), `fix link resolves to the real ${anchor} section`);
     assert.ok(html.includes('class="fix-action"'), 'fix cards carry the one-line what-to-fix summary');
-    assert.ok(!html.includes('class="fix-problem"') && !html.includes('class="fix-evidence"'),
-      'compact fix cards never repeat the full roast or the full receipt');
+    // OWNER DEFECT FIX 2026-10-07: every fix card carries a fix-problem
+    // headline that names the concrete problem; the full receipt is still
+    // never repeated as its own block.
+    assert.ok(html.includes('class="fix-problem"'), 'fix cards name the problem in a fix-problem headline');
+    assert.ok(!html.includes('class="fix-evidence"'), 'compact fix cards never repeat a full fix-evidence block');
+    // The headline names the CONCRETE problem — the finding's own trigger
+    // line (infoDensity is the top-ranked fix item), never the joke roast.
+    const fixSection = html.slice(html.indexOf('What To Fix First'), html.indexOf('Your Breakdown'));
+    assert.ok(fixSection.includes('class="fix-problem">concrete specifics: 0 found in 500 words'),
+      'fix-problem headline carries the finding trigger line, not the roast');
   } finally {
     app.server.close();
   }
