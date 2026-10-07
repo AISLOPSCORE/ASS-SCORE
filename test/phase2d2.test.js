@@ -125,8 +125,8 @@ test('P2D2.3: findings are premium cards with a receipts drawer; What To Fix Fir
     // grouping: count the FLAT grouped list only — the hidden per-category
     // clone-source sections re-render the same cards for the Phase 2C focused
     // views, so raw-document counts would double (6 flat + 6 hidden).
-    const flat = html.slice(html.indexOf('<div class="actual-findings-flat">'), html.indexOf('<div class="cat-sources" hidden>'));
-    assert.equal((flat.match(/<div class="finding-card">/g) ?? []).length, 6, 'grouping: one flat-list premium card per negative finding');
+    const flat = html.slice(html.indexOf('<div class="cat-sources" hidden>'), html.indexOf('<section class="cat-view"', html.indexOf('<div class="cat-sources" hidden>')));
+    assert.equal((flat.match(/<div class="finding-card"/g) ?? []).length, 6, 'grouping: one flat-list premium card per negative finding');
     assert.equal((flat.match(/class="rec-count">/g) ?? []).length, 6, 'grouping: every flat-list receipts drawer shows a real evidence-line count');
     assert.ok(html.includes('class="rec-count">1 line of evidence<'), 'drawer count is the actual line count');
     assert.ok(html.includes('class="fc-roast"'), 'roast blocks present');
@@ -136,7 +136,7 @@ test('P2D2.3: findings are premium cards with a receipts drawer; What To Fix Fir
     const fixItems = [...html.matchAll(/<li class="fix-item fix-([a-z-]+)">/g)].map((m) => m[1]);
     assert.equal(fixItems.length, 5, 'fix-first capped at top 5 ranked cards');
     assert.ok(fixItems.every((c) => ['priority', 'needs-attention', 'watch'].includes(c)), 'fix cards carry real state classes');
-    const links = [...html.matchAll(/class="fix-link" href="#(cat-[a-z]+)"/g)].map((m) => m[1]);
+    const links = [...html.matchAll(/class="fix-link" href="#(finding-[a-z]+-\d+)"/g)].map((m) => m[1]);
     assert.equal(links.length, 5, 'each fix card links to its finding');
     for (const anchor of links) assert.ok(html.includes(`id="${anchor}"`), `fix link resolves to the real ${anchor} section`);
     assert.ok(html.includes('class="fix-action"'), 'fix cards carry the one-line what-to-fix summary');
@@ -188,7 +188,7 @@ test('P2D2.5: locked architecture unchanged under the polish — section order, 
       // Dashboard final cleanup order: verdict → page → fix → breakdown →
       // working → findings → final → methodology.
       const seq = ['A.S.S. Score: ', 'The Verdict', 'Page That Needs The Most Work', 'What To Fix First',
-        'Your Breakdown', "What's Working", 'The Actual Findings', 'Final Verdict', 'Methodology'];
+        'Your Breakdown', "What's Working", '<div class="cat-sources" hidden>', 'Final Verdict', 'Methodology'];
       let prev = -1;
       for (const marker of seq) {
         const at = idx(marker);

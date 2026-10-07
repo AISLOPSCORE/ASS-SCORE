@@ -168,7 +168,7 @@ test('3. real negative detector -> full four-part finding with evidence', async 
     assert.ok(paid.includes('How to fix it:'), 'HOW TO FIX IT label present');
     assert.ok(paid.includes('Show the receipts:'), 'THE RECEIPTS label present');
     assert.ok(paid.includes('3× &quot;cutting-edge&quot;'), 'evidence/receipt shows the real trigger');
-    assert.ok(paid.includes('1 finding across 1 category — every roast points at the receipts below.'),
+    assert.ok(paid.includes('1 finding across 1 category — every roast points at the receipts inside its category view.'),
       'summary counts the single negative finding only (compliments ignored)');
   } finally {
     app.server.close();
@@ -204,7 +204,8 @@ test('4. metric below threshold -> no negative finding (neutral evidence only)',
     // The metric readings produce NO negative finding and NO count.
     assert.equal((paid.match(/<p class="ins-roast">/g) ?? []).length, 0, 'no negative roast from metrics');
     assert.ok(!paid.includes('How to fix it:'), 'no fix task manufactured from a metric');
-    assert.ok(paid.includes('No findings this scan'), 'summary counts zero negative findings');
+    assert.ok(paid.includes('No findings this scan — nothing to roast, and nothing to hide.'),
+      'summary counts zero negative findings (exact zero-findings line)');
     // The metrics ARE shown as neutral evidence, clearly labelled.
     assert.ok(paid.includes('Measurements:'), 'metric readings render as neutral measurements');
     assert.ok(paid.includes('vocabulary diversity (MATTR-50): 0.766'), 'MATTR reading present as evidence');
@@ -235,7 +236,7 @@ test('5. multiple negative categories -> only actual problems counted', async ()
     const paid = await paidHtml(app.base, 'ia-multi-0001');
     // Negatives: filler(2) + boilerplate(1) + infoDensity(1) = 4 across 3 cats.
     // The clean repetitive + assets lines are NOT findings and are NOT counted.
-    assert.ok(paid.includes('4 findings across 3 categories — every roast points at the receipts below.'),
+    assert.ok(paid.includes('4 findings across 3 categories — every roast points at the receipts inside its category view.'),
       'summary counts only actual negative findings');
     assert.ok(!paid.includes('6 findings across 5 categories'), 'compliments are never counted as findings');
     assert.equal((flatRegion(paid).match(/<p class="ins-roast">/g) ?? []).length, 4,
@@ -438,7 +439,7 @@ test('P2A.4: dashboard section hierarchy — hero → verdict → breakdown → 
     // Dashboard final cleanup (2026-09-23): the action layer (page + fix)
     // moved UP right after the verdict; findings moved to the detail position.
     const seq = ['A.S.S. Score: 89 / 100', 'The Verdict', 'Page That Needs The Most Work', 'What To Fix First',
-      'Your Breakdown', "What's Working", 'The Actual Findings', 'Final Verdict', 'Methodology'];
+      'Your Breakdown', "What's Working", '<div class="cat-sources" hidden>', 'Final Verdict', 'Methodology'];
     let prev = -1;
     for (const marker of seq) {
       const at = idx(marker);
@@ -491,7 +492,7 @@ function negativeFindings(breakdown) {
 /** Isolate each `.finding-card` region of the report (from its opening tag to
  * just before the next card's opening tag) so per-card assertions can run. */
 function cardRegions(html) {
-  const starts = [...html.matchAll(/<div class="finding-card">/g)].map((m) => m.index);
+  const starts = [...html.matchAll(/<div class="finding-card"/g)].map((m) => m.index);
   const regions = [];
   for (let i = 0; i < starts.length; i++) {
     const to = i + 1 < starts.length ? starts[i + 1] : html.length;
@@ -500,15 +501,17 @@ function cardRegions(html) {
   return regions;
 }
 
-/** grouping: THE ACTUAL FINDINGS = the FLAT grouped list (the owner-facing
- * cards, `.actual-findings-flat`) + the hidden per-category clone-source
- * sections (`<div class="cat-sources" hidden>`, Phase 2C — the focused views
- * clone them, so the same card is re-rendered there). Card-count pins must
- * scope to the flat list: the hidden sections are not a second row of cards. */
+/** grouping: THE ACTUAL FINDINGS no longer renders a visible flat card list
+ * (removed 2026-10-07) — the canonical finding cards live inside the hidden
+ * per-category clone-source sections (`<div class="cat-sources" hidden>`,
+ * Phase 2C: the focused views clone them, and the fix-first deep links target
+ * the cards' id="finding-<cat>-<n>" anchors). Card-count pins scope to this
+ * cat-sources region: one card per WITHIN-CATEGORY group (no cross-category
+ * merge), so per-category totals may exceed the old flat total. */
 function flatRegion(html) {
-  const a = html.indexOf('<div class="actual-findings-flat">');
-  const b = html.indexOf('<div class="cat-sources" hidden>');
-  assert.ok(a >= 0 && b > a, 'flat grouped list present before the hidden category sections');
+  const a = html.indexOf('<div class="cat-sources" hidden>');
+  const b = html.indexOf('<section class="cat-view"', a);
+  assert.ok(a >= 0 && b > a, 'findings region present before the focused category views');
   return html.slice(a, b);
 }
 
@@ -519,17 +522,28 @@ test('P2B.1: every negative finding renders as its own diagnostic card — count
   try {
     const html = await paidHtml(app.base, 'p2b-sloppy');
     const expected = negativeFindings(SLOPPY_BREAKDOWN_89);
-    // grouping: count cards in the FLAT grouped list only — the hidden
-    // per-category clone-source sections re-render the same cards (Phase 2C).
+    // grouping: the dashboard's flat card list is REMOVED (owner 2026-10-07) —
+    // the canonical per-category cards live in the hidden cat-sources block,
+    // one card per within-category group. Every fixture negative still renders
+    // as a card inside its own category (Phase A within-category collapse
+    // only — no cross-category merge possible in this fixture).
     const regions = cardRegions(flatRegion(html));
 
     // Count equals the fixture's negative finding list.
     assert.equal(regions.length, expected.length,
-      `grouping: one flat-list card per negative finding (expected ${expected.length}, got ${regions.length})`);
+      `grouping: one per-category card per negative finding (expected ${expected.length}, got ${regions.length})`);
     // The roast layer count mirrors the card count (one roast per card).
     assert.equal((flatRegion(html).match(/<p class="ins-roast">/g) ?? []).length, expected.length,
-      'grouping: one flat-list roast layer per negative finding');
-
+      'grouping: one per-category roast layer per negative finding');
+    // Expected WITHIN-category ordinals: 1,2 for filler's two negatives, then
+    // 1 for each single-negative category (the cards number inside their own
+    // category — the id="finding-<cat>-<n>" deep links mirror the badge).
+    const seenOrd = new Map();
+    const expectedOrd = expected.map((exp) => {
+      const n = (seenOrd.get(exp.key) ?? 0) + 1;
+      seenOrd.set(exp.key, n);
+      return n;
+    });
     // Order matches the input order, and every card carries the four labeled
     // zones with its own verbatim receipt text.
     for (let i = 0; i < expected.length; i++) {
@@ -544,7 +558,9 @@ test('P2B.1: every negative finding renders as its own diagnostic card — count
       assert.ok(card.includes(label), `card ${i + 1} shows its category context (${label})`);
       assert.ok(card.includes(escForTest(exp.finding)),
         `card ${i + 1} keeps the verbatim receipt (${exp.finding})`);
-      assert.ok(card.includes('Finding ' + (i + 1)), `card ${i + 1} shows its ordinal`);
+      assert.ok(card.includes('Finding ' + expectedOrd[i]), `card ${i + 1} shows its within-category ordinal`);
+      assert.ok(card.includes(`id="finding-${exp.key.toLowerCase()}-${expectedOrd[i]}"`),
+        `card ${i + 1} carries its deep-link id (finding-${exp.key.toLowerCase()}-${expectedOrd[i]})`);
     }
 
     // Order sanity: the fixture's receipt strings appear in the same sequence.
@@ -648,7 +664,7 @@ test('P2B.4: Phase 2A assertions hold unchanged under the card redesign (hero, 7
     // moved up after the verdict, findings moved to the detail position).
     const idx = (s) => sloppy.indexOf(s);
     const seq = ['A.S.S. Score: 89 / 100', 'The Verdict', 'Page That Needs The Most Work', 'What To Fix First',
-      'Your Breakdown', "What's Working", 'The Actual Findings', 'Final Verdict', 'Methodology'];
+      'Your Breakdown', "What's Working", '<div class="cat-sources" hidden>', 'Final Verdict', 'Methodology'];
     let prev = -1;
     for (const marker of seq) {
       const at = idx(marker);
@@ -739,7 +755,7 @@ test('P2C.2: dashboard retains every existing section in order — views layer o
       // Dashboard final cleanup order: verdict → page → fix → breakdown →
       // working → findings → final → methodology.
       const seq = ['A.S.S. Score: ', 'The Verdict', 'Page That Needs The Most Work', 'What To Fix First',
-        'Your Breakdown', "What's Working", 'The Actual Findings', 'Final Verdict', 'Methodology'];
+        'Your Breakdown', "What's Working", '<div class="cat-sources" hidden>', 'Final Verdict', 'Methodology'];
       let prev = -1;
       for (const marker of seq) {
         const at = idx(marker);
@@ -776,7 +792,7 @@ test('P2C.3: Category Views reuse the existing audit content — negative (2B ca
     const fillerView = viewRegions(sloppy).find((v) => v.id === 'view-cat-filler');
     const fillerSection = sloppy.slice(sloppy.indexOf('id="cat-filler"'), sloppy.indexOf('id="cat-boilerplate"'));
     assert.ok(fillerView.html.includes('data-source="cat-filler"'), 'filler view wired to its dashboard section');
-    assert.equal((fillerSection.match(/<div class="finding-card">/g) ?? []).length, 2,
+    assert.equal((fillerSection.match(/<div class="finding-card"/g) ?? []).length, 2,
       'filler dashboard section carries the 2 negative finding cards (the two-card category)');
     assert.ok(fillerSection.includes('3× &quot;cutting-edge&quot;') && fillerSection.includes('2× &quot;seamless&quot;'),
       'filler cards keep the verbatim receipts');

@@ -132,7 +132,7 @@ test('FREE contract: POST /scan and GET /scans/:id JSON expose teasers + numbers
   assert.ok(freeHtml.includes('Free samples'), 'free page teaser block');
   assert.ok(freeHtml.includes('Unlock the full report — $12'), 'free page $12 CTA');
   assert.ok(freeHtml.includes(DISCLAIMER), 'free page disclaimer');
-  assert.ok(!freeHtml.includes('The Actual Findings'), 'free page never renders the paid findings section');
+  assert.ok(!freeHtml.includes('<div class="cat-sources" hidden>'), 'free page never renders the paid findings section');
 });
 
 // ------------------------------------------------------------------ (b) token -> full report
@@ -145,7 +145,7 @@ test('PAID contract: valid token on /scans/:id returns the full narrative report
   assert.equal(res.status, 200);
   assert.match(res.headers.get('content-type'), /text\/html/);
   const html = await res.text();
-  for (const section of ['The Verdict', "What's Working", 'Your Breakdown', 'The Actual Findings',
+  for (const section of ['The Verdict', "What's Working", 'Your Breakdown', '<div class="cat-sources" hidden>',
     'Page That Needs The Most Work', 'What To Fix First', 'Final Verdict', 'Methodology']) {
     assert.ok(html.includes(section), `paid report has ${section}`);
   }
@@ -513,7 +513,7 @@ test('fulfillment: the checkout-webhook email carries a token link that opens th
     const opened = await fetch(`${app.base}/api/v1/report/${id}?token=${encodeURIComponent(token)}`, { headers: { accept: 'text/html' } });
     assert.equal(opened.status, 200, 'emailed link opens the full report');
     const html = await opened.text();
-    assert.ok(html.includes('The Verdict') && html.includes('The Actual Findings'), 'full report content');
+    assert.ok(html.includes('The Verdict') && html.includes('<div class="cat-sources" hidden>'), 'full report content');
     assert.ok(html.includes(DISCLAIMER), 'verbatim disclaimer in the emailed report');
 
     // The same link WITHOUT its token is a 403.

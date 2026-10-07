@@ -256,7 +256,7 @@ function insightFor(scanId, key, finding, insight, index) {
  * assertion (branding hostile test) rejects. Every classed element here is
  * followed by escaped text, never by a tag.
  */
-function renderFinding(scanId, categoryKey, categoryLabel, finding, insight, index, state = null, ordinal = index + 1, extraEvidence = []) {
+function renderFinding(scanId, categoryKey, categoryLabel, finding, insight, index, state = null, ordinal = index + 1, extraEvidence = [], anchorId = null) {
   const ins = insightFor(scanId, categoryKey, finding, insight, index);
   const roast = ins ? ins.roast : finding;
   const why = ins ? ins.why : '';
@@ -284,7 +284,13 @@ function renderFinding(scanId, categoryKey, categoryLabel, finding, insight, ind
   const extras = Array.isArray(extraEvidence) ? extraEvidence.map((x) => String(x)).filter((x) => x !== '') : [];
   const evidenceCount = 1 + extras.length;
   const receiptLis = `<li><strong>${esc(finding)}</strong></li>${extras.map((x) => `<li><strong>${esc(x)}</strong></li>`).join('')}`;
-  return `\n  <div class="finding-card">
+  // anchorId: stable per-finding deep-link target (owner 2026-10-07) — the
+  // "See the full finding" links in What To Fix First point at the matching
+  // card inside its category's focused view (id="finding-<cat>-<n>", n = the
+  // within-category ordinal shown on the "Finding n" badge). Presentation
+  // only: an id attribute, no visible change.
+  const cardId = anchorId ? ` id="${anchorId}"` : '';
+  return `\n  <div class="finding-card"${cardId}>
     <div class="fc-head">
       <span class="fc-count">Finding ${ordinal}</span>
       <span class="fc-cat">${esc(categoryLabel)}</span>
@@ -610,10 +616,20 @@ export function renderHtmlReport(scan) {
       .map((g) => ({ key: g.key, groups: g.groups, sources: g.rule.sources })),
   );
   const negativeTotal = flatGroups.length;
-  // Categories that still have at least one card in the grouped flat list
-  // (the intro's "across M categories" denominator — GROUPED set, owner rule).
+  // Categories that still have at least one card in the grouped flat set
+  // (used by the Page panel's per-category counts — GROUPED set, owner rule).
   const negativeCats = classified.filter((g) => g.groups.length > 0);
+  // The visible THE ACTUAL FINDINGS summary line (owner 2026-10-07): counts
+  // come from the GROUPED flat set — N = negativeTotal (grouped problems,
+  // ONE PROBLEM = ONE FINDING), M = flatCatCount (distinct primary
+  // categories). Compliments and metric measurements are never findings.
+  // The trailing clause points at the category views — the receipts no
+  // longer render below the intro (the flat list is gone), so "below" would
+  // be a lie (report-trust defect class).
   const flatCatCount = new Set(flatGroups.map((g) => g.key)).size;
+  const findingsIntro = negativeTotal === 0
+    ? 'No findings this scan — nothing to roast, and nothing to hide.'
+    : `${negativeTotal} finding${negativeTotal === 1 ? '' : 's'} across ${flatCatCount} categor${flatCatCount === 1 ? 'y' : 'ies'} — every roast points at the receipts inside its category view.`;
 
   // --- 1. THE VERDICT --------------------------------------------------------
   const verdictSection = `
@@ -707,13 +723,15 @@ export function renderHtmlReport(scan) {
   ${breakdownCards}
   </div>`;
 
-  // --- 6. THE ACTUAL FINDINGS (negative findings only, four concepts) --------
-  // Intro + global ordinals derive from the GROUPED flat set (owner 2026-10-07:
-  // one problem = one finding) — "N findings across M categories" counts the
-  // cards the reader actually sees below, not the raw stored lines.
-  const findingsIntro = negativeTotal === 0
-    ? 'No findings this scan — nothing to roast, and nothing to hide.'
-    : `${negativeTotal} finding${negativeTotal === 1 ? '' : 's'} across ${flatCatCount} categor${flatCatCount === 1 ? 'y' : 'ies'} — every roast points at the receipts below.`;
+  // --- 6. PER-CATEGORY FINDING SECTIONS (Phase 2C clone-source) -------------
+  // Owner 2026-10-07: the dashboard's flat "The Actual Findings" list is
+  // REMOVED — the per-category focused views are the canonical homes for
+  // findings (each card: roast / why / fix / receipts). What To Fix First
+  // deep-links into them (id="finding-<cat>-<n>"). The sections below stay in
+  // the document as the hidden Phase 2C clone-source: id="cat-<key>" anchors
+  // (breakdown cards + no-JS hash scroll) + the full per-category cards. They
+  // must NOT be removed — the focused views clone them client-side and the
+  // finding cards carry the deep-link anchors.
   // Groups render for categories with negative findings OR neutral metric
   // measurements — a metric-only category (e.g. low score but only MATTR/
   // stopword/sentence-length measurements) still shows its Measurements block.
@@ -750,15 +768,12 @@ export function renderHtmlReport(scan) {
       return r.catKey ? `${CATEGORY_LABELS[r.catKey] ?? r.catKey} — ${t}` : t;
     })
     .filter((x) => x !== '');
-  // FLAT grouped list — global ordinals ("Finding 1, 2, 3…" in owner spec),
-  // independent of the per-category insight-seeding index.
-  let findingOrdinal = 0;
-  const flatLis = flatGroups.map((g) => {
-    const label = CATEGORY_LABELS[g.key] ?? g.key;
-    const st = catState.get(g.key);
-    return renderFinding(scan.id, g.key, label, g.primary.finding, g.primary.insight, g.primary.idx,
-      st ? st.state : null, ++findingOrdinal, receiptTexts(g.receipts));
-  }).join('');
+    // (The FLAT card list — global ordinals "Finding 1, 2, 3…" — was REMOVED
+  // with the dashboard's "The Actual Findings" section, owner 2026-10-07.
+  // What remains visible is the h2 + the "N findings across M categories"
+  // count line (restored 2026-10-07); the per-category cards below are the
+  // canonical findings homes inside the focused category views. `flatGroups`
+  // stays the fix-first ranking source + finding totals.)
   const findingGroups = classified.map((g) => {
     const label = CATEGORY_LABELS[g.key] ?? g.key;
     if (!(g.negativeCount > 0 || g.metrics.length > 0)) {
@@ -782,8 +797,11 @@ export function renderHtmlReport(scan) {
       const label = CATEGORY_LABELS[g.key] ?? g.key;
       // Per-category ordinals inside the focused drill-down (the flat list
       // above carries the global ordinals; this section is the clone source).
+      // Each card carries its deep-link anchor id="finding-<cat>-<n>" — the
+      // fix-first "See the full finding" targets (owner 2026-10-07).
       return renderFinding(scan.id, g.key, label, grp.primary.finding, grp.primary.insight,
-        grp.primary.idx, st ? st.state : null, i + 1, receiptTexts(grp.receipts));
+        grp.primary.idx, st ? st.state : null, i + 1, receiptTexts(grp.receipts),
+        `finding-${g.key.toLowerCase()}-${i + 1}`);
     }).join('');
     // Cross-page duplication pairs -> REPETITION receipts (real evidence,
     // replaces the old "Templated Content" section).
@@ -812,12 +830,17 @@ export function renderHtmlReport(scan) {
     ${metricsBlock}
   </section>`;
   }).join('');
-  const findingsSection = `
+  // The visible ACTUAL FINDINGS summary (owner 2026-10-07): the h2 + ONE
+  // honest count line sit in the dashboard where the removed flat section
+  // was. No flat card list is re-rendered — just the heading + the count
+  // line. Beneath it stays the hidden Phase 2C clone-source block: it carries
+  // the id="cat-<key>" anchors (breakdown cards, no-JS hash scroll) and the
+  // full per-category finding cards — including the id="finding-<cat>-<n>"
+  // deep-link targets the fix-first "See the full finding" links use. It must
+  // remain hidden; the focused views clone from it on open.
+  const catSourcesSection = `
   <h2>The Actual Findings</h2>
   <p>${findingsIntro}</p>
-  <div class="actual-findings-flat">
-  ${flatLis}
-  </div>
   <div class="cat-sources" hidden>
   ${findingGroups}
   </div>`;
@@ -897,6 +920,9 @@ export function renderHtmlReport(scan) {
       problem: ins ? ins.roast : fg.primary.finding,
       action: ins ? ins.fix : '',
       evidence: fg.primary.finding,
+      // primary reference — resolves the matching card inside the category's
+      // focused view for the deep-link anchor (owner 2026-10-07).
+      primary: fg.primary,
     });
   }
   fixItems.sort((a, b) => (Number.isFinite(b.score) ? b.score : 0) - (Number.isFinite(a.score) ? a.score : 0));
@@ -933,10 +959,12 @@ export function renderHtmlReport(scan) {
   // CONCRETE PROBLEM (the finding's own trigger line — owner defect 2026-10-07:
   // items were indistinguishable word-for-word) + ONE-LINE what-to-fix + a
   // link into the category view — never a repeat of the full Roast / Why /
-  // How To Fix / Receipts (those live once, in THE ACTUAL FINDINGS). Rank =
-  // real priority order (category severity desc), links reuse the same
-  // #cat-<key> anchor pattern as the category cards, so the browser opens the
-  // focused Category View (JS) or scrolls the category section (no-JS).
+  // How To Fix / Receipts (those live once, in the category's focused view).
+  // Rank = real priority order (category severity desc). Links point at the
+  // MATCHING finding card inside its category's focused view
+  // (id="finding-<cat>-<n>", owner 2026-10-07) — with JS the view opens and
+  // scrolls to that card; without JS the hash still resolves to the card's
+  // anchor in the hidden clone-source (see script).
   const fixLis = fixItemsTop5
     .map((it) => {
       // Headline = the finding's own title line (the concrete trigger, e.g.
@@ -949,6 +977,18 @@ export function renderHtmlReport(scan) {
       const summary = it.action
         ? short(String(it.action), 120)
         : 'See the full finding for the concrete fix.';
+      // Deep link into the MATCHING finding inside its category's focused
+      // view (owner 2026-10-07): anchor by category + within-category ordinal
+      // (the id="finding-<cat>-<n>" on the card in the hidden clone-source,
+      // which the view clones verbatim). Resolution via object identity — the
+      // flat group's primary IS the category group's primary (same reference,
+      // groupAcrossCategories). Fallback to the category anchor if the card
+      // can't be resolved (never dead-ends).
+      const gCat = classified.find((c) => c.key === it.key);
+      const withinIdx = gCat ? gCat.groups.findIndex((grp) => grp.primary === it.primary) : -1;
+      const deep = withinIdx >= 0
+        ? `finding-${it.key.toLowerCase()}-${withinIdx + 1}`
+        : `cat-${it.key.toLowerCase()}`;
       return `\n  <li class="fix-item fix-${it.cls.toLowerCase().replace(/[^a-z0-9]+/g, '-')}">
     <div class="fix-top">
       <span class="fix-cat">${esc(it.label)}</span>
@@ -958,7 +998,7 @@ export function renderHtmlReport(scan) {
     <p class="fix-action">
       <span class="fix-action-label">Fix it:</span> ${esc(summary)}
     </p>
-    <a class="fix-link" href="#cat-${it.key.toLowerCase()}">See the full finding ↓</a>
+    <a class="fix-link" href="#${deep}">See the full finding ↓</a>
   </li>`;
     })
     .join('');
@@ -1054,13 +1094,24 @@ export function renderHtmlReport(scan) {
    The dashboard stays fully present; a #cat-<key> hash shows that category's
    focused view. The view's .cat-view-body is filled by CLONING the dashboard's
    own cat-<key> section (same finding cards / measurements, no regeneration).
+   A #finding-<cat>-<n> hash (the fix-first "See the full finding" targets)
+   opens that category's view AND scrolls to the matching finding card.
    Unknown or empty hash = dashboard. With JS off, the report is simply the
    dashboard and the cards' native hash anchors scroll as in Phase 2A. */
 (function () {
   var KEYS = ['${viewKeys.join("','")}'];
-  function currentKey() {
+  function currentTarget() {
     var h = (location.hash || '').replace(/^#/, '');
-    if (h.indexOf('cat-') === 0 && KEYS.indexOf(h) !== -1) return h;
+    if (KEYS.indexOf(h) !== -1) return { key: h, finding: null };
+    // Deep-link into ONE finding card: #finding-<cat>-<n>. <cat> must be a
+    // real category (KEYS gate) — unknown hashes fall through to the
+    // dashboard. The <n> is the within-category ordinal, matching the card's
+    // id in the clone-source and its "Finding n" badge.
+    var m = /^finding-([a-z0-9]+)-(\d+)$/.exec(h);
+    if (m) {
+      var full = 'cat-' + m[1];
+      if (KEYS.indexOf(full) !== -1) return { key: full, finding: h };
+    }
     return null;
   }
   function showDashboard() {
@@ -1070,7 +1121,7 @@ export function renderHtmlReport(scan) {
     for (var i = 0; i < views.length; i++) views[i].hidden = true;
     window.scrollTo(0, 0);
   }
-  function openView(key) {
+  function openView(key, finding) {
     var d = document.getElementById('dashboard');
     var view = document.getElementById('view-' + key);
     if (!d || !view) return;
@@ -1085,11 +1136,17 @@ export function renderHtmlReport(scan) {
     d.hidden = true;
     var views = document.querySelectorAll('.cat-view');
     for (var i = 0; i < views.length; i++) views[i].hidden = (views[i] !== view);
+    // Deep link: scroll to the exact finding card inside the opened view (the
+    // clone keeps the card's id). Fall back to the view top otherwise.
+    if (finding) {
+      var el = view.querySelector('#' + finding);
+      if (el) { el.scrollIntoView(); return; }
+    }
     window.scrollTo(0, 0);
   }
   function apply() {
-    var key = currentKey();
-    if (key) openView(key); else showDashboard();
+    var t = currentTarget();
+    if (t) openView(t.key, t.finding); else showDashboard();
   }
   window.addEventListener('hashchange', apply);
   if (document.readyState === 'loading') {
@@ -1098,7 +1155,10 @@ export function renderHtmlReport(scan) {
     apply();
   }
   window.addEventListener('load', function () {
-    if (currentKey()) window.scrollTo(0, 0);
+    // Category-level hashes keep the previous scroll-to-top on load; deep
+    // finding hashes land on the card (no scroll reset needed).
+    var t = currentTarget();
+    if (t && !t.finding) window.scrollTo(0, 0);
   });
 })();
 </script>`;
@@ -1447,7 +1507,7 @@ export function renderHtmlReport(scan) {
   ${fixSection}
   ${breakdownSection}
   ${workingSection}
-  ${findingsSection}
+  ${catSourcesSection}
   ${finalSection}
   ${methodologySection}
   ${footerLine}
