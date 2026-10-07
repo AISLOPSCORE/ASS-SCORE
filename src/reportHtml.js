@@ -104,9 +104,26 @@ function categoryDisplayState(score, findingsCount, negativesCount) {
   return cls;
 }
 
-/** Deterministic truncation for receipt snippets in the fix-first list. */
-function short(s, n) {
-  return String(s).length > n ? `${String(s).slice(0, n - 1)}…` : String(s);
+/**
+ * Deterministic WORD-BOUNDARY truncation for receipt snippets, the fix-first
+ * action line and the fix-first problem headline (owner defect 2026-10-07:
+ * the old bare slice cut mid-token — "…stalled in the midd…"). When the
+ * string exceeds n, the cut lands at the last space at or before n (never
+ * mid-word), trailing whitespace/punctuation is stripped, and '…' is
+ * appended. If the first n chars contain no space at all (one token longer
+ * than the limit) the cut is a hard slice — there is no sane boundary to
+ * honor — and the result is never the empty string.
+ */
+export function short(s, n) {
+  const str = String(s);
+  const limit = Math.floor(Number(n));
+  if (!Number.isFinite(limit) || str.length <= limit) return str;
+  if (limit <= 0) return '…';
+  const head = str.slice(0, limit);
+  let end = head.lastIndexOf(' ');
+  if (end <= 0) return `${head}…`;
+  while (end > 1 && /[\s.,;:!?…'")\]}-]/.test(head[end - 1])) end -= 1;
+  return `${head.slice(0, end)}…`;
 }
 
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -861,15 +878,52 @@ export function renderHtmlReport(scan) {
     });
   }
   fixItems.sort((a, b) => (Number.isFinite(b.score) ? b.score : 0) - (Number.isFinite(a.score) ? a.score : 0));
+  // OWNER DEFECTS 2026-10-07 (\"the section customers will act on\"):
+  // (1) DEDUPE — the per-category insight pool hands every finding in one
+  // category the same fix sentence, so a (key, problem, action) triple that
+  // already appeared earlier in the sorted list is skipped (with the headline
+  // added, word-for-word repeats are worthless). Runs on the FULL sorted
+  // candidate list, BEFORE any top-N selection.
+  // (2) PER-CATEGORY CAP — one hot category must never fill all five slots:
+  // walk the deduped candidates and accept each until 5 are accepted total or
+  // that category already contributed 2 (so ≥3 distinct categories surface
+  // whenever ≥3 categories have negative findings). Deterministic and stable:
+  // the walk preserves the score-desc order and each category's finding order.
+  const seenFixTriples = new Set();
+  const dedupedFixItems = [];
+  for (const it of fixItems) {
+    const triple = JSON.stringify([it.key, it.problem, it.action]);
+    if (seenFixTriples.has(triple)) continue;
+    seenFixTriples.add(triple);
+    dedupedFixItems.push(it);
+  }
+  const fixItemsTop5 = [];
+  const fixCatCount = new Map();
+  for (const it of dedupedFixItems) {
+    if (fixItemsTop5.length >= 5) break;
+    const used = fixCatCount.get(it.key) ?? 0;
+    if (used >= 2) continue;
+    fixCatCount.set(it.key, used + 1);
+    fixItemsTop5.push(it);
+  }
   // Each fix is a COMPACT RANKED SUMMARY (dashboard final cleanup 2026-09-23):
-  // rank (CSS counter) + state pill + category chip + ONE-LINE what-to-fix +
-  // a link into the category view — never a repeat of the full Roast / Why /
+  // rank (CSS counter) + state pill + category chip + a headline naming the
+  // CONCRETE PROBLEM (the finding's own trigger line — owner defect 2026-10-07:
+  // items were indistinguishable word-for-word) + ONE-LINE what-to-fix + a
+  // link into the category view — never a repeat of the full Roast / Why /
   // How To Fix / Receipts (those live once, in THE ACTUAL FINDINGS). Rank =
   // real priority order (category severity desc), links reuse the same
   // #cat-<key> anchor pattern as the category cards, so the browser opens the
   // focused Category View (JS) or scrolls the category section (no-JS).
-  const fixLis = fixItems.slice(0, 5)
+  const fixLis = fixItemsTop5
     .map((it) => {
+      // Headline = the finding's own title line (the concrete trigger, e.g.
+      // '2× repeated block: \"Orbitype: The Go-to-Market Runtime\"'), NOT the
+      // joke roast — the roast describes, the trigger identifies. Falls back
+      // to the roast only when the finding line is empty. Word-boundary
+      // truncated at 160 so the problem reads whole (owner defect: cuts were
+      // landing mid-sentence).
+      const problem = short(String(it.evidence !== '' ? it.evidence : it.problem), 160);
       const summary = it.action
         ? short(String(it.action), 120)
         : 'See the full finding for the concrete fix.';
@@ -878,6 +932,7 @@ export function renderHtmlReport(scan) {
       <span class="fix-cat">${esc(it.label)}</span>
       <span class="fix-pill">${esc(it.cls)}</span>
     </div>
+    <p class="fix-problem">${esc(problem)}</p>
     <p class="fix-action">
       <span class="fix-action-label">Fix it:</span> ${esc(summary)}
     </p>
