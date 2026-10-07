@@ -13,6 +13,7 @@ import { SsrfError, InvalidUrlError } from './fetch/ssrf.js';
 import { FetchError } from './fetch/client.js';
 import { selectRoast } from './roast.js';
 import { withInsights } from './threeLayer.js';
+import { attachSources } from './groupFindings.js';
 
 /** Per-scan time budget (ms): target fetch + discovery + additional fetches +
  *  similarity. When it elapses, in-flight work is aborted and whatever
@@ -264,6 +265,13 @@ export async function runScan({ db, fetcher, url, branding = null, businessName 
     fingerprints,
     assets,
   };
+
+  // ONE PROBLEM = ONE FINDING (owner 2026-10-07): attach the phase-B component
+  // key (src) for every finding, computed on the TARGET page HTML. Purely
+  // additive (`breakdown.<cat>.sources[i]` parallel to findings[i]) — scores,
+  // findings and insights are untouched; legacy rows simply lack `sources` and
+  // get within-category grouping only (see src/groupFindings.js).
+  attachSources(page.body, breakdown);
 
   const { slopScore } = computeSlopScore(breakdown);
 

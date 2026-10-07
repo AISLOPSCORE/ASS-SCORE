@@ -12,6 +12,7 @@
 import { isHttpUrl } from './branding.js';
 import { selectRoastInfo } from './roast.js';
 import { withInsights, isCleanEvidence, isMetricFinding, classifyFinding, buildCategoryInsights, parseEvidenceTokens, isBoilerplateAggregateLine } from './threeLayer.js';
+import { withinCategoryGroups, groupAcrossCategories } from './groupFindings.js';
 import { publicScore } from './serialize.js';
 import { verdictBand, verdictLabel, scoreColor } from './verdict.js';
 import { CATEGORY_LABELS, CATEGORY_ONE_LINERS } from './categories.js';
@@ -177,31 +178,6 @@ function finalVerdictSentence(pubScore, band) {
 }
 
 /**
- * ONE SIGNAL = ONE FINDING (owner-approved report-integrity fix 2026-09-28,
- * audit Q3): the boilerplate totals line ("N generic wording matches in W
- * words (D per 300 words)") is the AGGREGATE MEASUREMENT of the category's
- * detail signals (e.g. "1× copyright line") — the same underlying signal(s),
- * not a separate problem. When a category carries a NEGATIVE totals line AND
- * other negative detail lines, the totals line is demoted to an aggregate
- * receipt: its density fact stays visible (folded into the first finding's
- * receipts), but it no longer renders as — or counts as — its own finding
- * card. A totals line that is the category's ONLY negative line keeps its
- * finding semantics unchanged. Deterministic: derived purely from the
- * evidence strings. Never touches scoring: the category score still reflects
- * the density measurement exactly as before.
- *
- * @param {string} key breakdown category key
- * @param {Array<{finding: string}>} negatives the category's negative items
- * @returns {{ negatives: Array, aggregates: Array }}
- */
-function demoteAggregateLines(key, negatives) {
-  if (key !== 'boilerplate' || negatives.length < 2) return { negatives, aggregates: [] };
-  const [first, ...rest] = negatives;
-  if (!isBoilerplateAggregateLine(first.finding)) return { negatives, aggregates: [] };
-  return { negatives: rest, aggregates: [first] };
-}
-
-/**
  * Classify every finding of one category via the shared three-layer machinery
  * (owner IA 2026-09-17). The report sections derive from this SPLIT ONLY:
  *
@@ -227,6 +203,10 @@ function splitCategory(key, rule) {
     const finding = String(f ?? '');
     return {
       finding,
+      // idx = stored findings index: the deterministic seed position of the
+      // insight and the position of `sources[i]` (ONE PROBLEM = ONE FINDING,
+      // owner 2026-10-07 — src/groupFindings.js).
+      idx: i,
       insight: insights[i] && typeof insights[i] === 'object' ? insights[i] : null,
       cls: classifyFinding(key, finding, insights[i]),
     };
@@ -580,17 +560,28 @@ export function renderHtmlReport(scan) {
   // ONE split drives every section: WHAT'S WORKING (clean only), THE ACTUAL
   // FINDINGS + summary counts (negative only), WHAT TO FIX FIRST (negative
   // only), page summaries (negative only). Metrics render as neutral evidence.
-  // ONE SIGNAL = ONE FINDING (audit Q3, owner-approved 2026-09-28): the
-  // boilerplate aggregate (totals) line is demoted from a negative finding to
-  // an aggregate receipt whenever the category also carries detail lines — so
-  // one copyright line never renders as "2 findings".
+  // ONE PROBLEM = ONE FINDING (owner 2026-10-07): each category's negative
+  // findings are grouped WITHIN the category (Phase A summary/detail collapse
+  // + same-component merges, legacy-safe — src/groupFindings.js), and the
+  // FLAT list additionally merges the same component across categories (Phase
+  // B, new scans only via stored `sources`). Cross-category merging exists
+  // ONLY in the flat list; the category cards and focused views show each
+  // category's own grouped view.
   const classified = Object.entries(scan.breakdown ?? {}).map(([key, rule]) => {
     const g = splitCategory(key, rule);
-    const { negatives, aggregates } = demoteAggregateLines(key, g.negatives);
-    return { key, rule, ...g, negatives, aggregates };
+    const groups = withinCategoryGroups(key, g.negatives, rule.sources);
+    return { key, rule, ...g, groups, negativeCount: groups.length };
   });
-  const negativeTotal = classified.reduce((n, g) => n + g.negatives.length, 0);
-  const negativeCats = classified.filter((g) => g.negatives.length > 0);
+  const flatGroups = groupAcrossCategories(
+    classified
+      .filter((g) => g.negatives.length > 0)
+      .map((g) => ({ key: g.key, groups: g.groups, sources: g.rule.sources })),
+  );
+  const negativeTotal = flatGroups.length;
+  // Categories that still have at least one card in the grouped flat list
+  // (the intro's "across M categories" denominator — GROUPED set, owner rule).
+  const negativeCats = classified.filter((g) => g.groups.length > 0);
+  const flatCatCount = new Set(flatGroups.map((g) => g.key)).size;
 
   // --- 1. THE VERDICT --------------------------------------------------------
   const verdictSection = `
@@ -607,7 +598,7 @@ export function renderHtmlReport(scan) {
   // DESIGN now compliments too: the fingerprints rule emits a clean line on a
   // zero-hit scan, so its (previously unreachable) compliments pool fires. ---
   const cleanLis = classified
-    .filter((g) => isCleanBand(g.key, g.rule, g.negatives.length))
+    .filter((g) => isCleanBand(g.key, g.rule, g.negativeCount))
     .flatMap((g) => g.cleans.map((item) => renderCleanItem(CATEGORY_LABELS[g.key] ?? g.key, item)))
     .join('');
   const workingSection = `
@@ -650,7 +641,7 @@ export function renderHtmlReport(scan) {
     // Findings-or-not line: counts NEGATIVE findings only (the report-wide
     // convention — compliments and metric measurements are never "findings").
     const grp = classified.find((x) => x.key === key);
-    const negs = grp ? grp.negatives.length : 0;
+    const negs = grp ? grp.groups.length : 0;
     const metr = grp ? grp.metrics.length : 0;
     // DISPLAY state (owner defect 2026-10-07): a CLEAN-band category with
     // actual negative findings promotes to WATCH — "Nothing meaningful to
@@ -685,27 +676,60 @@ export function renderHtmlReport(scan) {
   </div>`;
 
   // --- 6. THE ACTUAL FINDINGS (negative findings only, four concepts) --------
+  // Intro + global ordinals derive from the GROUPED flat set (owner 2026-10-07:
+  // one problem = one finding) — "N findings across M categories" counts the
+  // cards the reader actually sees below, not the raw stored lines.
   const findingsIntro = negativeTotal === 0
     ? 'No findings this scan — nothing to roast, and nothing to hide.'
-    : `${negativeTotal} finding${negativeTotal === 1 ? '' : 's'} across ${negativeCats.length} categor${negativeCats.length === 1 ? 'y' : 'ies'} — every roast points at the receipts below.`;
+    : `${negativeTotal} finding${negativeTotal === 1 ? '' : 's'} across ${flatCatCount} categor${flatCatCount === 1 ? 'y' : 'ies'} — every roast points at the receipts below.`;
   // Groups render for categories with negative findings OR neutral metric
   // measurements — a metric-only category (e.g. low score but only MATTR/
   // stopword/sentence-length measurements) still shows its Measurements block.
-  // negativeCats above stays strictly negative-only for the intro count, the
-  // page summary, and What To Fix First (owner IA §4/§5/§8).
   // Phase 2A shell: EVERY category gets an anchor target id="cat-<key>" here
   // (the breakdown cards link to it). Categories with negative findings render
   // their finding cards; metric-only categories render their NEUTRAL
   // Measurements block; clean/skipped categories render ONLY an invisible
   // anchor marker (dashboard final cleanup — no more "Nothing meaningful to
   // roast here" placeholder cards inside THE ACTUAL FINDINGS).
-  // Phase 2B: global finding ordinal across the whole report ("Finding 1, 2,
-  // 3…" in owner spec), independent of the per-category insight-seeding index
-  // which is deliberately left untouched for byte-determinism of derived copy.
+  // ONE PROBLEM = ONE FINDING (owner 2026-10-07): THE ACTUAL FINDINGS render
+  // the FLAT GROUPED list (cross-category merges live ONLY here, in the global
+  // ordinals and intro). The per-category `#cat-<key>` sections below it are
+  // the Phase 2C data-source: each carries its OWN within-category-grouped
+  // negatives, hidden in the dashboard so no card is ever shown twice — the
+  // focused view clones the section (client-side, unchanged Phase 2C wiring).
+  const catState = new Map(classified.map((g) => [g.key, (() => {
+    const fgScore = g.rule?.score;
+    const fgSub = (Number.isFinite(Number(fgScore)) && fgScore !== null) ? publicScore(fgScore) : null;
+    const fgCount = Array.isArray(g.rule?.findings) ? g.rule.findings.length : 0;
+    // Phase 2B: severity badges come from the SAME existing category
+    // classification (categoryDisplayState on the stored sub-score + finding
+    // count + grouped negative count) — never a new/reinterpreted severity.
+    // CLEAN is never badgeable here: a category with negative findings is
+    // never CLEAN (and a CLEAN-band one promotes to WATCH).
+    const state = (g.negativeCount > 0 && fgSub !== null) ? categoryDisplayState(fgSub, fgCount, g.negativeCount) : null;
+    return { state, sub: fgSub };
+  })()]));
+  /** Receipt lines for a grouped card: labeled with the member's category when
+   *  the group spans categories (owner rule — receipts are the evidence). */
+  const receiptTexts = (receipts) => receipts
+    .map((r) => {
+      if (!r || typeof r !== 'object' || !('text' in r)) return String(r ?? '');
+      const t = String(r.text);
+      return r.catKey ? `${CATEGORY_LABELS[r.catKey] ?? r.catKey} — ${t}` : t;
+    })
+    .filter((x) => x !== '');
+  // FLAT grouped list — global ordinals ("Finding 1, 2, 3…" in owner spec),
+  // independent of the per-category insight-seeding index.
   let findingOrdinal = 0;
+  const flatLis = flatGroups.map((g) => {
+    const label = CATEGORY_LABELS[g.key] ?? g.key;
+    const st = catState.get(g.key);
+    return renderFinding(scan.id, g.key, label, g.primary.finding, g.primary.insight, g.primary.idx,
+      st ? st.state : null, ++findingOrdinal, receiptTexts(g.receipts));
+  }).join('');
   const findingGroups = classified.map((g) => {
     const label = CATEGORY_LABELS[g.key] ?? g.key;
-    if (!(g.negatives.length > 0 || g.metrics.length > 0)) {
+    if (!(g.negativeCount > 0 || g.metrics.length > 0)) {
       // Clean / skipped category (dashboard final cleanup 2026-09-23): render
       // NO card inside THE ACTUAL FINDINGS — the breakdown card and WHAT'S
       // WORKING already represent it, and a "Nothing meaningful to roast here"
@@ -716,28 +740,19 @@ export function renderHtmlReport(scan) {
       return `\n  <span class="cat-anchor" aria-hidden="true" id="cat-${g.key.toLowerCase()}"
 ></span>`;
     }
-    // Phase 2B: each negative finding's severity badge comes from the SAME
-    // existing category classification (categoryDisplayState on the stored
-    // sub-score + finding count + negative count) — never a new/reinterpreted
-    // severity. CLEAN is never badgeable here: a category with negative
-    // findings is never CLEAN (and a CLEAN-band one promotes to WATCH).
-    const fgScore = g.rule?.score;
-    const fgSub = (Number.isFinite(Number(fgScore)) && fgScore !== null) ? publicScore(fgScore) : null;
-    const fgCount = Array.isArray(g.rule?.findings) ? g.rule.findings.length : 0;
-    const fgState = (g.negatives.length > 0 && fgSub !== null) ? categoryDisplayState(fgSub, fgCount, g.negatives.length) : null;
     // Phase 2D-1: the section carries a semantic state accent class (watch /
     // needs-attention / priority / neutral) — presentation only, same
     // classification as the cards; never a data change. `cat-detail-empty`
     // stays intact in its own className for the 2C clone check.
-    const fgAccent = fgState === null ? 'neutral' : (fgState === 'NEEDS ATTENTION' ? 'needs-attention' : fgState.toLowerCase());
-    const items = g.negatives
-      .map((x, i) => renderFinding(scan.id, g.key, label, x.finding, x.insight, i, fgState, ++findingOrdinal,
-        // ONE SIGNAL = ONE FINDING (audit Q3): the FIRST card of a demoted
-        // category carries the boilerplate aggregate (density) receipts, so
-        // the "5.5 per 300 words" measurement stays visible as evidence
-        // without double-counting the signal as a second finding.
-        i === 0 ? g.aggregates.map((a) => a.finding) : []))
-      .join('');
+    const st = catState.get(g.key);
+    const fgAccent = (!st || st.state === null) ? 'neutral' : (st.state === 'NEEDS ATTENTION' ? 'needs-attention' : st.state.toLowerCase());
+    const items = g.groups.map((grp, i) => {
+      const label = CATEGORY_LABELS[g.key] ?? g.key;
+      // Per-category ordinals inside the focused drill-down (the flat list
+      // above carries the global ordinals; this section is the clone source).
+      return renderFinding(scan.id, g.key, label, grp.primary.finding, grp.primary.insight,
+        grp.primary.idx, st ? st.state : null, i + 1, receiptTexts(grp.receipts));
+    }).join('');
     // Cross-page duplication pairs -> REPETITION receipts (real evidence,
     // replaces the old "Templated Content" section).
     const pairs = g.key === 'crossPage' && Array.isArray(cross.pairs)
@@ -768,7 +783,12 @@ export function renderHtmlReport(scan) {
   const findingsSection = `
   <h2>The Actual Findings</h2>
   <p>${findingsIntro}</p>
-  ${findingGroups}`;
+  <div class="actual-findings-flat">
+  ${flatLis}
+  </div>
+  <div class="cat-sources" hidden>
+  ${findingGroups}
+  </div>`;
 
   // --- 2. PAGE THAT NEEDS THE MOST WORK (owner IA §8) ------------------------
   // Single-page scan (no stored worstPage): name the homepage — the only page
@@ -793,7 +813,7 @@ export function renderHtmlReport(scan) {
   </div>`;
   } else {
     const lis = negativeCats.length > 0
-      ? negativeCats.map((g) => `<li><strong>${esc(CATEGORY_LABELS[g.key] ?? g.key)}</strong> — ${g.negatives.length} actual finding${g.negatives.length === 1 ? '' : 's'} to fix.</li>`).join('')
+      ? negativeCats.map((g) => `<li><strong>${esc(CATEGORY_LABELS[g.key] ?? g.key)}</strong> — ${g.groups.length} actual finding${g.groups.length === 1 ? '' : 's'} to fix.</li>`).join('')
       : '<li>Nothing to fix here this scan.</li>';
     pageSection = `
   <h2>Page That Needs The Most Work</h2>
@@ -813,26 +833,31 @@ export function renderHtmlReport(scan) {
   // category); capped at 5 for a scannable list. Each item renders as a
   // COMPACT summary (dashboard final cleanup) — see the map below.
   const fixItems = [];
-  for (const g of classified) {
-    if (g.negatives.length === 0) continue;
-    const label = CATEGORY_LABELS[g.key] ?? g.key;
+  // ONE PROBLEM = ONE FINDING (owner 2026-10-07): to-dos come from the GROUPED
+  // flat set — one ranked item per grouped problem (the merged card's primary
+  // finding carries the roast/fix; its member evidence rides in the card's
+  // receipts). Prioritized by the PRIMARY category's sub-score descending
+  // (impact proxy; stable sort keeps the flat list's order inside a category);
+  // capped at 5 for a scannable list.
+  for (const fg of flatGroups) {
+    const g = classified.find((c) => c.key === fg.key);
+    if (!g) continue;
+    const label = CATEGORY_LABELS[fg.key] ?? fg.key;
     const sub = (Number.isFinite(Number(g.rule?.score)) && g.rule?.score !== null) ? publicScore(g.rule.score) : 0;
     const nFindings = Array.isArray(g.rule?.findings) ? g.rule.findings.length : 0;
     // DISPLAY state: a CLEAN-band category with negative findings promotes to
     // WATCH so its fix pill never reads "CLEAN" next to a fix task (owner
     // defect 2026-10-07 — same promoted state as the card + badges).
-    const cls = categoryDisplayState(sub, nFindings, g.negatives.length);
-    g.negatives.forEach((x, i) => {
-      const ins = insightFor(scan.id, g.key, x.finding, x.insight, i);
-      fixItems.push({
-        key: g.key,
-        score: Number(g.rule?.score),
-        label,
-        cls,
-        problem: ins ? ins.roast : x.finding,
-        action: ins ? ins.fix : '',
-        evidence: x.finding,
-      });
+    const cls = categoryDisplayState(sub, nFindings, g.negativeCount);
+    const ins = insightFor(scan.id, fg.key, fg.primary.finding, fg.primary.insight, fg.primary.idx);
+    fixItems.push({
+      key: fg.key,
+      score: Number(g.rule?.score),
+      label,
+      cls,
+      problem: ins ? ins.roast : fg.primary.finding,
+      action: ins ? ins.fix : '',
+      evidence: fg.primary.finding,
     });
   }
   fixItems.sort((a, b) => (Number.isFinite(b.score) ? b.score : 0) - (Number.isFinite(a.score) ? a.score : 0));
@@ -919,7 +944,7 @@ export function renderHtmlReport(scan) {
       const nFindings = Array.isArray(rule.findings) ? rule.findings.length : 0;
       // DISPLAY state: same promotion as the card — a CLEAN-band category with
       // negative findings must not show a CLEAN pill in its focused view.
-      const cls = categoryDisplayState(sub, nFindings, g?.negatives.length ?? 0);
+      const cls = categoryDisplayState(sub, nFindings, g?.groups.length ?? 0);
       stateLine = `\n    <span class="cv-score">${sub}<span class="cv-den">/100</span></span>\n    <span class="cv-state cv-state-${cls.toLowerCase().replace(/[^a-z0-9]+/g, '-')}">${esc(cls)}</span>\n    <span class="cv-line">${esc(CATEGORY_ONE_LINERS[key] ?? '')}</span>`;
     }
     // Compliment gate (audit Q2, owner-approved 2026-09-28): a category's
@@ -928,7 +953,7 @@ export function renderHtmlReport(scan) {
     // next to its WATCH badge (same rule as the What's Working list; a
     // CLEAN-band category with negative findings is likewise excluded via
     // categoryDisplayState, owner defect 2026-10-07).
-    const cleanLis = (g && g.cleans.length > 0 && isCleanBand(key, rule, g?.negatives.length ?? 0))
+    const cleanLis = (g && g.cleans.length > 0 && isCleanBand(key, rule, g?.groups.length ?? 0))
       ? `\n    <ul class="cv-clean">\n      ${g.cleans.map((item) => renderCleanItem(label, item)).join('')}\n    </ul>`
       : '';
     return `
