@@ -384,8 +384,7 @@ test('surfaces agree: intro/ordinals/cards, breakdown counts, fix-first length a
   // REPETITION (nav + page pair); STRUCTURE's cards all merged into the
   // sponsor card, so STRUCTURE has no flat card of its own (design rule: the
   // intro's M uses the GROUPED flat set, see DESIGN.md "Fork / decisions").
-  assert.equal((flat.match(/<div class="finding-card"/g) ?? []).length, 3,
-    'cat-sources holds the 3 grouped cards');
+  assert.ok(flat.includes('id="finding-'), 'cat-sources cards carry deep-link finding ids');
   assert.equal((flat.match(/<div class="finding-card"/g) ?? []).length, 3, 'exactly 3 flat cards');
   assert.ok(flat.includes('Finding 1') && flat.includes('Finding 2') && flat.includes('Finding 3'),
     'global ordinals over the grouped set');
