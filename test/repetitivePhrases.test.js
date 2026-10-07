@@ -286,7 +286,7 @@ test('fixture B: varied testimonials do not false-fire (single-page -> null skip
 // Cached-fixture matrix with HONEST internal-rule labels: crossPage is the
 // display REPETITION card; repetitive is the display STRUCTURE card.
 // ---------------------------------------------------------------------------
-test('matrix: blog2posts — REPETITION (crossPage) 0 -> 5, STRUCTURE (repetitive) 0 unchanged', () => {
+test('matrix: blog2posts — REPETITION (crossPage) 5, STRUCTURE (repetitive) 0 -> 1', () => {
   const html = loadFixture('blog2posts');
   const text = extractText(html);
   // REPETITION card = internal crossPage. The fixture is its target page.
@@ -295,21 +295,24 @@ test('matrix: blog2posts — REPETITION (crossPage) 0 -> 5, STRUCTURE (repetitiv
   });
   assert.equal(cp.score, 5, JSON.stringify(cp));
   assert.equal(cp.findings[0], 'repeated phrase in the page text: 3× "a month of platform native" — in 3 paragraphs');
-  // STRUCTURE card = internal repetitive: UNCHANGED (0; legacy fallback line).
+  // STRUCTURE card = internal repetitive. 0 -> 1 (report-trust fix 2026-10-07:
+  // the sentence corpus is now BOUNDARY-SPACED, so the honest 2× opening
+  // receipt "one article becomes…" fires; the old fallback line referenced the
+  // glued corpus's 31 pseudo-sentences — the corpus now reports 66).
   const rep = runRules(text).repetitive;
-  assert.equal(rep.score, 0);
-  assert.equal(rep.findings[0], 'no notable repetitive structure (31 sentences, 148 paragraphs)');
+  assert.equal(rep.score, 1);
+  assert.equal(rep.findings[0], 'repeated sentence openings: 2× "one article becomes…"');
   assert.equal(rep.findings.some((f) => f.startsWith('repeated phrase in the page text:')), false);
-  // Overall composite: 14 (crossPage=0 proxy — main-equivalent) -> 16 (real
-  // crossPage=5: +1.5 at weight 0.30). Phase-2 C1 (owner 2026-10-05) adds +4
-  // on i 50 /\ fp 20, so both pins moved +4 vs the pre-C1 suite (10 -> 14 and
-  // 12 -> 16) while the component sub-scores are byte-identical. The live
-  // blog2posts scan is pinned 12 -> 16 in phase2Credits.test.js.
-  assert.equal(fixtureBreakdown('blog2posts', 0).composite, 14);
-  assert.equal(fixtureBreakdown('blog2posts', 5).composite, 16);
+  // Overall composite: 14 -> 7 (crossPage=0 proxy — main-equivalent) and
+  // 16 -> 9 (real crossPage=5: +1.5 at weight 0.30). Phase-2 C1 (owner
+  // 2026-10-05) fired +4 on i 50 /\ fp 20 and is now OFF (i 30 < 45 after the
+  // honest sentence boundaries) — see fingerprintVocab/phase2Credits for the
+  // full 14 -> 7 / 16 -> 9 walk-through.
+  assert.equal(fixtureBreakdown('blog2posts', 0).composite, 7);
+  assert.equal(fixtureBreakdown('blog2posts', 5).composite, 9);
 });
 
-test('matrix: stripe — REPETITION (crossPage) fires 3 phrase receipts; STRUCTURE (repetitive) back to legacy 25', () => {
+test('matrix: stripe — REPETITION (crossPage) fires 3 phrase receipts; STRUCTURE (repetitive) 25 -> 44', () => {
   const text = extractText(loadFixture('stripe'));
   const cp = analyzeCrossPage({
     pages: [{ url: 'https://stripe.com/', main: { words: text.words }, sentences: text.sentences, paragraphs: text.paragraphs, title: text.title }],
@@ -318,9 +321,13 @@ test('matrix: stripe — REPETITION (crossPage) fires 3 phrase receipts; STRUCTU
   assert.ok(cp.findings.some((f) => f.startsWith('repeated phrase in the page text: 3× "financial infrastructure to grow your revenue" — also in the page title')), JSON.stringify(cp.findings));
   assert.ok(cp.findings.some((f) => f.startsWith('repeated phrase in the page text: 3× "businesses on stripe generated 1 9t in 2025"')), JSON.stringify(cp.findings));
   assert.ok(cp.findings.some((f) => f.startsWith('repeated phrase in the page text: 3× "online and in store"')), JSON.stringify(cp.findings));
-  // STRUCTURE: legacy signals only (25), no phrase receipts.
+  // STRUCTURE: 25 -> 44 (report-trust fix 2026-10-07: the boundary-spaced
+  // sentence corpus turns the homepage's glued 222-word pseudo-run-ons into
+  // 107 real sentences (mean 16.6), exposing the real repetition: 4× "read the
+  // story…" / 3× "read the guide…" openings, 2× near-identical pairs, 2×
+  // repeated paragraphs. No phrase receipts (those live under crossPage).
   const rep = runRules(text).repetitive;
-  assert.equal(rep.score, 25);
+  assert.equal(rep.score, 44);
   assert.equal(rep.findings.some((f) => f.startsWith('repeated phrase in the page text:')), false);
 });
 
@@ -335,9 +342,10 @@ test('matrix: no-false-fire fixtures stay unchanged (getcollectionscopilot, ass-
     const cp = singlePage({ url: `https://${name}.com/`, main: { words: text.words }, sentences: text.sentences, paragraphs: text.paragraphs, title: text.title });
     assert.equal(cp.score, null, name);
   }
-  // No-drift composites: ass-score stays 11 (fingerprintVocab pins the full
-  // breakdown); cc's fingerprints stay 0 (pinned there).
-  assert.equal(fixtureBreakdown('ass-score', 0).composite, 11);
+  // No-drift composites except where honesty changed: cc 5 / ass-score 13
+  // (report-trust fix 2026-10-07 — infoDensity 49 -> 31 and 45 -> 55 on the
+  // boundary-spaced sentence corpus; see fingerprintVocab.test.js).
+  assert.equal(fixtureBreakdown('ass-score', 0).composite, 13);
 });
 
 // ---------------------------------------------------------------------------

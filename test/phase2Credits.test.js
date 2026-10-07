@@ -35,24 +35,37 @@ const preRound = (scores) =>
 // ANCHOR REGRESSION TABLE (owner-approved exact outputs)
 // ---------------------------------------------------------------------------
 
-test('anchors: known-good fixtures are bit-identical — gcc 7, stripe 17', () => {
-  // gcc {f0,b0,i49,r0,c0,fp0,a0}: C1 needs fp>=15 (fp=0) -> no; C2 needs c>=80 -> no.
-  assert.equal(fixtureBreakdown('getcollectionscopilot', 0).composite, 7);
-  // stripe {f4,b18,i51,r25,c0,fp13,a22}: C1 needs fp>=15 (fp=13) -> no.
-  assert.equal(fixtureBreakdown('stripe', 0).composite, 17);
+test('anchors: known-good fixtures are bit-identical — gcc 7 -> 5, stripe 17 -> 16', () => {
+  // gcc {f0,b0,i31,r0,c0,fp0,a0}: i 49 -> 31 (report-trust fix 2026-10-07: the
+  // sentence metric reads BOUNDARY-SPACED sentences — cc's 11 glued pseudo-run-ons
+  // (mean 39.6 words) became 38 real sentences (mean 11.5); the run-on subscore
+  // collapse drops infoDensity 49 -> 31) -> composite 7 -> 5. C1 still no (fp=0).
+  assert.equal(fixtureBreakdown('getcollectionscopilot', 0).composite, 5);
+  // stripe {f4,b18,i31,r44,c0,fp13,a22}: i 51 -> 31 (glued corpus was EIGHT
+  // 222-word fake run-ons; the boundary-spaced corpus is 107 real sentences,
+  // mean 16.6 in the 12–26 band -> the run-on subscore collapses) AND r 25 -> 44
+  // (the now-honest sentences expose the real 4x/3x/2x opening/near-identical/
+  // paragraph repetition). Composite 17 -> 16. C1 still no (fp=13).
+  assert.equal(fixtureBreakdown('stripe', 0).composite, 16);
   const stripe = fixtureBreakdown('stripe', 0);
   assert.equal(stripe.breakdown.fingerprints.score, 13, 'gate-relevant sub-score pinned (13 < 15)');
 });
 
-test('anchors: blog2posts 12 -> 16 (C1 +4 on the pre-round total 11.6 -> 15.6)', () => {
+test('anchors: blog2posts 16 -> 9 (report-trust fix: honest sentences switch C1 OFF)', () => {
+  // 16 -> 9 (report-trust fix 2026-10-07): infoDensity 50 -> 30 because the
+  // sentence metric now reads BOUNDARY-SPACED sentences (blog2posts mean
+  // sentence length 40.0 -> 18.8 words, inside the 12–26 band — the glued
+  // corpus's 31 pseudo-run-ons were not real sentences). infoDensity 30 < 45
+  // so the phase-2 C1 credit (+4) no longer fires; repetitive 0 -> 1 (the
+  // honest corpus exposes a real 2× opening receipt). Pre-round 11.6 -> 8.725.
   const { breakdown, composite: c } = fixtureBreakdown('blog2posts', 5);
-  assert.equal(breakdown.infoDensity.score, 50);
+  assert.equal(breakdown.infoDensity.score, 30);
   assert.equal(breakdown.fingerprints.score, 20);
   assert.equal(breakdown.crossPage.score, 5);
   assert.ok(Math.abs(preRound({
-    filler: 0, boilerplate: 6, infoDensity: 50, repetitive: 0, crossPage: 5, fingerprints: 20, assets: 0,
-  }) - 11.6) < 1e-9, 'pre-round total is 11.6');
-  assert.equal(c, 16, '15.6 rounds to 16 — the anchor output is exact only because the credit lands pre-round');
+    filler: 0, boilerplate: 6, infoDensity: 30, repetitive: 1, crossPage: 5, fingerprints: 20, assets: 0,
+  }) - 8.725) < 1e-9, 'pre-round total is 8.725');
+  assert.equal(c, 9, '8.725 rounds to 9 — no C1 credit (i 30 < 45)');
 });
 
 test('anchors: seoloupe 36 -> 45 (C2 +9: k=4, crossPage 100)', () => {
@@ -148,8 +161,11 @@ test('fallback branch: clean single-page scans reproduce v1 bit-identically when
   assert.equal(composite(fallback), Math.round(preRound(fallback)), 'v1 parity when fp < 15');
   assert.equal(composite({ ...fallback, infoDensity: 44 }), Math.round(preRound({ ...fallback, infoDensity: 44 })));
   assert.equal(composite({ ...fallback, infoDensity: 0 }), 0);
-  // Ass-score.com fixture (real clean-ish single-page scan): fingerprints 0 -> stays 11.
-  assert.equal(fixtureBreakdown('ass-score', 0).composite, 11);
+  // Ass-score.com fixture (real clean-ish single-page scan): fingerprints 0 ->
+  // composite 11 -> 13 (report-trust fix 2026-10-07: boundary-spaced sentences
+  // make ass-score.com's UI-label fragments visible as staccato, mean sentence
+  // length 9.2 -> 5.0 words -> infoDensity 45 -> 55 -> 12.75 -> 13).
+  assert.equal(fixtureBreakdown('ass-score', 0).composite, 13);
 });
 
 test('multi-page branch: pre-round uses the FULL 7-rule weights; credit still lands on the pre-round total', () => {

@@ -289,15 +289,27 @@ export async function runScan({ db, fetcher, url, branding = null, businessName 
   let worstPage = null;
   if (pages.length >= 2) {
     const dupByUrl = new Map();
+    const pairByUrl = new Map();
     for (const p of crossPage.pairs ?? []) {
       if (p.similarity < DUPLICATION_THRESHOLD) continue;
       const dup = clamp(Math.round(((p.similarity - DUPLICATION_THRESHOLD) / (1 - DUPLICATION_THRESHOLD)) * 100), 0, 100);
       dupByUrl.set(p.pageA, Math.max(dupByUrl.get(p.pageA) ?? 0, dup));
       dupByUrl.set(p.pageB, Math.max(dupByUrl.get(p.pageB) ?? 0, dup));
+      // Report-trust fix 2026-10-07 (DEFECT 2): carry the REAL pair evidence
+      // (other URL + raw similarity fraction) with the highest-similarity
+      // flagged pair for each page, so the "Page That Needs The Most Work"
+      // panel can name the duplication instead of hiding it behind a
+      // category-findings list. Real data only — same pairs that scored the
+      // dup term; no invented numbers.
+      const rec = { otherUrl: p.pageB, similarity: p.similarity };
+      if (!pairByUrl.has(p.pageA) || (pairByUrl.get(p.pageA).similarity ?? 0) < rec.similarity) pairByUrl.set(p.pageA, rec);
+      const recB = { otherUrl: p.pageA, similarity: p.similarity };
+      if (!pairByUrl.has(p.pageB) || (pairByUrl.get(p.pageB).similarity ?? 0) < recB.similarity) pairByUrl.set(p.pageB, recB);
     }
     let bestUrl = null;
     let bestScore = -1;
     let bestFindings = [];
+    let bestDupPair = null;
     for (const p of pages) {
       const v1 = computeSlopScore(perPage.get(p.url).rules).slopScore;
       const dup = dupByUrl.get(p.url) ?? 0;
@@ -312,9 +324,11 @@ export async function runScan({ db, fetcher, url, branding = null, businessName 
           ...perPage.get(p.url).rules.infoDensity.findings,
           ...perPage.get(p.url).rules.repetitive.findings,
         ].slice(0, 6);
+        bestDupPair = pairByUrl.get(p.url) ?? null;
       }
     }
     worstPage = { url: bestUrl, score: bestScore, findings: bestFindings };
+    if (bestDupPair) worstPage.dupPair = bestDupPair;
   }
 
   const id = randomUUID();
