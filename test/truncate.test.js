@@ -28,7 +28,8 @@ test('truncate: shortUrl() keeps the identifying host + filename tail', () => {
   assert.equal(shortUrl(long, 55), 'cdn.publishyoursaas.com…/Screenshot_6_xlarge.png', 'host + "…/" + basename keeps which image is meant');
   assert.equal(shortUrl(long, 30).endsWith('…/Screenshot_6_xlarge.png'), false, 'shorter budgets further shorten the host side');
   assert.ok(shortUrl(long, 30).includes('…/'), 'ellipsis separator always present when cut');
-  assert.equal(shortUrl('/images/img_1410.jpg', 5), '…410.jpg', 'non-parsable keeps the tail — the filename lives at the end');
+  assert.equal(shortUrl('/images/img_1410.jpg', 8), '…410.jpg', 'non-parsable keeps the tail — the filename lives at the end');
+  assert.equal(shortUrl('/images/img_1410.jpg', 5), '….jpg', 'non-parsable tail shrinks to the last limit-1 chars');
   assert.equal(shortUrl('', 70), '', 'empty stays empty');
 });
 
