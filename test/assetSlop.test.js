@@ -358,7 +358,7 @@ test('GET HTML: free page shows the IMAGERY number; paid report renders findings
   assert.ok(html.includes('2 of 4 images come from stock photo sites'), 'stock finding rendered as a receipt');
   assert.ok(html.includes('generic alt'), 'alt finding rendered as a receipt');
   assert.ok(html.includes('Nothing meaningful to roast here.'), 'clean category line rendered (single-page scan leaves REPETITION skipped)');
-  assert.ok(html.includes('this is the only page scanned.'), 'single-page worst-page line rendered');
+  assert.ok(!html.includes('this is the only page scanned.'), 'no single-page worst-page line (panel removed — the page line is multi-page-only)');
   // The mandated disclaimer and score line still present (report intact).
   assert.ok(html.includes('This tool identifies writing and design patterns commonly associated with generic or templated content.'));
   assert.match(html, /A\.S\.S\. Score: \d+ \/ 100/);
