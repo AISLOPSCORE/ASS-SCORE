@@ -1,9 +1,10 @@
 import { defineRailway, github, project, service, volume } from "railway/iac";
 
 // Migrated from railway.json (Config as Code) via `railway config migrate`
-// on 2026-10-09. railway.json stays in the repo until the lead + owner pick
-// the cutover moment (CaC keeps working until 2026-12-01). Do NOT delete
-// railway.json in the same change as this file.
+// on 2026-10-09. Cutover applied 2026-10-10: `railway config apply --yes`
+// (plan 0 add / 2 change / 0 destroy → live; re-plan then showed only
+// restart-policy drift). railway.json DELETED at cutover (CaC retired; IaC
+// is now the single source of truth).
 //
 // DIFFS from the raw migrate output (each is deliberate; see
 // /home/team/shared/railway-iac-2026-10-09.md for the full comparison):
@@ -19,14 +20,15 @@ import { defineRailway, github, project, service, volume } from "railway/iac";
 //     reproduces railway.json's build block exactly (the migrate tool left
 //     these as comments because the IaC DSL reference does not document the
 //     object form; the SDK type BuildConfig does accept builder
-//     "NIXPACKS" | "DOCKERFILE" | "RAILPACK" | ... + dockerfilePath, and the
-//     live graph shows the default engine is RAILPACK — so this field is
-//     what keeps the Dockerfile build in force after cutover instead of
-//     silently falling back to Railpack).
-//  4. `deploy: { restartPolicyType: "ON_FAILURE", restartPolicyMaxRetries:
-//     10 }`: reproduces railway.json's restart policy exactly (Railway's
-//     documented default is also ON_FAILURE/10, but this keeps it explicit
-//     and immune to default drift). The migrate tool dropped the field.
+//     "NIXPACKS" | "DOCKERFILE" | "RAILPACK" | ... + dockerfilePath).
+//     Applied live at cutover; pull --json confirms builder DOCKERFILE.
+//  4. restartPolicyType/restartPolicyMaxRetries: REMOVED at cutover —
+//     Railway's service model does NOT persist these (live `railway config
+//     pull --json` shows no restartPolicy field in deploy; plan kept asking
+//     null → ON_FAILURE/10 forever, apply reported success but the value
+//     never stuck). Railway's documented default IS ON_FAILURE/10, so the
+//     declared fields changed no behavior — dropping them makes `config
+//     plan` converge to 0 to change.
 //  5. `volume()` + `volumeMounts`: reproduces the load-bearing
 //     ass-score-volume mount at /data (5 GB, sfo) — the SQLite persistence
 //     volume. Verified live: RAILWAY_VOLUME_NAME=ass-score-volume,
@@ -50,10 +52,6 @@ export default defineRailway(() => {
       dockerfilePath: "Dockerfile",
     },
     start: "npm start",
-    deploy: {
-      restartPolicyType: "ON_FAILURE",
-      restartPolicyMaxRetries: 10,
-    },
     healthcheck: "/health",
     healthcheckTimeout: 100,
     volumeMounts: {
