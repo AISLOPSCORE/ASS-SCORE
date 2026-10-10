@@ -41,7 +41,7 @@ async function paidHtml(base, id) {
   assert.equal(res.status, 200, 'paid report serves 200 with a valid token');
   return res.text();
 }
-const fixSectionOf = (html) => html.slice(html.indexOf('What To Fix First'), html.indexOf('Your Breakdown'));
+const fixSectionOf = (html) => html.slice(html.indexOf('What To Fix First'), html.indexOf("What's Working"));
 
 // ---------------------------------------------------------------------------
 // 3. WORD-BOUNDARY TRUNCATION — the helper itself

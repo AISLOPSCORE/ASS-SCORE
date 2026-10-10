@@ -97,18 +97,20 @@ test('1. clean site -> zero negative findings in the full report', async () => {
     // No roast-styled layer, no fix labels anywhere.
     assert.equal((paid.match(/<p class="ins-roast">/g) ?? []).length, 0, 'no negative roast paragraphs');
     assert.ok(!paid.includes('How to fix it:'), 'no negative finding structure');
-    // Summary counts zero negative findings.
-    assert.ok(paid.includes('No findings this scan — nothing to roast, and nothing to hide.'),
-      'findings intro counts zero negatives');
+    // The flat-findings intro line is gone (owner reorder 2026-10-10); the
+    // zero-findings state surfaces via the fix-first empty sentence + the
+    // clean final-verdict next-step.
+    assert.ok(paid.includes('No negative findings to fix this scan'), 'fix-first lists nothing');
+    assert.ok(paid.includes('Nothing to fix this scan — keep it up, and rescan after any big changes.'),
+      'clean report: final verdict is the clean next-step (no "fix the top items")');
     // WHAT'S WORKING carries the clean compliments (positive results only).
     assert.ok(paid.includes("What's Working"), 'What\'s Working section present');
     assert.ok(paid.includes('COPY — CLEAN:'), 'clean COPY result listed as CLEAN');
     assert.ok(paid.includes('MESSAGING — CLEAN:'), 'clean MESSAGING result listed as CLEAN');
     assert.ok(paid.includes('ORIGINALITY — CLEAN:'), 'clean ORIGINALITY metric listed as CLEAN');
-    // Fix-first is empty for a clean scan.
-    assert.ok(paid.includes('No negative findings to fix this scan'), 'fix-first lists nothing');
-    // Single page handling + no Score id metadata.
-    assert.ok(paid.includes('this is the only page scanned.'), 'single-page note present');
+    // Single-page scans render no worst-page line + no Score id metadata.
+    assert.ok(!paid.includes('Most issues are on'), 'single-page scan never renders the most-issues line');
+    assert.ok(!paid.includes('this is the only page scanned.'), 'old page panel text is gone');
     assert.ok(!paid.includes('Score id'), 'no Score id UUID in the footer');
   } finally {
     app.server.close();
@@ -168,8 +170,8 @@ test('3. real negative detector -> full four-part finding with evidence', async 
     assert.ok(paid.includes('How to fix it:'), 'HOW TO FIX IT label present');
     assert.ok(paid.includes('Show the receipts:'), 'THE RECEIPTS label present');
     assert.ok(paid.includes('3× &quot;cutting-edge&quot;'), 'evidence/receipt shows the real trigger');
-    assert.ok(paid.includes('1 finding across 1 category — every roast points at the receipts inside its category view.'),
-      'summary counts the single negative finding only (compliments ignored)');
+    assert.ok(paid.includes('Fix the top items, then rescan — the score is waiting to drop.'),
+      'summary: exactly one negative finding -> the final verdict points at the fix list + rescan');
   } finally {
     app.server.close();
   }
@@ -204,8 +206,8 @@ test('4. metric below threshold -> no negative finding (neutral evidence only)',
     // The metric readings produce NO negative finding and NO count.
     assert.equal((paid.match(/<p class="ins-roast">/g) ?? []).length, 0, 'no negative roast from metrics');
     assert.ok(!paid.includes('How to fix it:'), 'no fix task manufactured from a metric');
-    assert.ok(paid.includes('No findings this scan — nothing to roast, and nothing to hide.'),
-      'summary counts zero negative findings (exact zero-findings line)');
+    assert.ok(paid.includes('Nothing to fix this scan — keep it up, and rescan after any big changes.'),
+      'zero-negative scan shows the clean next-step final verdict (the flat findings summary is gone)');
     // The metrics ARE shown as neutral evidence, clearly labelled.
     assert.ok(paid.includes('Measurements:'), 'metric readings render as neutral measurements');
     assert.ok(paid.includes('vocabulary diversity (MATTR-50): 0.766'), 'MATTR reading present as evidence');
@@ -235,10 +237,15 @@ test('5. multiple negative categories -> only actual problems counted', async ()
   try {
     const paid = await paidHtml(app.base, 'ia-multi-0001');
     // Negatives: filler(2) + boilerplate(1) + infoDensity(1) = 4 across 3 cats.
-    // The clean repetitive + assets lines are NOT findings and are NOT counted.
-    assert.ok(paid.includes('4 findings across 3 categories — every roast points at the receipts inside its category view.'),
-      'summary counts only actual negative findings');
-    assert.ok(!paid.includes('6 findings across 5 categories'), 'compliments are never counted as findings');
+    // The clean repetitive + assets lines are NOT findings and are NOT counted
+    // (the old "N findings across M categories" intro line is gone — the
+    // per-category cards + the fix list carry the grouped counts instead).
+    assert.ok(paid.includes('<span class="cat-findings cat-findings-problem">2 roasts — see receipts</span>'),
+      'COPY card carries its 2 grouped roasts');
+    assert.ok(paid.includes('<span class="cat-findings cat-findings-clean">No roasts</span>'),
+      'clean categories render No roasts (compliments/measurements never counted)');
+    assert.ok(paid.includes('Fix the top items, then rescan — the score is waiting to drop.'),
+      'final verdict next-step fires (4 grouped problems to fix)');
     assert.equal((flatRegion(paid).match(/<p class="ins-roast">/g) ?? []).length, 4,
       'grouping: four flat-list roast layers rendered (the hidden per-category clone-source sections re-render them for the Phase 2C views)');
   } finally {
@@ -246,7 +253,7 @@ test('5. multiple negative categories -> only actual problems counted', async ()
   }
 });
 
-test('6. single-page site -> correct page handling', async () => {
+test('6. single-page site -> no worst-page line (the page panel is gone; single-page scans render no page context)', async () => {
   const dbPath = tmpDb();
   await insertScan(dbPath, {
     id: 'ia-single-0001',
@@ -264,17 +271,22 @@ test('6. single-page site -> correct page handling', async () => {
   const app = startApp(dbPath);
   try {
     const paid = await paidHtml(app.base, 'ia-single-0001');
-    assert.ok(paid.includes('this is the only page scanned.'), 'single-page note present');
-    const pageSection = paid.slice(paid.indexOf('Page That Needs The Most Work'), paid.indexOf('What To Fix First'));
-    assert.ok(pageSection.includes('Homepage'), 'names the homepage');
-    assert.ok(pageSection.includes('COPY'), 'summarizes the actual finding on the homepage');
-    assert.ok(!pageSection.includes('ORIGINALITY'), 'does not invent findings that are not negative');
+    // No stored worstPage -> the fix-first context line never renders (the
+    // "Homepage — the only page scanned" panel is gone too).
+    assert.ok(!paid.includes('Most issues are on'), 'single-page scan has no most-issues line');
+    assert.ok(!paid.includes('only page scanned'), 'old homepage panel text is gone');
+    assert.ok(!paid.includes('Page That Needs The Most Work'), 'worst-page section is gone');
+    // The COPY negative still flows into the fix list (unaffected by the
+    // page-panel removal).
+    const fixRegion = paid.slice(paid.indexOf('What To Fix First'), paid.indexOf("What's Working"));
+    assert.ok(fixRegion.includes('COPY'), 'fix-first still lists the COPY negative');
+    assert.ok(!fixRegion.includes('ORIGINALITY'), 'does not invent findings that are not negative');
   } finally {
     app.server.close();
   }
 });
 
-test('7. multi-page site -> correct page prioritization', async () => {
+test('7. multi-page site -> correct page prioritization (worst-page evidence on the ONE fix-first context line)', async () => {
   const dbPath = tmpDb();
   await insertScan(dbPath, {
     id: 'ia-worst-0001',
@@ -284,7 +296,7 @@ test('7. multi-page site -> correct page prioritization', async () => {
       boilerplate: { score: 0, findings: ['0 boilerplate signal(s) in 108 words (0.0 per 300 words)'] },
       infoDensity: { score: 0, findings: ['vocabulary diversity (MATTR-50): 0.900 (lower = more repetitive vocabulary)'] },
       repetitive: { score: 0, findings: ['no notable repetitive structure (6 sentences, 3 paragraphs)'] },
-      crossPage: { score: 40, findings: ['no page pairs above 80% similarity (2 pages compared)'], pages: ['https://a.example/', 'https://worst.example/about'] },
+      crossPage: { score: 40, findings: ['no page pairs above 80% similarity (2 pages compared)'], pages: ['https://a.example/', 'https://worst.example/about'], pairs: [] },
       fingerprints: { score: 0, findings: [] },
       assets: { score: 0, findings: ['0 of 2 images flagged for stock/placeholder signals'] },
     },
@@ -299,11 +311,17 @@ test('7. multi-page site -> correct page prioritization', async () => {
   const app = startApp(dbPath);
   try {
     const paid = await paidHtml(app.base, 'ia-worst-0001');
-    const pageSection = paid.slice(paid.indexOf('Page That Needs The Most Work'), paid.indexOf('What To Fix First'));
-    assert.ok(pageSection.includes('https://worst.example/about'), 'names the worst page URL');
-    assert.ok(pageSection.includes('COPY'), 'lists the actual negative finding (COPY)');
-    assert.ok(!pageSection.includes('ORIGINALITY'), 'metric reading is not presented as a page problem');
-    assert.ok(!pageSection.includes('0.766'), 'metric value is not listed as a finding on the worst page');
+    // The worst-page panel is gone — its evidence lives in ONE line directly
+    // above the fix list (multi-page scan + findings present).
+    assert.ok(paid.includes('Most issues are on'), 'multi-page scan renders the most-issues line');
+    const ctx = paid.slice(paid.indexOf('Most issues are on'), paid.indexOf('<ol class="fix-list"'));
+    assert.ok(ctx.includes('/about'), 'worst page renders human-short (pathname label, URL as link target)');
+    assert.ok(ctx.includes('href="https://worst.example/about"'), 'worst page link carries the real URL');
+    assert.ok(!ctx.includes('ORIGINALITY'), 'metric reading is not named as a page problem');
+    assert.ok(!ctx.includes('0.766'), 'metric value is not listed on the worst-page line');
+    // The COPY negative still leads the fix list.
+    const fixRegion = paid.slice(paid.indexOf('What To Fix First'), paid.indexOf("What's Working"));
+    assert.ok(fixRegion.includes('COPY'), 'fix-first still lists the COPY negative');
   } finally {
     app.server.close();
   }
@@ -323,7 +341,8 @@ test('8. score direction remains 0 best / 100 worst', async () => {
   try {
     const low = await paidHtml(appLow.base, 'ia-dir-low');
     assert.ok(low.includes('CLEAN'), 'low score shows the clean grade');
-    assert.ok(low.includes('this is what a good website looks like'), 'final verdict praises the low score');
+    assert.ok(low.includes('Nothing to fix this scan — keep it up, and rescan after any big changes.'),
+      'clean final verdict is the keep-it-up next-step (never "fix the top items")');
     assert.ok(!/poor/i.test(low) && !/bad\b/i.test(low), 'a low score is never described as poor/bad');
   } finally {
     appLow.server.close();
@@ -348,7 +367,8 @@ test('8. score direction remains 0 best / 100 worst', async () => {
   try {
     const high = await paidHtml(appHigh.base, 'ia-dir-high');
     assert.ok(high.includes('BEYOND ASS'), 'high score shows the beyond-ass grade');
-    assert.ok(high.includes('badge nobody asked for'), 'final verdict calls the high score bad');
+    assert.ok(high.includes('Fix the top items, then rescan — the score is waiting to drop.'),
+      'high-score final verdict is the fix-then-rescan next-step (no score repeat)');
   } finally {
     appHigh.server.close();
   }
@@ -429,24 +449,29 @@ test('P2A.3: card numbers/states come from the existing classification (state cl
   }
 });
 
-test('P2A.4: dashboard section hierarchy — hero → verdict → breakdown → working → findings → page → fix → final → methodology', async () => {
+test('P2A.4: dashboard section hierarchy — hero → breakdown → fix → working → findings(clone-source) → final → methodology', async () => {
   const dbPath = tmpDb();
   await insertScan(dbPath, { id: 'p2a-order', score: 89, breakdown: SLOPPY_BREAKDOWN_89 });
   const app = startApp(dbPath);
   try {
     const html = await paidHtml(app.base, 'p2a-order');
     const idx = (s) => html.indexOf(s);
-    // Dashboard final cleanup (2026-09-23): the action layer (page + fix)
-    // moved UP right after the verdict; findings moved to the detail position.
-    const seq = ['A.S.S. Score: 89 / 100', 'The Verdict', 'Page That Needs The Most Work', 'What To Fix First',
-      'Your Breakdown', "What's Working", '<div class="cat-sources" hidden>', 'Final Verdict', 'Methodology'];
+    // Owner reorder 2026-10-10: the hero carries the roast; the numbered
+    // sections read 01 Your Breakdown → 02 What To Fix First → 03 What's
+    // Working → 04 Final Verdict → 05 Methodology (the hidden Phase 2C
+    // clone-source sits between What's Working and Final Verdict).
+    const seq = ['A.S.S. Score: 89 / 100', 'Your Breakdown', 'What To Fix First',
+      "What's Working", '<div class="cat-sources" hidden>', 'Final Verdict', 'Methodology'];
     let prev = -1;
     for (const marker of seq) {
       const at = idx(marker);
       assert.ok(at > prev, `"${marker}" appears after the previous section (at ${at}, expected > ${prev})`);
       prev = at;
     }
-    // The category detail anchors live inside the findings area (after the cards).
+    // No remnant sections from the old order.
+    assert.ok(!html.includes('The Verdict') && !html.includes('Page That Needs The Most Work')
+      && !html.includes('The Actual Findings'), 'old sections are gone');
+    // The category detail anchors live inside the hidden clone-source (after the cards).
     const firstCard = html.indexOf('<a class="cat-card');
     const firstDetail = html.indexOf('id="cat-');
     assert.ok(firstCard >= 0 && firstDetail > firstCard, 'category detail targets sit lower on the page than the cards');
@@ -660,11 +685,11 @@ test('P2B.4: Phase 2A assertions hold unchanged under the card redesign (hero, 7
       ['cat-filler', 'cat-boilerplate', 'cat-infodensity', 'cat-repetitive', 'cat-crosspage', 'cat-fingerprints', 'cat-assets'],
       'the 7 existing category cards remain');
     for (const anchor of hrefs) assert.ok(sloppy.includes(`id="${anchor}"`), `anchor ${anchor} still present`);
-    // Section hierarchy (dashboard final cleanup order: attention sections
-    // moved up after the verdict, findings moved to the detail position).
+    // Section hierarchy (owner reorder 2026-10-10: numbered sections read
+    // 01 Breakdown → 02 Fix → 03 Working → 04 Final → 05 Methodology).
     const idx = (s) => sloppy.indexOf(s);
-    const seq = ['A.S.S. Score: 89 / 100', 'The Verdict', 'Page That Needs The Most Work', 'What To Fix First',
-      'Your Breakdown', "What's Working", '<div class="cat-sources" hidden>', 'Final Verdict', 'Methodology'];
+    const seq = ['A.S.S. Score: 89 / 100', 'Your Breakdown', 'What To Fix First',
+      "What's Working", '<div class="cat-sources" hidden>', 'Final Verdict', 'Methodology'];
     let prev = -1;
     for (const marker of seq) {
       const at = idx(marker);
@@ -752,10 +777,10 @@ test('P2C.2: dashboard retains every existing section in order — views layer o
     for (const [name, id] of [['clean', 'p2c-clean'], ['sloppy', 'p2c-sloppy']]) {
       const html = await paidHtml(app.base, id);
       const idx = (s) => html.indexOf(s);
-      // Dashboard final cleanup order: verdict → page → fix → breakdown →
-      // working → findings → final → methodology.
-      const seq = ['A.S.S. Score: ', 'The Verdict', 'Page That Needs The Most Work', 'What To Fix First',
-        'Your Breakdown', "What's Working", '<div class="cat-sources" hidden>', 'Final Verdict', 'Methodology'];
+      // Owner reorder 2026-10-10: hero → breakdown → fix → working →
+      // findings(clone-source) → final → methodology.
+      const seq = ['A.S.S. Score: ', 'Your Breakdown', 'What To Fix First',
+        "What's Working", '<div class="cat-sources" hidden>', 'Final Verdict', 'Methodology'];
       let prev = -1;
       for (const marker of seq) {
         const at = idx(marker);
