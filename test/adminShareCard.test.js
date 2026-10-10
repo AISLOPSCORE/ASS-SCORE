@@ -644,9 +644,11 @@ test('admin report: share-card result page links "View full report" with ?pw=, a
     assert.ok((viaLink.headers.get('content-type') || '').includes('text/html'), 'report served as HTML');
     assert.equal(viaLink.headers.get('cache-control'), 'no-store', 'admin report is never cached');
     const report = await viaLink.text();
-    // Core full-report sections (owner IA — the same sequence the paid report asserts).
-    for (const marker of ['The Verdict', 'Page That Needs The Most Work', 'What To Fix First',
-      'Your Breakdown', "What's Working", '<div class="cat-sources" hidden>', 'Final Verdict', 'Methodology']) {
+    // Core full-report sections (owner reorder 2026-10-10 — the same sequence
+    // the paid report asserts: breakdown → fix → working → findings →
+    // final → methodology).
+    for (const marker of ['Your Breakdown', 'What To Fix First',
+      "What's Working", '<div class="cat-sources" hidden>', 'Final Verdict', 'Methodology']) {
       assert.ok(report.includes(marker), `full report contains ${marker}`);
     }
     // Three-layer finding structure: THE ROAST / WHY IT MATTERS / HOW TO FIX
@@ -665,7 +667,7 @@ test('admin report: share-card result page links "View full report" with ?pw=, a
     db.raw.prepare('UPDATE scans SET created_at = ? WHERE id = ?').run('2025-01-01T00:00:00.000Z', scanId);
     const viaLinkStale = await fetch(new URL(`/admin/report/${scanId}?pw=${encodeURIComponent(PASSWORD)}`, app.base).href);
     assert.equal(viaLinkStale.status, 200, 'admin report has no 30-day access window');
-    assert.ok((await viaLinkStale.text()).includes('The Verdict'));
+    assert.ok((await viaLinkStale.text()).includes('Your Breakdown'));
     db.close();
   } finally {
     app.server.close();

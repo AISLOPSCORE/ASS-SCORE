@@ -544,7 +544,7 @@ test('integration: multi-page scan flags duplication + fingerprints; paid report
   // token'd paid report (this is the paid content).
   const paid = await paidHtml(api.base, json.id);
   assert.ok(paid.includes('REPETITION'), 'crossPage renders under its customer name REPETITION');
-  assert.match(paid, /Page That Needs The Most Work/);
+  assert.match(paid, /Pages scanned:/, 'multi-page scan lists the scanned pages in the report (moved to the fine-print group)');
   assert.match(paid, /Duplicated page pairs \(receipts\):/);
   assert.match(paid, /similar/);
   assert.ok(paid.includes('v0.dev'), 'fingerprint evidence (v0.dev) renders in the paid report');
@@ -622,7 +622,7 @@ test('integration: budget expiry yields partial results without hanging', async 
   const anchorUrls = [...paid.matchAll(/href="([^"]+)"/g)].map((m) => m[1]);
   assert.ok(anchorUrls.some((u) => u.endsWith('/fast')), 'completed page is linked in the paid report');
   assert.ok(!anchorUrls.some((u) => u.includes('/slow')), 'stalled page is never linked in the paid report');
-  assert.match(paid, /Page That Needs The Most Work/, 'for the multi-page partial scan');
+  assert.match(paid, /Pages scanned:/, 'for the multi-page partial scan: the completed-page list renders in the report');
 
   api.server.close();
 });

@@ -137,7 +137,7 @@ test('#4 (a): the worst-page panel can never count a metric measurement as an ac
     'real negatives still count, measurements never');
 });
 
-test('#4 (b): the /about production case — panel no longer claims an ORIGINALITY finding (measurements only)', async () => {
+test('#4 (b): the /about production case — the fix-first context line never names a measurement as a page problem (the panel is gone)', async () => {
   const dbPath = tmpDb();
   await insertScan(dbPath, {
     id: 'rq-about-0001',
@@ -147,11 +147,15 @@ test('#4 (b): the /about production case — panel no longer claims an ORIGINALI
   const app = startApp(dbPath);
   try {
     const paid = await paidHtml(app.base, 'rq-about-0001');
-    const pageSection = paid.slice(paid.indexOf('Page That Needs The Most Work'), paid.indexOf('What To Fix First'));
-    assert.ok(!pageSection.includes('ORIGINALITY'),
-      'panel must not even name ORIGINALITY for a measurements-only page');
-    assert.ok(pageSection.includes('No actual negative findings captured for this page'),
-      'panel shows the honest no-actual-findings fallback');
+    // The worst-page panel is gone; the evidence lives in the ONE fix-first
+    // context line (worstPage set + this fixture has 1 negative finding, so
+    // the line renders) — and it must not name a measurement as a problem.
+    assert.ok(paid.includes('Most issues are on'), 'worst-page evidence moved to the fix-first context line');
+    const ctx = paid.slice(paid.indexOf('Most issues are on'), paid.indexOf('<ol class="fix-list"'));
+    assert.ok(ctx.includes('/about'), 'names the worst page (human-short label)');
+    assert.ok(!ctx.includes('ORIGINALITY'), 'context line must not even name ORIGINALITY for a measurements-only page');
+    assert.ok(!paid.includes('No actual negative findings captured for this page'), 'old panel fallback text is gone');
+    assert.ok(!paid.includes('% identical'), 'no dup-pair suffix when the worst page has no flagged pair');
     // The ORIGINALITY category card itself keeps its neutral "Measurements only".
     assert.ok(paid.includes('<span class="cat-findings">Measurements only</span>'),
       'ORIGINALITY card still shows Measurements only');

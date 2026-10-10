@@ -378,20 +378,14 @@ test('surfaces agree: intro/ordinals/cards, breakdown counts, fix-first length a
   const scan = freshScan();
   const html = renderHtmlReport(scan);
   const flat = html.slice(html.indexOf('<div class="cat-sources" hidden>'), html.indexOf('<section class="cat-view"', html.indexOf('<div class="cat-sources" hidden>')));
-  // THE ACTUAL FINDINGS: the visible intro counts the GROUPED FLAT set — 3
-  // grouped problems (sponsor section, nav phrase, page pair) — NOT the raw
-  // lines. "across 2 categories": the flat set spans MESSAGING (sponsor
-  // card) + REPETITION (nav + page pair); STRUCTURE's cards all merged into
-  // the sponsor card, so STRUCTURE has no flat card of its own (design rule:
-  // the intro's M uses the GROUPED flat set, see DESIGN.md "Fork /
-  // decisions"). The dashboard no longer renders a flat card list: the
-  // canonical cards live inside the hidden cat-sources block (per-category
-  // within-category groups, no cross-category merge) — MESSAGING 1 +
-  // STRUCTURE 1 + REPETITION 3 = 5 cards. Per-category totals can
-  // legitimately exceed the flat total: the flat set cross-merges via
-  // Phase B, the per-category cards never do.
-  assert.ok(html.includes('3 findings across 2 categories — every roast points at the receipts inside its category view.'),
-    'visible intro counts the grouped flat set and points at the category views');
+  // The flat-findings intro line is gone (owner reorder 2026-10-10) — the
+  // grouped set's visible counts now live on the breakdown cards + the
+  // final-verdict next-step. The grouped FLAT set (3 grouped problems:
+  // sponsor section, nav phrase, page pair — "across 2 categories":
+  // MESSAGING + REPETITION) still drives the fix-first list length, the
+  // fix-teaser count and how many "roasts" each breakdown card shows.
+  assert.ok(html.includes('Fix the top items, then rescan — the score is waiting to drop.'),
+    'final verdict next-step fires with the grouped set');
   assert.ok(flat.includes('id="finding-'), 'cat-sources cards carry deep-link finding ids');
   assert.equal((flat.match(/<div class="finding-card"/g) ?? []).length, 5,
     'cat-sources renders 5 per-category cards (MESSAGING 1 + STRUCTURE 1 + REPETITION 3)');
@@ -409,7 +403,7 @@ test('surfaces agree: intro/ordinals/cards, breakdown counts, fix-first length a
   // line + 2 same-category receipts.
   assert.ok(sponsorCard.includes('3 lines of evidence'), 'MESSAGING card receipts drawer counts primary + member evidence');
   // Every fix-first deep link resolves to a real cat-sources card id.
-  const fixRegion = html.slice(html.indexOf('What To Fix First'), html.indexOf('Your Breakdown'));
+  const fixRegion = html.slice(html.indexOf('What To Fix First'), html.indexOf("What's Working"));
   for (const m of fixRegion.matchAll(/href="#(finding-[a-z0-9-]+)"/g)) {
     assert.ok(html.includes(`id="${m[1]}"`), `fix-first deep link #${m[1]} resolves to an existing card id`);
   }
@@ -417,10 +411,11 @@ test('surfaces agree: intro/ordinals/cards, breakdown counts, fix-first length a
   assert.ok(html.includes('1 roast — see receipts'), 'MESSAGING + STRUCTURE breakdown cards each show 1 grouped roast');
   assert.ok(html.includes('3 roasts — see receipts'), 'REPETITION breakdown card shows its 3 within-category groups');
   // WHAT TO FIX FIRST: one ranked item per grouped problem (3, capped at 5).
-  const fix = html.slice(html.indexOf('What To Fix First'), html.indexOf('Your Breakdown'));
+  const fix = html.slice(html.indexOf('What To Fix First'), html.indexOf("What's Working"));
   assert.equal((fix.match(/<li class="fix-item/g) ?? []).length, 3, 'fix-first lists the 3 grouped problems, not the 9 raw lines');
-  // Final Verdict conclusion uses the grouped count (score 57 = VERY ASSY).
-  assert.ok(html.includes('in a list of 3 findings'), 'verdict conclusion counts the grouped set');
+  // Final Verdict next-step fires (grouped problems exist -> fix + rescan).
+  assert.ok(html.includes('Fix the top items, then rescan — the score is waiting to drop.'),
+    'final verdict next-step uses the grouped set');
 });
 
 test('teasers: src-dedupe — never two free samples for one grouped problem; src never leaks into the teaser payload', () => {

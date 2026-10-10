@@ -217,11 +217,11 @@ test('Q3/report: owner scan — ONE finding card for the copyright signal; roast
       // clone-source section re-renders the same card for the Phase 2C view.
       assert.equal((flatRegion(paid).match(/<div class="finding-card"/g) ?? []).length, 1,
         `${id}: grouping: exactly ONE flat-list finding card for ONE copyright signal`);
-      assert.ok(paid.includes('1 finding across 1 category — every roast points at the receipts inside its category view.'),
-        `${id}: summary intro counts the single signal and points at the category views`);
+      // The flat-findings intro line is gone (owner reorder 2026-10-10) — the
+      // count now surfaces via the final-verdict next-step and the card line.
+      assert.ok(paid.includes('Fix the top items, then rescan — the score is waiting to drop.'),
+        `${id}: final verdict next-step fires with the one finding to fix`);
       assert.ok(!paid.includes('2 findings'), `${id}: no double-counted "2 findings" anywhere`);
-      const verdictSlice = paid.slice(paid.indexOf('The Verdict'), paid.indexOf('Page That Needs'));
-      assert.ok(verdictSlice.includes('just 1 finding to tidy up'), `${id}: verdict counts one finding`);
       assert.ok(paid.includes('<span class="cat-findings cat-findings-problem">1 roast — see receipts</span>'),
         `${id}: MESSAGING breakdown card shows ONE roast`);
 
@@ -269,8 +269,8 @@ test('Q3/report: MESSAGING "Measurements only" classification still works for a 
   const app = startApp(dbPath);
   try {
     const paid = await paidHtml(app.base, 'ri-clean-msg-0001');
-    assert.ok(paid.includes('No findings this scan — nothing to roast, and nothing to hide.'),
-      'clean totals line classifies clean (not a negative finding)');
+    assert.ok(paid.includes('Nothing to fix this scan — keep it up, and rescan after any big changes.'),
+      'clean totals line classifies clean (not a negative finding): final verdict carries the clean next-step');
     assert.equal((paid.match(/<div class="finding-card"/g) ?? []).length, 0, 'no finding cards');
     assert.ok(paid.includes('MESSAGING — CLEAN:'), 'clean MESSAGING category still compliments in What\'s Working');
   } finally {
@@ -313,7 +313,7 @@ test('Q2/report: What\'s Working compliments only CLEAN-band categories — ORIG
     }
 
     // What To Fix First lists ONLY categories with actual negative findings.
-    const fixSection = paid.slice(paid.indexOf('What To Fix First'), paid.indexOf('Your Breakdown'));
+    const fixSection = paid.slice(paid.indexOf('What To Fix First'), paid.indexOf("What's Working"));
     assert.equal((fixSection.match(/<li class="fix-item/g) ?? []).length, 1, 'exactly one fix item (the MESSAGING signal)');
     assert.ok(fixSection.includes('MESSAGING'), 'fix-first names MESSAGING');
     assert.ok(!fixSection.includes('ORIGINALITY'), 'fix-first never lists a WATCH category with no negative finding');
@@ -384,15 +384,17 @@ test('Q5/consistency: report-level sweep — negative-finding count == signal co
       // grouping: count the FLAT grouped list only (the hidden per-category
       // clone-source section re-renders the same card for the Phase 2C view).
       assert.equal((flatRegion(paid).match(/<div class="finding-card"/g) ?? []).length, 1, `${id}: grouping: one per-category card per signal`);
-      assert.ok(paid.includes('1 finding across 1 category — every roast points at the receipts inside its category view.'),
-        `${id}: intro count consistent (grouped set, pointing at the category views)`);
+      assert.ok(paid.includes('Fix the top items, then rescan — the score is waiting to drop.'),
+        `${id}: findings scan shows the next-step final verdict (the flat findings-intro line is gone)`);
+      assert.ok(!paid.includes('every roast points at the receipts inside its category view'),
+        `${id}: no legacy flat findings-intro line (findings live in the category views)`);
       // What's Working ⊆ CLEAN-band.
       const working = paid.slice(paid.indexOf("What's Working"), paid.indexOf('<div class="cat-sources" hidden>'));
       for (const banned of ['ORIGINALITY — CLEAN:', 'MESSAGING — CLEAN:']) {
         assert.ok(!working.includes(banned), `${id}: ${banned} never in What's Working`);
       }
       // What To Fix First lists only MESSAGING (the only negative category).
-      const fixSection = paid.slice(paid.indexOf('What To Fix First'), paid.indexOf('Your Breakdown'));
+      const fixSection = paid.slice(paid.indexOf('What To Fix First'), paid.indexOf("What's Working"));
       assert.ok(fixSection.includes('MESSAGING'), `${id}: fix-first names the negative category`);
       assert.ok(!fixSection.includes('ORIGINALITY'), `${id}: fix-first never lists a no-negative-finding category`);
       // The aggregate line stays a receipt, never a card.

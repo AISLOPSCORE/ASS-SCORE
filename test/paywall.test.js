@@ -145,8 +145,8 @@ test('PAID contract: valid token on /scans/:id returns the full narrative report
   assert.equal(res.status, 200);
   assert.match(res.headers.get('content-type'), /text\/html/);
   const html = await res.text();
-  for (const section of ['The Verdict', "What's Working", 'Your Breakdown', '<div class="cat-sources" hidden>',
-    'Page That Needs The Most Work', 'What To Fix First', 'Final Verdict', 'Methodology']) {
+  for (const section of ['Your Breakdown', "What's Working", '<div class="cat-sources" hidden>',
+    'What To Fix First', 'Final Verdict', 'Methodology']) {
     assert.ok(html.includes(section), `paid report has ${section}`);
   }
   assert.ok(html.includes(DISCLAIMER), 'paid report carries the mandated disclaimer verbatim');
@@ -176,7 +176,7 @@ test('PAID contract: /api/v1/report/:id without a token = 403 (never the free pa
   // Valid token: 200 full report.
   const ok = await getReport(api.base, created.id, `?token=${encodeURIComponent(token)}`);
   assert.equal(ok.status, 200);
-  assert.ok((await ok.text()).includes('The Verdict'));
+  assert.ok((await ok.text()).includes('Your Breakdown'));
 });
 
 // ------------------------------------------------- report access window (30d)
@@ -203,7 +203,7 @@ test('report access window: valid token on a 29-day-old scan -> 200 HTML; 31-day
     const young = await getReport(app.base, youngId, `?token=${encodeURIComponent(createReportToken(TOKEN_SECRET, youngId))}`);
     assert.equal(young.status, 200, 'valid token on a 29-day-old scan renders the report');
     assert.match(young.headers.get('content-type'), /text\/html/);
-    assert.ok((await young.text()).includes('The Verdict'), 'full report rendered for the in-window scan');
+    assert.ok((await young.text()).includes('Your Breakdown'), 'full report rendered for the in-window scan');
 
     // 31 days old: expired -> 410 with the branded expiry page (HTML accept).
     const oldHtmlRes = await getReport(app.base, oldId, `?token=${encodeURIComponent(createReportToken(TOKEN_SECRET, oldId))}`);
@@ -248,7 +248,7 @@ test('report access window: /api/v1/scans/:id token branch mirrors the report ga
     const youngRes = await getHtml(app.base, youngId, `?token=${encodeURIComponent(createReportToken(TOKEN_SECRET, youngId))}`);
     assert.equal(youngRes.status, 200, 'valid token on a 29d-old scan via /api/v1/scans/:id renders the full report');
     assert.match(youngRes.headers.get('content-type'), /text\/html/);
-    assert.ok((await youngRes.text()).includes('The Verdict'), 'full report rendered for the in-window scan');
+    assert.ok((await youngRes.text()).includes('Your Breakdown'), 'full report rendered for the in-window scan');
     // No-token free path on an OLD scan: still 200 free payload, never gated.
     const freeJson = await getJson(app.base, oldId);
     assert.equal(freeJson.status, 200, 'no-token free JSON on an old scan stays 200');
@@ -513,7 +513,7 @@ test('fulfillment: the checkout-webhook email carries a token link that opens th
     const opened = await fetch(`${app.base}/api/v1/report/${id}?token=${encodeURIComponent(token)}`, { headers: { accept: 'text/html' } });
     assert.equal(opened.status, 200, 'emailed link opens the full report');
     const html = await opened.text();
-    assert.ok(html.includes('The Verdict') && html.includes('<div class="cat-sources" hidden>'), 'full report content');
+    assert.ok(html.includes('Your Breakdown') && html.includes('<div class="cat-sources" hidden>'), 'full report content');
     assert.ok(html.includes(DISCLAIMER), 'verbatim disclaimer in the emailed report');
 
     // The same link WITHOUT its token is a 403.

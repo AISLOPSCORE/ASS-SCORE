@@ -147,7 +147,7 @@ test('P2D2.3: findings are premium cards with a receipts drawer; What To Fix Fir
     assert.ok(!html.includes('class="fix-evidence"'), 'compact fix cards never repeat a full fix-evidence block');
     // The headline names the CONCRETE problem — the finding's own trigger
     // line (infoDensity is the top-ranked fix item), never the joke roast.
-    const fixSection = html.slice(html.indexOf('What To Fix First'), html.indexOf('Your Breakdown'));
+    const fixSection = html.slice(html.indexOf('What To Fix First'), html.indexOf("What's Working"));
     assert.ok(fixSection.includes('class="fix-problem">concrete specifics: 0 found in 500 words'),
       'fix-problem headline carries the finding trigger line, not the roast');
   } finally {
@@ -185,10 +185,10 @@ test('P2D2.5: locked architecture unchanged under the polish — section order, 
     for (const [name, id] of [['clean', 'p2d2-clean'], ['sloppy', 'p2d2-sloppy']]) {
       const html = await paidHtml(app.base, id);
       const idx = (s) => html.indexOf(s);
-      // Dashboard final cleanup order: verdict → page → fix → breakdown →
-      // working → findings → final → methodology.
-      const seq = ['A.S.S. Score: ', 'The Verdict', 'Page That Needs The Most Work', 'What To Fix First',
-        'Your Breakdown', "What's Working", '<div class="cat-sources" hidden>', 'Final Verdict', 'Methodology'];
+      // Owner reorder 2026-10-10: hero → breakdown → fix → working →
+      // findings(clone-source) → final → methodology.
+      const seq = ['A.S.S. Score: ', 'Your Breakdown', 'What To Fix First',
+        "What's Working", '<div class="cat-sources" hidden>', 'Final Verdict', 'Methodology'];
       let prev = -1;
       for (const marker of seq) {
         const at = idx(marker);

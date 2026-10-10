@@ -455,7 +455,7 @@ test('E2E: slop fixture -> free JSON carries teasers + numeric scores only; insi
     assert.ok(html.includes(name), `report shows the ${name} category`);
   }
   assert.ok(html.includes('Show the receipts:'), 'findings carry a labeled receipts block');
-  assert.ok(html.includes('<div class="cat-sources" hidden>') && html.includes('The Verdict'), 'narrative sections present');
+  assert.ok(html.includes('<div class="cat-sources" hidden>') && html.includes("What's Working"), 'narrative sections present');
   assert.ok(html.includes('This tool identifies writing and design patterns commonly associated with generic or templated content.'), 'mandated disclaimer intact');
 
   // Webhook/email payload surface is the same gated object; the stored

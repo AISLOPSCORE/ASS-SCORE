@@ -97,7 +97,7 @@ const PAID_MARKERS = [
   'Your Breakdown',
   "What's Working",
   'What To Fix First',
-  'Page That Needs The Most Work',
+  'Final Verdict',
   'Show the receipts:',
 ];
 

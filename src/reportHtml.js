@@ -125,58 +125,20 @@ function humanScanDate(value) {
 }
 
 /**
- * Human conclusion sentence for THE VERDICT — derived ONLY from real scan
- * data (public score, band, highest-scoring category, ACTUAL NEGATIVE finding
- * count). Owner IA (2026-09-17 §1): summaries count NEGATIVE findings ONLY —
- * compliments and metric measurements are never "findings", so a clean report
- * says zero findings even when its breakdown carries clean receipts. When no
- * negative finding exists the conclusion says so plainly instead of inventing
- * a weakest area. No manufactured claims: every number and name comes from
- * the scan.
+ * Final Verdict next-step kicker (owner reorder 2026-10-10): the closing line
+ * is a NEXT-STEP instruction, not a second score sentence — the hero already
+ * shows the number, and a repeat is the exact repetition the owner removed.
+ * With negative findings it says fix the top items and rescan; a clean scan
+ * gets the keep-it-up variant (never "fix the top items" when there is nothing
+ * to fix). Never repeats the score and never uses "above"/"below" positionally
+ * — the findings live in the category views opened from Your Breakdown, which
+ * sit ABOVE this line, so any positional reference would be a lie (report-trust
+ * defect class).
  */
-function verdictConclusion(scan, pubScore, band, negativeTotal) {
-  const scored = Object.entries(scan.breakdown ?? {})
-    .filter(([, r]) => Number.isFinite(Number(r?.score)) && r.score !== null)
-    .map(([k, r]) => [k, Number(r.score)]);
-  const worst = scored.length ? scored.slice().sort((a, b) => b[1] - a[1])[0] : null;
-  const worstName = worst ? CATEGORY_LABELS[worst[0]] ?? worst[0] : null;
-  const worstScore = worst ? publicScore(worst[1]) : null;
-  if (negativeTotal === 0) {
-    return band.shortLabel === 'CLEAN'
-      ? `${pubScore}/100 — CLEAN is rare, and this site earned it with zero negative findings across the whole report.`
-      : `${pubScore}/100 — no specific problems flagged this scan: the score comes from the detailed measurements below, and every category line reads clean or neutral.`;
-  }
-  const n = negativeTotal;
-  const byBand = {
-    'BEYOND ASS': `${pubScore}/100 is beyond ass — ${n} finding${n === 1 ? '' : 's'} with receipts, and ${worstName} (${worstScore}/100) is the loudest alarm of all.`,
-    'CATASTROPHICALLY ASSY': `At ${pubScore}/100 this is about as bad as it gets — ${n} finding${n === 1 ? '' : 's'} with receipts, and the weakest area is ${worstName} at ${worstScore}/100.`,
-    'EXTREMELY ASSY': `This site lands at ${pubScore}/100 — ${worstName} (${worstScore}/100) is doing most of the damage across ${n} finding${n === 1 ? '' : 's'}.`,
-    'HEAVILY ASSY': `${pubScore}/100 is heavily assy — ${worstName} (${worstScore}/100) is dragging most of the weight across ${n} finding${n === 1 ? '' : 's'}.`,
-    'VERY ASSY': `${pubScore}/100 is a lot of ass — ${worstName} (${worstScore}/100) is the biggest offender in a list of ${n} finding${n === 1 ? '' : 's'}.`,
-    'PRETTY ASSY': `${pubScore}/100 is pretty assy — ${worstName} (${worstScore}/100) headlines ${n} finding${n === 1 ? '' : 's'} worth fixing.`,
-    'ASSY': `At ${pubScore}/100 the ass is measurable — ${worstName} (${worstScore}/100) is the main offender across ${n} finding${n === 1 ? '' : 's'}.`,
-    'SLIGHTLY ASSY': `${pubScore}/100 is only slightly assy — ${worstName} (${worstScore}/100) leads ${n} finding${n === 1 ? '' : 's'} holding it back.`,
-    'MOSTLY CLEAN': `${pubScore}/100 is close to clean — just ${n} finding${n === 1 ? '' : 's'} to tidy up, worst of all ${worstName} at ${worstScore}/100.`,
-    'CLEAN': `${pubScore}/100 is genuinely decent — just ${n} finding${n === 1 ? '' : 's'} to tidy up, worst of all ${worstName} at ${worstScore}/100.`,
-  };
-  return byBand[band.shortLabel] ?? `This site scores ${pubScore}/100 on the A.S.S. Score.`;
-}
-
-/** Final Verdict kicker — band-scoped, references the real score. */
-function finalVerdictSentence(pubScore, band) {
-  const byBand = {
-    'BEYOND ASS': `A ${pubScore}/100 A.S.S. Score is a badge nobody asked for — but every point is fixable, and the findings above are the roadmap.`,
-    'CATASTROPHICALLY ASSY': `${pubScore}/100 is about as bad as it gets — but every point is fixable, and the findings above are the roadmap.`,
-    'EXTREMELY ASSY': `At ${pubScore}/100 your site is fighting you. Fix the findings above and watch the number drop.`,
-    'HEAVILY ASSY': `${pubScore}/100 is heavy — the findings above are the roadmap, and every point is fixable.`,
-    'VERY ASSY': `${pubScore}/100 is a lot of ass for one website — the findings above are your to-do list.`,
-    'PRETTY ASSY': `${pubScore}/100 is a fair amount of ass — the findings above are your to-do list.`,
-    'ASSY': `${pubScore}/100 has real ass in it now — the findings above are your checklist.`,
-    'SLIGHTLY ASSY': `${pubScore}/100 isn't clean yet, but it's close enough to smell the finish line. Keep fixing.`,
-    'MOSTLY CLEAN': `${pubScore}/100 is close to clean — the findings above are a short to-do list, not a fire drill.`,
-    'CLEAN': `${pubScore}/100 — this is what a good website looks like. Keep doing whatever you're doing.`,
-  };
-  return byBand[band.shortLabel] ?? `This site scores ${pubScore}/100 on the A.S.S. Score.`;
+function finalVerdictSentence(negativeTotal) {
+  return Number(negativeTotal) > 0
+    ? 'Fix the top items, then rescan — the score is waiting to drop.'
+    : 'Nothing to fix this scan — keep it up, and rescan after any big changes.';
 }
 
 /**
@@ -389,23 +351,14 @@ export function worstPageSummary(findings = []) {
 }
 
 /**
- * Headline evidence line for the "Page That Needs The Most Work" panel when
- * the chosen worst page belongs to a flagged duplicate pair (report-trust
- * fix 2026-10-07, DEFECT 2). Real data only: `similarity` is the raw
- * crossPage pair fraction and `otherUrl` the actual paired URL — both come
- * straight from the stored worstPage.dupPair (scan.js), which is itself
- * derived solely from crossPage.pairs. The other URL renders human-short
- * (pathname+search when parseable, word-truncated fallback); the percentage
- * is (similarity * 100) with one decimal, exactly like the crossPage receipts
- * ("97.8% similar"). Returns '' when there is no pair.
+ * Human-short label for a URL (report-trust fix 2026-10-07 style): the
+ * pathname + search when parseable, a word-truncated fallback otherwise
+ * (never mid-word), and the raw URL when the path is just "/". Shared by the
+ * fix-first context line and the dup-pair suffix so both render the same
+ * short form.
  */
-function dupPairHtml(worst) {
-  const pair = worst?.dupPair;
-  if (!pair || !Number.isFinite(Number(pair.similarity))) return '';
-  const sim = Number(pair.similarity);
-  if (sim < 0 || sim > 1) return '';
-  const pct = (sim * 100).toFixed(1);
-  let label = String(pair.otherUrl ?? '');
+function humanShortUrl(raw) {
+  let label = String(raw ?? '');
   if (!label) return '';
   try {
     const u = new URL(label);
@@ -414,8 +367,43 @@ function dupPairHtml(worst) {
   } catch {
     label = short(label, 60);
   }
-  if (label === '/') label = String(pair.otherUrl);
-  return `<p class="page-duppair">This page is <strong>${esc(pct)}% identical</strong> to <a href="${esc(pair.otherUrl)}">${esc(label)}</a> — same content, different URL.</p>`;
+  if (label === '/') label = String(raw);
+  return label;
+}
+
+/**
+ * ONE "where the problems live" line for What To Fix First (owner reorder
+ * 2026-10-10): the removed "Page That Needs The Most Work" panel's evidence
+ * moved here — a single line directly above the fix list, multi-page scans
+ * ONLY (multi-page = scan.worstPage is set) and only when there is actually
+ * something to fix (negativeTotal > 0 — an empty fix list plus "most issues
+ * on X" would contradict; the existing empty sentence stays as-is).
+ * Real data only: `worst` and `worst.dupPair` come straight from the stored
+ * scan (scan.js). When the worst page belongs to a flagged duplicate pair,
+ * the SAME report-trust evidence as the old panel rides this line
+ * ("<pct>% identical to <other> — same content, different URL."); the
+ * percentage is (similarity * 100) with one decimal, exactly like the
+ * crossPage receipts. Returns '' when there is no worst page or nothing to
+ * fix.
+ */
+function mostIssuesLine(worst, negativeTotal) {
+  if (!worst || Number(negativeTotal) <= 0) return '';
+  const url = String(worst.url ?? '');
+  if (!url) return '';
+  const label = humanShortUrl(url);
+  let line = `Most issues are on <a href="${esc(url)}">${esc(label)}</a>.`;
+  const pair = worst?.dupPair;
+  if (pair && Number.isFinite(Number(pair.similarity))) {
+    const sim = Number(pair.similarity);
+    if (sim >= 0 && sim <= 1) {
+      const pct = (sim * 100).toFixed(1);
+      const otherLabel = humanShortUrl(pair.otherUrl);
+      if (otherLabel) {
+        line += ` — <strong>${esc(pct)}% identical</strong> to <a href="${esc(pair.otherUrl)}">${esc(otherLabel)}</a> (same content, different URL).`;
+      }
+    }
+  }
+  return line;
 }
 
 /**
@@ -506,15 +494,16 @@ export function renderFreeHtmlReport(scan, shareBase = 'https://ass-score.com') 
 /**
  * Render the HTML report — the customer-facing Full Report (owner content/IA
  * rebuild 2026-09-17, Phase 1, wrapped by the Phase 2A dashboard shell).
- * Page order (dashboard final cleanup, owner/lead 2026-09-23 — hierarchy:
- * Big Picture → Score/Verdict → What Needs Attention → Category Breakdown →
- * What's Working → Findings/detail): SCORE HERO → THE VERDICT → PAGE THAT
- * NEEDS THE MOST WORK → WHAT TO FIX FIRST (the "What Needs Attention" block,
- * moved up so the action plan reads right after the verdict) → YOUR BREAKDOWN
- * (category cards) → WHAT'S WORKING → THE ACTUAL FINDINGS → FINAL VERDICT →
- * METHODOLOGY + mandated DISCLAIMER. Phase 2A is presentation-only:
- * every content string (roast copy, why/fix, receipts, methodology,
- * disclaimer) is emitted verbatim by the sections below.
+ * Page order (dashboard reorder, owner 2026-10-10 — reorder + tightening:
+ * the verdict joke moved into the score card, the worst-page panel and the
+ * flat-findings remnant were removed): SCORE CARD (number + pill + roast joke
+ * + gauge + scale) → YOUR BREAKDOWN (category cards — the drill-down entry
+ * point, first so the numbered sections read 01-05) → WHAT TO FIX FIRST
+ * (with the ONE-line worst-page context on multi-page scans) → WHAT'S WORKING
+ * → [hidden Phase 2C clone-source] → FINAL VERDICT (next-step kicker) →
+ * METHODOLOGY (scope + pages list + mandated DISCLAIMER). Phase 2A is
+ * presentation-only: every content string (roast copy, why/fix, receipts,
+ * methodology, disclaimer) is emitted verbatim by the sections below.
  *
  * Finding semantics (owner IA §1–4, §7–9):
  *   - WHAT'S WORKING holds CLEAN/positive detector results ONLY (compliments
@@ -531,14 +520,15 @@ export function renderFreeHtmlReport(scan, shareBase = 'https://ass-score.com') 
  *   - Diagnostic metric measurements (vocab diversity, stopword ratio, mean
  *     sentence length, short par %) render as NEUTRAL evidence when the
  *     detector flags them out-of-band, never as findings/roasts (§4).
- *   - PAGE THAT NEEDS THE MOST WORK: single-page scans read "Homepage — this
- *     is the only page scanned." plus a summary of the actual findings;
- *     multi-page scans name the stored worst page with its actual-negative
- *     concentration (§8).
  *   - WHAT TO FIX FIRST lists actual negative findings only, prioritized by
  *     category severity, each as a COMPACT ranked summary (rank/pill,
  *     category + severity, one-line what-to-fix, link to the category view) —
  *     never a repeat of the full Roast/Why/Fix/Receipts (§9, cleanup pass).
+ *     ON MULTI-PAGE SCANS WITH FINDINGS a single context line above the list
+ *     names where the problems live ("Most issues are on <page>." — §8), with
+ *     the report-trust dup-pair evidence riding it when the worst page belongs
+ *     to a flagged duplicate pair; the standalone worst-page panel is gone
+ *     (owner reorder 2026-10-10).
  *
  * Everything is deterministic: same scan id -> byte-identical HTML. This is
  * the PAID report — reachable ONLY via the token'd routes (see scansRouter).
@@ -616,26 +606,17 @@ export function renderHtmlReport(scan) {
       .map((g) => ({ key: g.key, groups: g.groups, sources: g.rule.sources })),
   );
   const negativeTotal = flatGroups.length;
-  // Categories that still have at least one card in the grouped flat set
-  // (used by the Page panel's per-category counts — GROUPED set, owner rule).
-  const negativeCats = classified.filter((g) => g.groups.length > 0);
-  // The visible THE ACTUAL FINDINGS summary line (owner 2026-10-07): counts
-  // come from the GROUPED flat set — N = negativeTotal (grouped problems,
-  // ONE PROBLEM = ONE FINDING), M = flatCatCount (distinct primary
-  // categories). Compliments and metric measurements are never findings.
-  // The trailing clause points at the category views — the receipts no
-  // longer render below the intro (the flat list is gone), so "below" would
-  // be a lie (report-trust defect class).
-  const flatCatCount = new Set(flatGroups.map((g) => g.key)).size;
-  const findingsIntro = negativeTotal === 0
-    ? 'No findings this scan — nothing to roast, and nothing to hide.'
-    : `${negativeTotal} finding${negativeTotal === 1 ? '' : 's'} across ${flatCatCount} categor${flatCatCount === 1 ? 'y' : 'ies'} — every roast points at the receipts inside its category view.`;
+  // The worst page (multi-page scans only — scan.js sets it whenever ≥2 pages
+  // were analyzed). Its evidence feeds the fix-first context line
+  // (mostIssuesLine); the old "Page That Needs The Most Work" panel is gone
+  // (owner reorder 2026-10-10).
+  const worst = scan.worstPage || null;
 
   // --- 1. THE VERDICT --------------------------------------------------------
-  const verdictSection = `
-  <h2>The Verdict</h2>
-  <p class="roast">${roastInfo.emoji} ${esc(roastInfo.line)}</p>
-  <p class="conclusion">${esc(verdictConclusion(scan, pubScore, publicVerdict, negativeTotal))}</p>`;
+  // REMOVED as its own section (owner reorder 2026-10-10): the verdict joke —
+  // `${roastInfo.emoji} ${roastInfo.line}` — moved INTO the score card, the
+  // first thing the buyer sees, directly under the badge pill; the conclusion
+  // paragraph (a score repeat) is deleted with the section.
 
   // --- 5. WHAT'S WORKING (clean/positive detector results only; rendered
   // below the breakdown, per the Phase 2A target hierarchy). COMPLIMENT GATE
@@ -652,7 +633,7 @@ export function renderHtmlReport(scan) {
   const workingSection = `
   <h2>What's Working</h2>
   ${cleanLis === ''
-    ? '<div class="working-empty">\n      <p class="working-empty-line">Nothing to compliment this scan — the findings and measurements below are the whole story.</p>\n    </div>'
+    ? '<p class="working-empty">Nothing to compliment this scan — the findings tell the whole story.</p>'
     : `<ul class="working-list">
   ${cleanLis}
   </ul>`}`;
@@ -830,63 +811,27 @@ export function renderHtmlReport(scan) {
     ${metricsBlock}
   </section>`;
   }).join('');
-  // The visible ACTUAL FINDINGS summary (owner 2026-10-07): the h2 + ONE
-  // honest count line sit in the dashboard where the removed flat section
-  // was. No flat card list is re-rendered — just the heading + the count
-  // line. Beneath it stays the hidden Phase 2C clone-source block: it carries
-  // the id="cat-<key>" anchors (breakdown cards, no-JS hash scroll) and the
-  // full per-category finding cards — including the id="finding-<cat>-<n>"
-  // deep-link targets the fix-first "See the full finding" links use. It must
-  // remain hidden; the focused views clone from it on open.
+  // The hidden Phase 2C clone-source (owner 2026-10-07, repositioned + unheaded
+  // 2026-10-10): the dashboard's "The Actual Findings" h2 and its count line
+  // are REMOVED (the flat-findings remnant — the owner calls it leftover) —
+  // what stays is the hidden div carrying the id="cat-<key>" anchors
+  // (breakdown cards, no-JS hash scroll) and the full per-category finding
+  // cards, including the id="finding-<cat>-<n>" deep-link targets the fix-first
+  // "See the full finding" links use. It must remain hidden and verbatim; the
+  // focused views clone from it on open.
   const catSourcesSection = `
-  <h2>The Actual Findings</h2>
-  <p>${findingsIntro}</p>
   <div class="cat-sources" hidden>
   ${findingGroups}
   </div>`;
 
   // --- 2. PAGE THAT NEEDS THE MOST WORK (owner IA §8) ------------------------
-  // Single-page scan (no stored worstPage): name the homepage — the only page
-  // scanned — and summarize what is actually wrong there. Multi-page scan:
-  // the stored worst page (engine-picked combined score) plus its actual
-  // negative concentration; cross-page conclusions are never invented here.
-  const worst = scan.worstPage || null;
-  let pageSection;
-  if (worst) {
-    const per = worstPageSummary(worst.findings);
-    const lis = per.length > 0
-      ? per.map(([k, n]) => `<li><strong>${esc(CATEGORY_LABELS[k] ?? k)}</strong> — ${n} actual finding${n === 1 ? '' : 's'} on this page.</li>`).join('')
-      : '<li>No actual negative findings captured for this page — its combined score comes from duplication or sub-threshold signals.</li>';
-    // Report-trust fix 2026-10-07 (DEFECT 2): when the chosen worst page is
-    // part of a flagged duplicate pair, the panel names the REAL pair
-    // evidence (other URL + similarity straight from crossPage.pairs) so the
-    // biggest problem isn't hidden under a category-findings list. The
-    // category-findings list stays beneath it unchanged.
-    const dupLine = dupPairHtml(worst);
-    pageSection = `
-  <h2>Page That Needs The Most Work</h2>
-  <div class="page-panel" style="--pp:${negativeTotal === 0 ? '#4ade80' : '#f87171'}">
-  <p class="page-head">
-    <a href="${esc(worst.url)}">${esc(worst.url)}</a> — combined score ${Number(worst.score)} / 100 (higher = worse).</p>
-  ${dupLine}
-  <ul class="page-list">
-  ${lis}
-  </ul>
-  </div>`;
-  } else {
-    const lis = negativeCats.length > 0
-      ? negativeCats.map((g) => `<li><strong>${esc(CATEGORY_LABELS[g.key] ?? g.key)}</strong> — ${g.groups.length} actual finding${g.groups.length === 1 ? '' : 's'} to fix.</li>`).join('')
-      : '<li>Nothing to fix here this scan.</li>';
-    pageSection = `
-  <h2>Page That Needs The Most Work</h2>
-  <div class="page-panel" style="--pp:${negativeTotal === 0 ? '#4ade80' : '#f87171'}">
-  <p class="page-head">
-    <strong>Homepage</strong> — this is the only page scanned.</p>
-  <ul class="page-list">
-  ${lis}
-  </ul>
-  </div>`;
-  }
+  // REMOVED as its own section (owner reorder 2026-10-10): both branches —
+  // the multi-page worst-page panel (with its per-category counts and the
+  // dup-pair line) and the single-page "Homepage — the only page scanned"
+  // panel — are gone. The multi-page evidence now lives in ONE line above the
+  // fix list (mostIssuesLine, below); single-page scans render no page line
+  // at all. `worstPageSummary` + `WORST_PAGE_KEYS` STAY (exported; the
+  // report-quality tests exercise them directly via src/routes/scans.js).
 
   // --- 3. WHAT TO FIX FIRST (actual negative findings only, prioritized) -----
   // Owner IA §9: only NEGATIVE findings become to-dos (clean results and
@@ -998,13 +943,19 @@ export function renderHtmlReport(scan) {
     <p class="fix-action">
       <span class="fix-action-label">Fix it:</span> ${esc(summary)}
     </p>
-    <a class="fix-link" href="#${deep}">See the full finding ↓</a>
+    <a class="fix-link" href="#${deep}">See the full finding →</a>
   </li>`;
     })
     .join('');
+  // Where-the-problems-live context (owner reorder 2026-10-10): ONE line above
+  // the list, multi-page scans with findings ONLY — the old Page panel's
+  // evidence in its new place (mostIssuesLine). The existing empty sentence
+  // stays untouched when there is nothing to fix.
+  const mostLine = mostIssuesLine(worst, negativeTotal);
   const fixSection = `
   <h2>What To Fix First</h2>
   <p class="hint">Ranked by category severity — the highest A.S.S. score first. Fix these and the number drops.</p>
+  ${mostLine === '' ? '' : `<p class="fix-context">${mostLine}</p>`}
   ${fixLis === '' ? '<p>No negative findings to fix this scan — nothing in this report needs fixing.</p>' : `<ol class="fix-list">${fixLis}</ol>`}`;
 
   // --- 7. FINAL VERDICT ------------------------------------------------------
@@ -1015,7 +966,7 @@ export function renderHtmlReport(scan) {
   <h2>Final Verdict</h2>
   <div class="final-analyst">
     <img class="final-donkey" src="/assets/donkey-dashboard.png" alt="The A.S.S. analyst — final verdict" width="384" height="737" loading="lazy" />
-    <p class="final-note" style="--band:${publicVerdict.color}">${esc(finalVerdictSentence(pubScore, publicVerdict))}</p>
+    <p class="final-note" style="--band:${publicVerdict.color}">${esc(finalVerdictSentence(negativeTotal))}</p>
   </div>`;
 
   // --- 8. METHODOLOGY + mandated DISCLAIMER (never cut, never reworded) ------
@@ -1026,9 +977,15 @@ export function renderHtmlReport(scan) {
   const scopeLine = scope
     ? `<p class="scope">Scope: this report evaluated ${scope.fetched} of the ${scope.discovered} ${scope.pageWord} found on this site (the scanner reviews up to 5 pages per scan by design).</p>`
     : '';
+  // The "Pages scanned" list moved here from the hero (owner reorder
+  // 2026-10-10): the same links, the same .pages styling, placed directly
+  // under the methodology paragraph (fine-print group). This keeps the "same
+  // URL always produces the same score" sentence the ONLY such occurrence in
+  // the report (the old footer duplicate was removed).
   const methodologySection = `
   <h2>Methodology</h2>
   <p>Every finding in this report comes from a deterministic, rule-based analysis of the pages we fetched — the same URL always produces the same score. The seven categories look for concrete, documented patterns: filler words, generic marketing wording, thin content that pads the page, repeated text, the same content on multiple pages, recognizable website templates, and generic images. Every finding lists the verbatim evidence behind it, and the overall A.S.S. Score is the weighted rollup of the seven category scores.${partialNote}</p>
+  ${pagesLine}
   ${scopeLine}
   <p class="disclaimer">${DISCLAIMER}</p>`;
 
@@ -1252,9 +1209,15 @@ export function renderHtmlReport(scan) {
     .hero-gauge { width: min(430px, 100%); height: 13px; margin: .35rem auto 0; border-radius: 999px; background: rgba(255,255,255,.07); border: 1px solid var(--line-strong); overflow: hidden; }
     .hero-gauge-fill { display: block; height: 100%; border-radius: 999px; background: var(--band, #f87171); }
     .hero-scale { color: var(--ink-faint); font-size: .72rem; letter-spacing: .16em; text-transform: uppercase; margin: .9rem 0 0; }
-    .hero .pages { color: var(--ink-faint); font-size: .85rem; margin: .85rem 0 0; }
-    .hero .pages a { color: var(--ink-dim); text-decoration: none; border-bottom: 1px dotted var(--line-strong); }
-    .hero .pages a:hover { color: var(--ass); border-color: var(--ass); }
+    /* the one-line verdict joke now lives INSIDE the score card, directly
+       under the badge pill (owner reorder 2026-10-10); hand font, slightly
+       tighter than the old standalone section so the card stays scannable */
+    .hero .roast { margin: .8rem auto .25rem; max-width: 62ch; font-size: clamp(1.05rem, 2.6vw, 1.28rem); line-height: 1.4; }
+    /* the scanned-pages list — moved from the hero into the bottom fine-print
+       group (owner reorder 2026-10-10); muted, link-dotted, same .pages class */
+    .pages { color: var(--ink-faint); font-size: .85rem; margin: .45rem 0 0; overflow-wrap: anywhere; }
+    .pages a { color: var(--ink-dim); text-decoration: none; border-bottom: 1px dotted var(--line-strong); }
+    .pages a:hover { color: var(--ass); border-color: var(--ass); }
     .score { font-size: 2.6rem; font-weight: 700; }
     .verdict { font-size: 1.15rem; font-weight: 700; margin: .25rem 0 .75rem; }
     .b-clean { color: #4ade80; } .b-mostly-clean { color: #a3e635; } .b-slightly-assy { color: #facc15; } .b-assy { color: #eab308; }
@@ -1262,7 +1225,6 @@ export function renderHtmlReport(scan) {
     .b-catastrophic { color: #dc2626; } .b-beyond { color: #b91c1c; }
     .roast { font-family: var(--font-hand); font-size: 1.38rem; line-height: 1.45; color: var(--ink); margin: .6rem 0 .3rem; }
     .hint { color: var(--ink-faint); font-size: .85rem; margin: -.35rem 0 1rem; }
-    .conclusion { color: var(--ink-dim); font-size: .97rem; max-width: 78ch; margin: .4rem 0 0; }
     /* --- Section headings: numbered Anton editorial rules. Numbers are pure
        presentation (updates only with the section order, never the data). --- */
     #dashboard { counter-reset: sec; }
@@ -1355,9 +1317,9 @@ export function renderHtmlReport(scan) {
     .rec-block li, .rec-block em { font-family: var(--mono); font-size: .84rem; color: #c9c9d1; font-style: normal; overflow-wrap: anywhere; }
     .rec-block a { color: var(--ass); text-decoration: none; border-bottom: 1px dotted rgba(212,240,0,.5); }
     /* --- Positive results: real compliments render as rewarded, checkmarked
-       items; when a scan has no compliments, an intentional A.S.S.-voiced
-       empty panel. Compliments are never invented — only real scan
-       measurements render here. --- */
+       items; when a scan has no compliments, ONE plain muted line (owner
+       reorder 2026-10-10 — the old dashed box is gone). Compliments are never
+       invented — only real scan measurements render here. --- */
     .working-list { list-style: none; padding: 0; margin: 1.1rem 0 .4rem; }
     .working-item { position: relative; margin: .7rem 0; padding: .85rem 1rem .8rem 2.6rem; background: rgba(74,222,128,.05); border: 1px solid rgba(74,222,128,.22); border-left: 4px solid var(--good); border-radius: 12px; }
     .working-item::before { content: "✓"; position: absolute; left: .9rem; top: .78rem; color: var(--good); font-weight: 800; font-size: 1.05rem; line-height: 1; }
@@ -1365,14 +1327,13 @@ export function renderHtmlReport(scan) {
     .working-point strong { color: var(--good); }
     .working-receipt { display: block; margin-top: .4rem; font-size: .8rem; color: var(--ink-dim); }
     .working-receipt em { font-family: var(--mono); font-size: .78rem; color: #c9c9d1; font-style: normal; overflow-wrap: anywhere; }
-    .working-empty { margin: 1.1rem 0 .4rem; padding: 1.05rem 1.15rem; border: 1px dashed var(--line-strong); border-left: 4px solid var(--neutral); border-radius: 12px; background: rgba(255,255,255,.015); }
-    .working-empty-line { margin: 0; color: var(--ink-dim); font-size: .92rem; font-style: italic; }
-    /* --- The scanner-selected worst page renders as a panel card --- */
-    .page-panel { margin: .4rem 0 1.2rem; padding: 1.05rem 1.15rem .95rem; border: 1px solid var(--line); border-left: 4px solid var(--pp, #f87171); border-radius: 14px; background: var(--surface); overflow-wrap: anywhere; }
-    .page-head { margin: 0 0 .55rem; }
-    .page-head a { color: var(--ink); text-decoration: none; border-bottom: 1px dotted var(--line-strong); }
-    .page-head a:hover { color: var(--ass); border-color: var(--ass); }
-    .page-list { margin: .25rem 0 0; }
+    .working-empty { margin: 1.1rem 0 .4rem; color: var(--ink-dim); font-size: .92rem; font-style: italic; }
+    /* --- Where-the-problems-live line above the fix list (owner reorder
+       2026-10-10): the worst-page evidence moved here from the removed panel;
+       the dup-pair suffix keeps the report-trust pair evidence. --- */
+    .fix-context { margin: 0 0 .85rem; padding: .7rem .9rem; border-left: 3px solid var(--worse); background: rgba(248,113,113,.05); border-radius: 0 10px 10px 0; color: var(--ink-dim); font-size: .92rem; line-height: 1.6; }
+    .fix-context a { color: var(--ass); text-decoration: none; border-bottom: 1px dotted rgba(212,240,0,.5); }
+    .fix-context a:hover { border-bottom-style: solid; }
     /* --- Priority fixes: ranked cards. Rank = real priority order (category
        severity desc); each card carries the category chip, state pill,
        problem, specific action, receipt and a link to the full finding. --- */
@@ -1460,7 +1421,8 @@ export function renderHtmlReport(scan) {
       h1 { color: #111; }
       .hero { background: #fafafa; border-color: #d4d4d8; }
       .hero .score { color: #111; }
-      .cat-card, .finding-card, .cat-detail, .page-panel, .fix-item, .working-item { background: #fff; border-color: #d4d4d8; }
+      .hero .roast { color: #111; }
+      .cat-card, .finding-card, .cat-detail, .fix-item, .working-item { background: #fff; border-color: #d4d4d8; }
       .fc-receipts ul, .rec-block { background: #f6f6f6; border-color: #d4d4d8; }
       .cat-line, .fc-why, .fc-fix, .cv-line, .meta, .hint, .powered, .head-tag, .working-point, .fix-problem, .final-note { color: #333; }
       .fc-roast .ins-roast { color: #111; }
@@ -1495,23 +1457,20 @@ export function renderHtmlReport(scan) {
       <span class="hero-den">/ 100</span>
     </p>
     ${verdictLine}
+    <p class="roast">${roastInfo.emoji} ${esc(roastInfo.line)}</p>
     <div class="hero-gauge" aria-hidden="true">
       <span class="hero-gauge-fill" style="width:${pubScore}%"> </span>
     </div>
     <p class="hero-scale">0 = LEAST ASS / 100 = MAX ASS</p>
-    ${pagesLine}
   </section>
 
-  ${verdictSection}
-  ${pageSection}
-  ${fixSection}
   ${breakdownSection}
+  ${fixSection}
   ${workingSection}
   ${catSourcesSection}
   ${finalSection}
   ${methodologySection}
   ${footerLine}
-  <p>Deterministic rule-based analysis — the same URL always produces the same score.</p>
   </div>
   ${categoryViews}
   ${categoryViewScript}

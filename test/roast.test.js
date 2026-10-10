@@ -236,7 +236,7 @@ test('POST scan -> roast in JSON, stored in SQLite, identical across repeated GE
   assert.equal(get1.slopScore, created.slopScore); // existing fields untouched
 });
 
-test('GET HTML report: roast lives in The Verdict, emoji-tagged, escape-safe when stored value is hostile', async () => {
+test('GET HTML report: roast lives in the score card, emoji-tagged, escape-safe when stored value is hostile', async () => {
   const created = await (await post(api.base, { url: 'https://example.com/' })).json();
   // The HTML renderer (esc() in scans.js) escapes & < > " but leaves
   // apostrophes LITERAL — browsers show a real ' to the user, which is the
@@ -253,13 +253,17 @@ test('GET HTML report: roast lives in The Verdict, emoji-tagged, escape-safe whe
   const freeHtml = await (await fetch(`${api.base}/api/v1/scans/${created.id}`, { headers: { accept: 'text/html' } })).text();
   assert.ok(freeHtml.includes(rendererEscaped), 'free page shows the roast line in its renderer-escaped form (apostrophes literal)');
 
-  // PAID report (valid token): the roast lives inside The Verdict, emoji-tagged.
+  // PAID report (valid token): the roast lives INSIDE the score card (owner
+  // reorder 2026-10-10 — the standalone The Verdict section is gone), emoji-tagged.
   const token = createReportToken(ROAST_TOKEN_SECRET, created.id);
   const html = await (await fetch(`${api.base}/api/v1/scans/${created.id}?token=${encodeURIComponent(token)}`, { headers: { accept: 'text/html' } })).text();
-  assert.match(html, /<h2>The Verdict<\/h2>/, 'report has a The Verdict section (the narrative IA replaces the old Slop Roast section)');
-  assert.ok(html.includes(rendererEscaped), 'paid report shows the roast line in its renderer-escaped form (apostrophes literal)');
+  assert.ok(!html.includes('<h2>The Verdict</h2>'), 'the standalone The Verdict section is gone');
+  const hero = html.slice(html.indexOf('<section class="hero"'), html.indexOf('</section>'));
+  assert.ok(hero.includes(rendererEscaped), 'paid report shows the roast line inside the score card (apostrophes literal)');
+  assert.ok(hero.includes('class="roast"'), 'the roast renders with the .roast class inside the hero');
   const emoji = /<p class="roast">(\p{Extended_Pictographic})/u.exec(html);
   assert.ok(emoji, 'roast is emoji-tagged like other findings');
+  assert.equal((html.match(/<p class="roast">/g) ?? []).length, 1, 'exactly one roast line in the paid report (the hero copy)');
 
   // Escape safety: a hostile stored roast cannot inject markup into the report.
   const dbPath2 = tmpDb();
